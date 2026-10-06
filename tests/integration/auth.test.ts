@@ -8,12 +8,12 @@ const config = { databaseUrl: 'not-logged', host: '127.0.0.1', port: 8080, trust
 const adminPassword = 'correct horse battery staple';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-async function fixture() {
+async function fixture(configOverride: Partial<typeof config> = {}) {
   const database = await createTestDatabase();
   const migrations = await createMigrationsCopy();
   await runMigrations(database.pool, migrations.directory);
   let now = new Date('2026-10-06T12:00:00.000Z');
-  const app = buildApp(config, new Pool({ connectionString: database.databaseUrl }), undefined, { now: () => now });
+  const app = buildApp({ ...config, ...configOverride }, new Pool({ connectionString: database.databaseUrl }), undefined, { now: () => now });
   return { database, migrations, app, advance: (milliseconds: number) => { now = new Date(now.getTime() + milliseconds); } };
 }
 async function setup(subject: Fixture, username = 'admin') {
@@ -75,11 +75,51 @@ describe('local authentication API', () => {
     const aliceLogin = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'a long enough password' } });
     expect(aliceLogin.json().passwordChangeRequired).toBe(true);
     const aliceCookie = aliceLogin.headers['set-cookie'] as string; const aliceCsrf = aliceLogin.json().csrfToken as string;
+    expect((await subject.app.inject({ url: '/api/v1/users', headers: { cookie: aliceCookie } })).statusCode).toBe(403);
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(aliceCookie, aliceCsrf), payload: { username: 'bypass', displayName: 'Bypass', initialPassword: adminPassword } })).json().error.code).toBe('PASSWORD_CHANGE_REQUIRED');
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(aliceCookie, aliceCsrf), payload: { currentPassword: 'a long enough password', newPassword: 'different long enough password' } })).statusCode).toBe(204);
     const users = await subject.app.inject({ url: '/api/v1/users', headers: { cookie: aliceCookie } });
     expect(users.json().users.map((user: { id: string }) => user.id)).toEqual([aliceId]);
-    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(aliceCookie, aliceCsrf), payload: { currentPassword: 'a long enough password', newPassword: 'different long enough password' } })).statusCode).toBe(204);
     const audit = await subject.database.pool.query('SELECT action, details FROM audit_events ORDER BY occurred_at');
     expect(audit.rows.map((row) => row.action)).toEqual(expect.arrayContaining(['auth.setup', 'user.create', 'auth.login', 'auth.change_password']));
     expect(JSON.stringify(audit.rows.map((row) => row.details))).not.toContain('different long enough password');
+  });
+
+  it('requires the configured setup token, applies secure cookies, and rejects an invalid CSRF origin', async () => {
+    const subject = await fixture({ setupToken: 'test-setup-token', cookieSecure: true }); fixtures.push(subject);
+    const denied = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/setup', payload: { username: 'admin', displayName: 'Admin', password: adminPassword } });
+    expect(denied.statusCode).toBe(403);
+    const response = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/setup', payload: { username: 'admin', displayName: 'Admin', password: adminPassword, setupToken: 'test-setup-token' } });
+    expect(response.statusCode).toBe(201);
+    const admin = { cookie: response.headers['set-cookie'] as string, csrf: response.json().csrfToken as string };
+    expect(admin.cookie).toContain('Secure');
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: { ...headers(admin.cookie, admin.csrf), origin: 'https://attacker.example' } })).statusCode).toBe(403);
+  });
+
+  it('honors absolute expiry, audits rejected logins, revokes another blocked user, and denies cross-user lookup', async () => {
+    const subject = await fixture(); fixtures.push(subject);
+    const admin = await setup(subject);
+    const created = await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(admin.cookie, admin.csrf), payload: { username: 'alice', displayName: 'Alice', initialPassword: 'a long enough password', role: 'user' } });
+    const aliceId = created.json().user.id as string;
+    const bob = await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(admin.cookie, admin.csrf), payload: { username: 'bobby', displayName: 'Bob', initialPassword: 'another long password', role: 'user' } });
+    const bobId = bob.json().user.id as string;
+    const aliceLogin = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'a long enough password' } });
+    const aliceCookie = aliceLogin.headers['set-cookie'] as string; const aliceCsrf = aliceLogin.json().csrfToken as string;
+    await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(aliceCookie, aliceCsrf), payload: { currentPassword: 'a long enough password', newPassword: 'different long enough password' } });
+    expect((await subject.app.inject({ url: `/api/v1/users/${bobId}`, headers: { cookie: aliceCookie } })).statusCode).toBe(403);
+    const bobLogin = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'bobby', password: 'another long password' } });
+    const bobCookie = bobLogin.headers['set-cookie'] as string;
+    expect((await subject.app.inject({ method: 'PATCH', url: `/api/v1/users/${bobId}`, headers: headers(admin.cookie, admin.csrf), payload: { status: 'blocked' } })).statusCode).toBe(204);
+    expect((await subject.app.inject({ url: '/api/v1/users', headers: { cookie: bobCookie } })).statusCode).toBe(401);
+    for (let hour = 0; hour < 6; hour += 1) { subject.advance(2 * 60 * 60 * 1000 - 1); expect((await subject.app.inject({ url: '/api/v1/users', headers: { cookie: admin.cookie } })).statusCode).toBe(200); }
+    subject.advance(7);
+    expect((await subject.app.inject({ url: '/api/v1/users', headers: { cookie: admin.cookie } })).statusCode).toBe(401);
+    const rejected = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'nobody', password: adminPassword } });
+    expect(rejected.statusCode).toBe(401);
+    const audit = await subject.database.pool.query("SELECT action,outcome,target_id,details FROM audit_events WHERE action='auth.login_failed'");
+    expect(audit.rows).toHaveLength(1);
+    expect(JSON.stringify(audit.rows)).not.toContain(adminPassword);
+    expect(JSON.stringify(audit.rows)).not.toContain('kura_session');
+    expect(aliceId).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
