@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "packages/contracts" },
+    { "path": "packages/domain" },
+    { "path": "packages/storage" }
+  ]
+}

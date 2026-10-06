@@ -13,5 +13,6 @@ playwright-report/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.tsbuildinfo
 /data/
 /media/

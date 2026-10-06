@@ -1,0 +1,8 @@
+{
+  "name": "@kura/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "typecheck": "tsc --noEmit", "build": "tsc -b", "start": "node dist/index.js" },
+  "dependencies": { "@kura/contracts": "workspace:*", "fastify": "5.12.5", "pg": "8.23.1" }
+}
