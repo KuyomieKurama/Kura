@@ -1,5 +1,6 @@
 export interface ApiConfig {
   databaseUrl: string;
+  host: string;
   port: number;
   trustProxy: boolean | string[];
 }
@@ -10,7 +11,7 @@ function required(name: string, value: string | undefined): string {
 }
 
 function parsePort(value: string | undefined): number {
-  const port = Number(value ?? '3000');
+  const port = Number(value ?? '8080');
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error('PORT must be an integer between 1 and 65535');
   }
@@ -36,6 +37,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
 
   return {
     databaseUrl,
+    host: environment.HOST ?? '127.0.0.1',
     port: parsePort(environment.PORT),
     trustProxy: parseTrustProxy(environment.TRUST_PROXY)
   };

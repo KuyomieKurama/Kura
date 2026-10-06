@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint . --max-warnings=0",
-    "test": "vitest run",
+    "test": "pnpm --filter @kura/web build && vitest run",
     "build": "pnpm -r build",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "migrate": "pnpm --filter @kura/storage migrate"

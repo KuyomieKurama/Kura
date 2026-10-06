@@ -37,6 +37,8 @@ async function loadMigrations(migrationsDirectory: string): Promise<MigrationFil
 export async function runMigrations(pool: Pool, migrationsDirectory: string): Promise<void> {
   const client = await pool.connect();
   let lockAcquired = false;
+  let completed: boolean | undefined;
+  let unlockError: unknown;
   try {
     await client.query('SELECT pg_advisory_lock($1::bigint)', [MIGRATION_ADVISORY_LOCK_KEY]);
     lockAcquired = true;
@@ -61,20 +63,29 @@ export async function runMigrations(pool: Pool, migrationsDirectory: string): Pr
       }
 
       try {
-      await client.query('BEGIN');
-      await client.query(migration.sql);
-      await client.query(
-        'INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)',
-        [migration.version, migration.checksum]
-      );
-      await client.query('COMMIT');
+        await client.query('BEGIN');
+        await client.query(migration.sql);
+        await client.query(
+          'INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)',
+          [migration.version, migration.checksum]
+        );
+        await client.query('COMMIT');
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
       }
     }
+    completed = true;
   } finally {
-    if (lockAcquired) await client.query('SELECT pg_advisory_unlock($1::bigint)', [MIGRATION_ADVISORY_LOCK_KEY]);
-    client.release();
+    let releaseWithError = false;
+    try {
+      if (lockAcquired) await client.query('SELECT pg_advisory_unlock($1::bigint)', [MIGRATION_ADVISORY_LOCK_KEY]);
+    } catch (error) {
+      releaseWithError = true;
+      unlockError = error;
+    } finally {
+      client.release(releaseWithError);
+    }
   }
+  if (unlockError && completed) throw unlockError;
 }

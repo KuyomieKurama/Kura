@@ -1,0 +1,22 @@
+FROM docker.io/library/node:22-trixie-slim AS build
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
+COPY apps ./apps
+COPY packages ./packages
+COPY migrations ./migrations
+RUN corepack enable && pnpm install --frozen-lockfile && pnpm --filter @kura/web build && pnpm --filter @kura/api build
+
+FROM docker.io/library/node:22-trixie-slim
+WORKDIR /app
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
+RUN groupadd --system kura && useradd --system --gid kura --home-dir /app kura
+COPY --from=build --chown=kura:kura /app/apps/api/dist ./apps/api/dist
+COPY --from=build --chown=kura:kura /app/apps/web/dist ./apps/web/dist
+COPY --from=build --chown=kura:kura /app/node_modules ./node_modules
+COPY --from=build --chown=kura:kura /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=build --chown=kura:kura /app/packages ./packages
+COPY --from=build --chown=kura:kura /app/migrations ./migrations
+USER kura
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s CMD node -e "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/api/dist/index.js"]
