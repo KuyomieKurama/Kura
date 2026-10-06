@@ -23,3 +23,102 @@ Offene Fragen:
 - The coordinator should provide or restore D-004 through D-009 if they are intended to constrain M1-A implementation.
 
 Nächster Schritt: Review the `m1-core` commits, then merge the branch or release the dependent M1 work.
+
+## Runde 2
+
+Aufgabe / Status: Reviewmängel aus M1-A Runde 2 umgesetzt / Artefakte: advisory-lock-geschützter Migrationsrunner, Parallelitätstest, Podman-Entwicklungsanleitung / Zusammenfassung: `runMigrations` reserviert auf einer dedizierten PostgreSQL-Verbindung vor allen Datenbankprüfungen den benannten festen Advisory-Lock `MIGRATION_ADVISORY_LOCK_KEY` mit `pg_advisory_lock`. Die Verbindung wird erst nach `pg_advisory_unlock` freigegeben, auch bei Fehlern. Der neue Integrationstest startet zwei Runner gleichzeitig gegen dieselbe leere Testdatenbank und bestätigt genau einen Eintrag je Migration. `docs/dev-setup.md` verwendet jetzt ausschließlich den angeforderten Podman-Container, ein DATABASE_URL-Platzhalterbeispiel und den D-010-Sandbox-Hinweis.
+
+Prüfung (ausgeführt):
+- `git diff --check && corepack pnpm exec eslint packages/storage/src/migrator.ts tests/integration/migrations.test.ts`
+  Ausgabe: leer; Exit-Code 0.
+- `for run in 1 2 3; do printf '\n=== migration concurrency test run %s ===\n' "$run"; corepack pnpm exec vitest run tests/integration/migrations.test.ts || exit $?; done`
+  Ausgabe:
+  ```text
+  === migration concurrency test run 1 ===
+
+   RUN  v5.0.3 /work/Downloader
+
+
+   Test Files  1 passed (1)
+        Tests  3 passed (3)
+     Start at  18:13:46
+     Duration  291ms (tests 77%, transform 11%, import 10%, worker 2%)
+
+
+  === migration concurrency test run 2 ===
+
+   RUN  v5.0.3 /work/Downloader
+
+
+   Test Files  1 passed (1)
+        Tests  3 passed (3)
+     Start at  18:13:46
+     Duration  278ms (tests 75%, transform 14%, import 11%, worker 1%)
+
+
+  === migration concurrency test run 3 ===
+
+   RUN  v5.0.3 /work/Downloader
+
+
+   Test Files  1 passed (1)
+        Tests  3 passed (3)
+     Start at  18:13:47
+     Duration  302ms (tests 75%, transform 12%, import 11%, worker 2%)
+  ```
+- `corepack pnpm check`
+  Ausgabe:
+  ```text
+  $ pnpm typecheck && pnpm lint && pnpm test && pnpm build
+  $ pnpm -r typecheck
+  Scope: 5 of 6 workspace projects
+  packages/contracts typecheck$ tsc --noEmit
+  packages/domain typecheck$ tsc --noEmit
+  packages/storage typecheck$ tsc --noEmit
+  packages/contracts typecheck: Done
+  apps/api typecheck$ tsc --noEmit
+  apps/worker typecheck$ tsc --noEmit
+  packages/domain typecheck: Done
+  packages/storage typecheck: Done
+  apps/worker typecheck: Done
+  apps/api typecheck: Done
+  $ eslint . --max-warnings=0
+  $ vitest run
+
+   RUN  v5.0.3 /work/Downloader
+
+   Test Files  2 passed (2)
+        Tests  5 passed (5)
+     Start at  18:13:55
+     Duration  327ms (tests 72%, import 18%, transform 8%, worker 2%)
+
+  $ pnpm -r build
+  Scope: 5 of 6 workspace projects
+  packages/contracts build$ tsc -b
+  packages/storage build$ tsc -b
+  packages/domain build$ tsc -b
+  packages/contracts build: Done
+  apps/api build$ tsc -b
+  apps/worker build$ tsc -b
+  packages/domain build: Done
+  packages/storage build: Done
+  apps/worker build: Done
+  apps/api build: Done
+  ```
+- `corepack pnpm audit --audit-level=high`
+  Ausgabe:
+  ```text
+  1 vulnerabilities found
+  Severity: 1 low
+  ```
+  Exit-Code: 0.
+
+Annahmen:
+- Die von der Karte genannte Anforderung `REQ-DL-002` hat den verifizierten SHA-256-Präfix `5d6398de6dbb5063`; die lokale Datei enthält nur den Auftraggebertext, die konkreten Runde-2-Abnahmekriterien stammen daher aus der Kanban-Karte.
+- Die Container- und Volume-Befehle in `docs/dev-setup.md` wurden nicht ausgeführt, weil die Sandbox-Umgebung laut D-010 vom Orchestrator verwaltet wird. Die vorhandene PostgreSQL-Instanz auf `127.0.0.1:5432` führte alle Integrationstests aus.
+
+Risiken / Rückweg:
+- Der Advisory-Lock serialisiert Migrationsstarts für die Dauer jedes Laufs; ein hängen gebliebener Client hält ihn nur bis zum Verlust seiner PostgreSQL-Sitzung. Rückweg: diesen Commit revertieren; dadurch kehrt das frühere parallele Verhalten zurück.
+- Die Dokumentationsänderung überschreibt keine Container- oder Datenbankdaten. Ein bereits vorhandener Container namens `kura-postgres` muss vor dem Podman-Start bewusst behandelt werden.
+
+Offene Fragen: Keine innerhalb des Auftragsumfangs.

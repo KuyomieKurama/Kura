@@ -9,34 +9,34 @@ corepack install
 pnpm --version
 ```
 
-Install PostgreSQL and its client tools on Debian/Ubuntu-like hosts:
+Create a named Podman volume and start the local PostgreSQL container:
 
 ```sh
-sudo apt update
-sudo apt install postgresql postgresql-client
+podman volume create kura-pgdata
+podman run -d --name kura-postgres \
+  -v kura-pgdata:/var/lib/postgresql/data \
+  -e POSTGRES_USER=kura_dev \
+  -e POSTGRES_PASSWORD=kura_dev \
+  -e POSTGRES_DB=kura_dev \
+  -p 127.0.0.1:5432:5432 \
+  docker.io/library/postgres:17-trixie
 ```
 
-The distribution starts the server under the dedicated non-root `postgres` account. For a local-only development cluster, keep PostgreSQL bound to loopback only. On Debian, start and verify the cluster with:
+`kura_dev` is a disposable development-only example password. Choose a unique local password outside this example and substitute it consistently in the command and `DATABASE_URL`. The loopback binding keeps the database local to the host.
+
+The agent sandbox is managed by the orchestrator. Its container shares the sandbox network namespace, so PostgreSQL is reachable there at `127.0.0.1:5432`; see D-010. Verify readiness with:
 
 ```sh
-sudo pg_ctlcluster 17 main start
 pg_isready -h 127.0.0.1 -p 5432
 ```
 
-Create an unprivileged development role and database. Choose a unique password locally; do not reuse the example value below in a shared environment.
-
-```sh
-sudo -u postgres createuser --pwprompt --createdb kura_dev
-sudo -u postgres createdb --owner=kura_dev kura_dev
-```
-
-`CREATEDB` is required only because the integration tests create and drop isolated disposable databases. Do not grant it to a production application role.
+The development role needs `CREATEDB` because the integration tests create and drop isolated disposable databases. Do not grant it to a production application role.
 
 ## Install and verify
 
 ```sh
 pnpm install --frozen-lockfile
-export DATABASE_URL='postgres://kura_dev:replace-this@127.0.0.1:5432/kura_dev'
+export DATABASE_URL='postgres://<user>:<password>@127.0.0.1:5432/<database>'
 pnpm migrate
 pnpm check
 ```

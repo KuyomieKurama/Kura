@@ -21,6 +21,25 @@ describe('PostgreSQL migrations', () => {
     }
   });
 
+  it('serializes concurrent runners against the same empty database', async () => {
+    const database = await createTestDatabase();
+    const migrations = await createMigrationsCopy();
+    try {
+      await expect(Promise.all([
+        runMigrations(database.pool, migrations.directory),
+        runMigrations(database.pool, migrations.directory)
+      ])).resolves.toEqual([undefined, undefined]);
+
+      const applied = await database.pool.query<{ version: string }>(
+        'SELECT version FROM schema_migrations ORDER BY version'
+      );
+      expect(applied.rows).toEqual([{ version: '0001_core' }]);
+    } finally {
+      await migrations.cleanup();
+      await database.cleanup();
+    }
+  });
+
   it('keeps distinct issuer subjects separate even when email is the same', async () => {
     const database = await createTestDatabase();
     const migrations = await createMigrationsCopy();

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { Pool } from 'pg';
 
 const migrationFilePattern = /^(\d+_[a-z0-9_]+)\.sql$/;
+const MIGRATION_ADVISORY_LOCK_KEY = 724311648;
 
 export class MigrationChecksumError extends Error {
   constructor(version: string) {
@@ -34,27 +35,32 @@ async function loadMigrations(migrationsDirectory: string): Promise<MigrationFil
 }
 
 export async function runMigrations(pool: Pool, migrationsDirectory: string): Promise<void> {
-  await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
-    version text PRIMARY KEY,
-    checksum text NOT NULL,
-    applied_at timestamptz NOT NULL DEFAULT now()
-  )`);
+  const client = await pool.connect();
+  let lockAcquired = false;
+  try {
+    await client.query('SELECT pg_advisory_lock($1::bigint)', [MIGRATION_ADVISORY_LOCK_KEY]);
+    lockAcquired = true;
 
-  const migrations = await loadMigrations(migrationsDirectory);
-  const appliedResult = await pool.query<{ version: string; checksum: string }>(
-    'SELECT version, checksum FROM schema_migrations ORDER BY version'
-  );
-  const applied = new Map(appliedResult.rows.map((row) => [row.version, row.checksum]));
+    await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+      version text PRIMARY KEY,
+      checksum text NOT NULL,
+      applied_at timestamptz NOT NULL DEFAULT now()
+    )`);
 
-  for (const migration of migrations) {
-    const knownChecksum = applied.get(migration.version);
-    if (knownChecksum !== undefined) {
-      if (knownChecksum !== migration.checksum) throw new MigrationChecksumError(migration.version);
-      continue;
-    }
+    const migrations = await loadMigrations(migrationsDirectory);
+    const appliedResult = await client.query<{ version: string; checksum: string }>(
+      'SELECT version, checksum FROM schema_migrations ORDER BY version'
+    );
+    const applied = new Map(appliedResult.rows.map((row) => [row.version, row.checksum]));
 
-    const client = await pool.connect();
-    try {
+    for (const migration of migrations) {
+      const knownChecksum = applied.get(migration.version);
+      if (knownChecksum !== undefined) {
+        if (knownChecksum !== migration.checksum) throw new MigrationChecksumError(migration.version);
+        continue;
+      }
+
+      try {
       await client.query('BEGIN');
       await client.query(migration.sql);
       await client.query(
@@ -62,11 +68,13 @@ export async function runMigrations(pool: Pool, migrationsDirectory: string): Pr
         [migration.version, migration.checksum]
       );
       await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
     }
+  } finally {
+    if (lockAcquired) await client.query('SELECT pg_advisory_unlock($1::bigint)', [MIGRATION_ADVISORY_LOCK_KEY]);
+    client.release();
   }
 }
