@@ -34,18 +34,23 @@ export class ImmichClient {
     const suffix = version.prerelease === null || version.prerelease === undefined ? '' : `-rc.${version.prerelease}`;
     return { version: `${version.major}.${version.minor}.${version.patch}${suffix}`, userId: user.id };
   }
-  async upload(object: LocalObject, deviceId: string, deviceAssetId: string): Promise<UploadResult> {
+  /**
+   * v3.2.1 AssetMediaCreateDto documents assetData, fileCreatedAt and
+   * fileModifiedAt. deviceId/deviceAssetId are intentionally not sent: their
+   * requested use is unverified for this evidenced contract (D-004).
+   */
+  async upload(object: LocalObject): Promise<UploadResult> {
     const boundary = `----kura-${randomUUID()}`;
-    const body = multipartStream(boundary, object, deviceId, deviceAssetId);
+    const body = multipartStream(boundary, object);
     const result = await (await this.request('assets', {
       method: 'POST',
       headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
       body,
       // Node fetch requires duplex for a ReadableStream request body.
       duplex: 'half'
-    } as RequestInit & { duplex: 'half' })).json() as { id?: string; duplicate?: boolean };
-    if (!result.id) throw new Error('Immich upload response had no asset id');
-    return { assetId: result.id, duplicate: result.duplicate === true };
+    } as RequestInit & { duplex: 'half' })).json() as { id?: string; status?: unknown };
+    if (!result.id || (result.status !== 'created' && result.status !== 'duplicate')) throw new Error('Immich upload response had an invalid id or status');
+    return { assetId: result.id, duplicate: result.status === 'duplicate' };
   }
   async findDuplicate(sha1: string, clientId = 'kura-reconcile'): Promise<string | undefined> {
     const result = await (await this.request('assets/bulk-upload-check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assets: [{ id: clientId, checksum: sha1 }] }) })).json() as { results?: Array<{ id?: string; assetId?: string }> };
@@ -79,7 +84,7 @@ function toTransferRecord(row: TransferRecord): TransferRecord {
 
 export class TransferService {
   constructor(private readonly transfers: TransferRepository, private readonly client: ImmichClient) {}
-  async run(id: string, object: LocalObject, expectedAccountId: string, deviceId: string, connectionGeneration: number): Promise<TransferRecord> {
+  async run(id: string, object: LocalObject, expectedAccountId: string, connectionGeneration: number): Promise<TransferRecord> {
     const transfer = await this.transfers.get(id); if (!transfer) throw new Error('Transfer not found');
     if (transfer.status === 'verified' || transfer.status === 'mismatch') return transfer;
     const connection = await this.client.connectionTest();
@@ -87,7 +92,7 @@ export class TransferService {
     let assetId = transfer.immichAssetId;
     if (!assetId) {
       await this.transfers.transition(id, ['pending', 'failed', 'reconciling', 'uploading'], 'uploading');
-      try { assetId = (await this.client.upload(object, deviceId, id)).assetId; }
+      try { assetId = (await this.client.upload(object)).assetId; }
       catch (error) {
         const duplicate = object.sha1 ? await this.client.findDuplicate(object.sha1, id).catch(() => undefined) : undefined;
         if (!duplicate) return this.transfers.transition(id, ['uploading'], 'reconciling', { error: safeError(error) });
@@ -108,10 +113,10 @@ export function decideLocalDeletion(input: CleanupDecisionInput): CleanupDecisio
   const reasons = checks.filter(([ok]) => !ok).map(([, reason]) => reason); return { allowed: reasons.length === 0, reasons };
 }
 
-function multipartStream(boundary: string, object: LocalObject, deviceId: string, deviceAssetId: string): ReadableStream<Uint8Array> {
+function multipartStream(boundary: string, object: LocalObject): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const field = (name: string, value: string) => `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
-  const prefix = `${field('deviceId', deviceId)}${field('deviceAssetId', deviceAssetId)}${field('fileCreatedAt', object.createdAt.toISOString())}${field('fileModifiedAt', object.modifiedAt.toISOString())}--${boundary}\r\nContent-Disposition: form-data; name="assetData"; filename="${object.fileName.replaceAll('"', '')}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+  const prefix = `${field('fileCreatedAt', object.createdAt.toISOString())}${field('fileModifiedAt', object.modifiedAt.toISOString())}--${boundary}\r\nContent-Disposition: form-data; name="assetData"; filename="${object.fileName.replaceAll('"', '')}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
   const iterator = object.bytes[Symbol.asyncIterator](); let stage = 0;
   return new ReadableStream<Uint8Array>({ async pull(controller) {
     if (stage === 0) { stage = 1; controller.enqueue(encoder.encode(prefix)); return; }

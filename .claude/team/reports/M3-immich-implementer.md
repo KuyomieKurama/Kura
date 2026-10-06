@@ -1,17 +1,19 @@
 Aufgabe
-M3 Immich-Client mit Originalnachweis für REQ-DL-003 (Hash b83be904af3eded5), Reviewrunde 2.
+M3 Immich-Client mit Originalnachweis für REQ-DL-003 (Hash b83be904af3eded5), Reviewrunde 3.
 
 Status
-braucht Review: Alle vier angeforderten Nacharbeiten sind umgesetzt, mit lokalem Fake und PostgreSQL geprüft und committed.
+braucht Review: Der v3.2.1-Upload-/Dublettenvertrag ist nach der zweiten Reviewrunde korrigiert und vollständig geprüft.
 
 Artefakte
-- packages/immich-client/src/index.ts: fetch-basierter, typisierter Client; SecretResolver-Port für secret://immich/<verbindung>; begrenzt gestreamter Multipart-Upload mit Node-duplex=half, Verbindungstest, Dublettenabgleich, Asset-Metadaten/Original-Readback, Album- und Bulk-Delete-Operationen; persistierte Transfer-Zustandsmaschine und Cleanup-Entscheidung.
+- packages/immich-client/src/index.ts: fetch-basierter, typisierter Client; SecretResolver-Port für secret://immich/<verbindung>; begrenzt gestreamter Multipart-Upload mit Node-duplex=half, dokumentierter v3.2.1-`status`-Auswertung (`created|duplicate`), Verbindungstest, Dublettenabgleich, Asset-Metadaten/Original-Readback, Album- und Bulk-Delete-Operationen; persistierte Transfer-Zustandsmaschine und Cleanup-Entscheidung.
 - migrations/0030_immich_transfers.sql: immich_transfers einschließlich atomar geschriebenem Prüfbeleg (Serverversion, Zielkonto, Verbindungsgeneration) sowie immich_cleanup_intents.
 - tests/immich/client.test.ts: lokaler Node-HTTP-Fake und sieben Tests für Streaming, Erfolg/Beleg, Mismatch/falsches Konto, unklare Antwort, explizite Dublette, abgeschnittenen Upload, langsame Antwort, Cleanup und Geheimnisfreiheit.
 - Commits: 71a421b feat: add immich transfer client; f4c338c fix: satisfy immich client lint; 702a3f3 fix: stream immich uploads and persist evidence.
 
 Zusammenfassung
-Der Upload verwendet keinen Blob und keine Vollpufferung mehr: ein ReadableStream erzeugt Multipart-Präambel, Originalbytes und Abschluss sequenziell; Node fetch erhält dafür duplex=half. Der Streaming-Test hält den zweiten Quellchunk zurück, bis der Fake den ersten Netzchunk empfangen hat; damit wäre das vorherige vollständige collect()-Verhalten blockiert.
+Der Upload verwendet keinen Blob und keine Vollpufferung mehr: ein ReadableStream erzeugt Multipart-Präambel, Originalbytes und Abschluss sequenziell; Node fetch erhält dafür duplex=half. Der Streaming-Test hält den zweiten Quellchunk zurück, bis der Fake den ersten Netzchunk empfangen hat; damit wäre das vorherige vollständige collect()-Verhalten blockiert. Der belegte `AssetMediaResponseDto` wird strikt als `{ id, status }` gelesen; nur `status: created|duplicate` ist gültig, und `duplicate` ergibt sich ausschließlich aus `status === 'duplicate'`.
+
+`deviceId` und `deviceAssetId` sind in der v3.2.1-OpenAPI nicht Teil von `AssetMediaCreateDto`. Sie werden daher trotz der allgemeinen REQ-Nennung nicht mehr gesendet und sind im Code als ungesichert bis zum echten Vertragstest markiert. Der Fake simuliert ausschließlich den belegten DTO-Vertrag.
 
 Vor Upload und Verifikation liest der Client die Zielidentität und Serverversion. Nach vollständigem Original-Readback schreibt der einzige UPDATE-Übergang zu verified Status, Prüfzeit, Version, Konto und Verbindungsgeneration gemeinsam. Ein Kontowechsel endet in mismatch; ein Wechsel der Verbindungsgeneration wird durch die Cleanup-Entscheidung verweigert. Ohne abgefragtes ownerId bleibt die Kontozuordnung weiterhin nicht belegbar und Cleanup muss gesperrt bleiben.
 
