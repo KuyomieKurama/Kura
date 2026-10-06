@@ -10,3 +10,4 @@
 - R-08: Echte IdP-Verträge (Authentik, Keycloak) sind bis zum Test durch den Auftraggeber unbelegt; Fake-Anbieter können Abweichungen der echten Produkte nicht aufdecken (D-011).
 - R-09: Die VM liegt im selben LAN (192.168.30.0/24) wie der Hermes-Host; es gibt keine Egress-Sperre für yt-dlp/gallery-dl (D-008, T20). Vor M5 braucht die VM eigenes VLAN oder nftables-Regeln auf der VM.
 - R-10: `pnpm install --frozen-lockfile` in frischer Umgebung meldet ERR_PNPM_IGNORED_BUILDS (esbuild@0.27.7). `pnpm check` läuft trotzdem grün. Offen: Build-Skript-Freigabe in pnpm-workspace.yaml explizit setzen (Orchestrator-Datei), sonst scheitert ein frischer Setup oder CI womöglich am Exit-Code.
+- R-11: Teststand auf 192.168.30.101:8080 läuft ohne TLS im LAN. Solange es nur Fakedaten und noch keine Anmeldung gibt, ist das vertretbar; sobald M1-B/M1-C echte Anmeldung bringt, TLS-Proxy (Caddy) vorschalten oder den Zugang auf vertrauenswürdige Adressen beschränken.
