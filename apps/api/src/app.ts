@@ -67,6 +67,11 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     if (!session || request.headers['x-kura-csrf'] !== session.csrf) return reply.code(403).send(error('CSRF_REJECTED', 'CSRF-Token fehlt oder ist ungültig.'));
     (request as AuthRequest).session = session;
   });
+  app.addHook('onResponse', async (request, reply) => {
+    if (request.method === 'GET' || !request.url.startsWith('/api/v1/') || request.url.startsWith('/api/v1/auth/login') || reply.statusCode < 400) return;
+    const session = (request as AuthRequest).session;
+    await audit(pool, session?.userId ?? null, `${request.method.toLowerCase()}.rejected`, request.routeOptions.url ?? request.url.split('?')[0], clientAddress(request), 'failure');
+  });
   async function getSession(request: FastifyRequest): Promise<Session | undefined> {
     const token = request.cookies.kura_session; if (!token) return undefined;
     const hash = await sessionHash(token);
@@ -92,7 +97,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     reply.setCookie('kura_session', token, { ...cookieOptions(config), maxAge: SESSION_ABSOLUTE_MS / 1000 }); return csrf;
   }
   async function failedLogin(subject: string, source: string, action = 'auth.login_failed') {
-    const recordFailure = (attemptSubject: string, attemptSource: string) => pool.query("INSERT INTO login_attempts (subject,source_address,failed_count,locked_until) VALUES ($1,$2,1,NULL) ON CONFLICT (subject,source_address) DO UPDATE SET failed_count=login_attempts.failed_count+1, locked_until=CASE WHEN login_attempts.failed_count+1 >= 5 THEN now() + make_interval(secs => LEAST(900, 30 * power(2, login_attempts.failed_count - 4)::int)) ELSE NULL END, updated_at=now()", [attemptSubject, attemptSource]);
+    const recordFailure = (attemptSubject: string, attemptSource: string) => pool.query("INSERT INTO login_attempts (subject,source_address,failed_count,locked_until) VALUES ($1,$2,1,NULL) ON CONFLICT (subject,source_address) DO UPDATE SET failed_count=login_attempts.failed_count+1, locked_until=CASE WHEN login_attempts.failed_count+1 >= 5 THEN $3::timestamptz + make_interval(secs => LEAST(900, 30 * power(2, login_attempts.failed_count - 4)::int)) ELSE NULL END, updated_at=$3::timestamptz", [attemptSubject, attemptSource, clock.now()]);
     await Promise.all([recordFailure(subject, '*'), recordFailure('*', source)]);
     await audit(pool, null, action, `login:${subject || 'invalid'}`, source, 'failure');
   }

@@ -14,7 +14,7 @@ async function fixture(configOverride: Partial<typeof config> = {}) {
   await runMigrations(database.pool, migrations.directory);
   let now = new Date('2026-10-06T12:00:00.000Z');
   const app = buildApp({ ...config, ...configOverride }, new Pool({ connectionString: database.databaseUrl }), undefined, { now: () => now });
-  return { database, migrations, app, advance: (milliseconds: number) => { now = new Date(now.getTime() + milliseconds); } };
+  return { database, migrations, app, advance: (milliseconds: number) => { now = new Date(now.getTime() + milliseconds); return now; } };
 }
 async function setup(subject: Fixture, username = 'admin') {
   const response = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/setup', payload: { username, displayName: 'Admin', password: adminPassword } });
@@ -145,5 +145,57 @@ describe('local authentication API', () => {
     const aliceCookie = aliceLogin.headers['set-cookie'] as string; const aliceCsrf = aliceLogin.json().csrfToken as string;
     await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(aliceCookie, aliceCsrf), payload: { currentPassword: 'a long enough password', newPassword: 'different long enough password' } });
     expect((await subject.app.inject({ method: 'PATCH', url: `/api/v1/users/${aliceId}`, headers: headers(aliceCookie, aliceCsrf), payload: { status: 'blocked' } })).statusCode).toBe(403);
+  });
+
+  it('revokes other sessions after a password change while preserving the current session', async () => {
+    const subject = await fixture(); fixtures.push(subject);
+    const admin = await setup(subject);
+    const created = await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(admin.cookie, admin.csrf), payload: { username: 'alice', displayName: 'Alice', initialPassword: 'a long enough password', role: 'user' } });
+    expect(created.statusCode).toBe(201);
+    const initial = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'a long enough password' } });
+    await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(initial.headers['set-cookie'] as string, initial.json().csrfToken as string), payload: { currentPassword: 'a long enough password', newPassword: 'different long enough password' } });
+    const current = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'different long enough password' } });
+    const other = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'different long enough password' } });
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(current.headers['set-cookie'] as string, current.json().csrfToken as string), payload: { currentPassword: 'different long enough password', newPassword: 'a third long password value' } })).statusCode).toBe(204);
+    expect((await subject.app.inject({ url: '/api/v1/users', headers: { cookie: current.headers['set-cookie'] as string } })).statusCode).toBe(200);
+    expect((await subject.app.inject({ url: '/api/v1/users', headers: { cookie: other.headers['set-cookie'] as string } })).statusCode).toBe(401);
+  });
+
+  it('throttles username and source buckets independently with clock-controlled increasing windows', async () => {
+    const subject = await fixture({ trustProxy: true }); fixtures.push(subject);
+    await setup(subject, 'alice');
+    const login = (username: string, password: string, source: string) => subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', headers: { 'x-forwarded-for': source }, payload: { username, password } });
+    for (let index = 0; index < 5; index += 1) await login('alice', 'wrong password value', `203.0.113.${index + 1}`);
+    const usernameLock = (await subject.database.pool.query("SELECT locked_until FROM login_attempts WHERE subject='alice' AND source_address='*'")).rows[0].locked_until as Date;
+    expect(usernameLock.getTime()).toBe(new Date('2026-10-06T12:00:30.000Z').getTime());
+    expect((await login('alice', adminPassword, '203.0.113.99')).statusCode).toBe(401);
+    subject.advance(30_001);
+    expect((await login('alice', adminPassword, '203.0.113.99')).statusCode).toBe(200);
+    for (let index = 0; index < 5; index += 1) await login(`source${index}`, 'wrong password value', '198.51.100.9');
+    for (const seconds of [30, 60, 120, 240, 480, 900]) {
+      const locked = (await subject.database.pool.query("SELECT locked_until FROM login_attempts WHERE subject='*' AND source_address='198.51.100.9'")).rows[0].locked_until as Date;
+      const now = subject.advance(0);
+      expect(locked.getTime()).toBe(now.getTime() + seconds * 1000);
+      subject.advance(seconds * 1000 + 1);
+      await login(`more${seconds}`, 'wrong password value', '198.51.100.9');
+    }
+  });
+
+  it('audits successful and rejected state changes without recording credentials or sessions', async () => {
+    const subject = await fixture(); fixtures.push(subject);
+    const admin = await setup(subject);
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: { cookie: admin.cookie } })).statusCode).toBe(403);
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: headers(admin.cookie, admin.csrf) })).statusCode).toBe(204);
+    const login = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'admin', password: adminPassword } });
+    const current = { cookie: login.headers['set-cookie'] as string, csrf: login.json().csrfToken as string };
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(current.cookie, current.csrf), payload: {} })).statusCode).toBe(400);
+    const created = await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(current.cookie, current.csrf), payload: { username: 'alice', displayName: 'Alice', initialPassword: 'a long enough password' } });
+    expect((await subject.app.inject({ method: 'PATCH', url: `/api/v1/users/${created.json().user.id as string}`, headers: headers(current.cookie, current.csrf), payload: { status: 'blocked' } })).statusCode).toBe(204);
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(current.cookie, current.csrf), payload: { currentPassword: 'wrong password value', newPassword: 'a third long password value' } })).statusCode).toBe(401);
+    const audit = await subject.database.pool.query('SELECT actor_user_id,action,target_id,outcome,occurred_at,details FROM audit_events ORDER BY occurred_at');
+    expect(audit.rows.map((row) => row.action)).toEqual(expect.arrayContaining(['auth.logout', 'user.update', 'post.rejected']));
+    expect(audit.rows.every((row) => row.outcome && row.occurred_at && row.details.sourceAddress)).toBe(true);
+    expect(JSON.stringify(audit.rows)).not.toContain('wrong password value');
+    expect(JSON.stringify(audit.rows)).not.toContain('kura_session');
   });
 });
