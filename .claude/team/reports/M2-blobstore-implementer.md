@@ -2,7 +2,7 @@ Aufgabe
 M2 Speicherkern als Bibliothek in packages/blobstore (REQ-DL-003, Hash b83be904af3eded5).
 
 Status
-blockiert
+teilweise umgesetzt und verifiziert
 
 Artefakte
 - packages/blobstore/src/index.ts: Storage-Vertrag, Dateisystem-Backend (CAS/Template), PostgreSQL-Chunk-Backend, SHA-256-Streaming, Staging, Quota, Owner-Prüfung, Leser-Leases, zweiphasiges Entfernen und Migration-Port-Skizze.
@@ -18,7 +18,7 @@ Prüfung
 - Ausgeführt: sha256sum docs/requirements/REQ-DL-003.md -> b83be904af3eded58ba81ec92ec4e28a4cde2939609e18b617f15adc27411b08.
 - Ausgeführt: pnpm --filter @kura/blobstore typecheck && pnpm exec eslint packages/blobstore tests/blobstore && pnpm exec vitest run tests/blobstore/blobstore.test.ts -> 3 Tests bestanden.
 - Ausgeführt: pnpm audit --audit-level=high -> kein High/Critical; 2 Befunde (1 low, 1 moderate).
-- Ausgeführt: pnpm check -> fehlgeschlagen: drei fremde Erwartungen in tests/integration/migrations.test.ts und tests/integration/status.test.ts sind nach der verpflichtenden Migration 0020 noch fest auf genau drei Migrationen/0003 eingestellt. Diese Dateien liegen außerhalb meiner verbindlichen Dateihoheit. Teststand vor/nachher: vor der neuen Lane unbekannt; nachher 19 Tests, 16 bestanden, 3 fehlgeschlagen.
+- Ausgeführt: corepack pnpm check -> grün; Typecheck, Lint, Web-Build, Vitest (5 Dateien/19 Tests) und Paket-Build erfolgreich. Teststand vor der Lane unbekannt; nach der Orchestrator-Anpassung der fremden Migrationserwartungen: 19 Tests bestanden.
 - Nicht geprüft: 256-MiB- und optionaler KURA_BIG_FILE_GIB-Test, lokaler Fake-HTTP-Fetch, Symlink-Angriff, Crash zwischen delete_pending und Entfernen sowie vollständige Speicher-Migration. Diese Abnahmepunkte sind noch nicht implementiert.
 
 Annahmen
@@ -27,10 +27,10 @@ Annahmen
 
 Risiken
 - Der Filesystem-Index (Leases/Referenzen) ist pro Prozess und noch nicht persistent. Ein Prozessneustart kann deshalb weder Persistenz noch sichere Mehrprozess-Referenzzählung garantieren.
-- Die vorhandenen Status-/Migrationsintegrationstests müssen vom Besitzer dieser Dateien für eine neue Migration aktualisiert werden; ohne dies kann pnpm check nicht grün sein.
+- Die vollständige Abnahme ist eingeschränkt, weil die oben genannten großen Streaming-, HTTP-Fetch-, Symlink-, Crash- und Mehrprozess-Tests noch nicht implementiert sind.
 
 Offene Fragen
-- Keine Rückfrage gemäß Auftrag. Der Coordinator muss die erlaubte Anpassung der beiden fremden Integrationstests veranlassen oder selbst durchführen.
+- Keine Rückfrage gemäß Auftrag.
 
 Einbindung
 1. Vor Nutzung migrations/0020_blobstore.sql über den bestehenden Runner ausführen.
@@ -39,4 +39,4 @@ Einbindung
 4. Der spätere Direct-HTTP-Adapter muss vor DirectHttpFetchPort.fetch die zentrale Egress-/SSRF-Policy durchsetzen; diese Prüfung gehört gemäß Lane-Auftrag nicht in dieses Paket.
 
 Nächster Schritt
-Coordinator soll die ausstehenden fremden Testanpassungen freigeben/ausführen; danach muss die Lane die fehlenden Abnahmetests und die persistente Mehrprozess-Referenz-/Quotenlogik implementieren.
+Vor der produktiven Einbindung die fehlenden Abnahmetests sowie persistente Mehrprozess-Referenz-/Quotenlogik ergänzen; der aktuelle Bibliotheksstand ist dagegen vollständig baubar und im Gesamtcheck grün.
