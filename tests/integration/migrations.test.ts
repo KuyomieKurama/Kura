@@ -11,7 +11,7 @@ describe('PostgreSQL migrations', () => {
       await runMigrations(database.pool, migrations.directory);
       await runMigrations(database.pool, migrations.directory);
       const applied = await database.pool.query('SELECT version FROM schema_migrations');
-      expect(applied.rows).toEqual([{ version: '0001_core' }]);
+      expect(applied.rows).toEqual([{ version: '0001_core' }, { version: '0002_local_auth' }]);
 
       await alterMigration(migrations.directory);
       await expect(runMigrations(database.pool, migrations.directory)).rejects.toBeInstanceOf(MigrationChecksumError);
@@ -33,7 +33,7 @@ describe('PostgreSQL migrations', () => {
       const applied = await database.pool.query<{ version: string }>(
         'SELECT version FROM schema_migrations ORDER BY version'
       );
-      expect(applied.rows).toEqual([{ version: '0001_core' }]);
+      expect(applied.rows).toEqual([{ version: '0001_core' }, { version: '0002_local_auth' }]);
     } finally {
       await migrations.cleanup();
       await database.cleanup();
