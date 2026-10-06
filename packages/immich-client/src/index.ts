@@ -3,14 +3,14 @@ import type { Pool } from 'pg';
 
 export type TransferStatus = 'pending' | 'uploading' | 'uploaded_unverified' | 'verified' | 'mismatch' | 'failed' | 'reconciling';
 export interface SecretResolver { resolve(reference: `secret://immich/${string}`): Promise<string>; }
-export interface VerificationEvidence { serverVersion: string; targetAccountId: string; connectionGeneration: number; }
+export interface VerificationEvidence { serverVersion: string; targetAccountId: string; connectionGeneration: number; byteLength: number; album: { state: 'none' } | { state: 'assigned'; id: string }; }
 export interface TransferRecord {
-  id: string; userId: string; objectId: string; targetId: string; status: TransferStatus; attempts: number; immichAssetId: string | null; sha256: string; verifiedAt: Date | null; verifiedServerVersion: string | null; verifiedTargetAccountId: string | null; verifiedConnectionGeneration: number | null; error: string | null;
+  id: string; userId: string; objectId: string; targetId: string; status: TransferStatus; attempts: number; immichAssetId: string | null; sha256: string; verifiedAt: Date | null; verifiedServerVersion: string | null; verifiedTargetAccountId: string | null; verifiedConnectionGeneration: number | null; verifiedByteLength: number | null; verifiedAlbumState: 'none' | 'assigned' | null; verifiedAlbumId: string | null; error: string | null;
 }
 export interface LocalObject { bytes: AsyncIterable<Uint8Array>; sha256: string; byteLength: number; fileName: string; createdAt: Date; modifiedAt: Date; sha1?: string; }
 export interface ImmichAsset { id: string; ownerId?: string; fileCreatedAt?: string; }
 export interface UploadResult { assetId: string; duplicate: boolean; }
-export interface CleanupDecisionInput { verified: boolean; correctAccount: boolean; historyCommitted: boolean; validApproval: boolean; graceElapsed: boolean; noReference: boolean; configGenerationMatches: boolean; albumComplete: boolean; }
+export interface CleanupDecisionInput { transfer: TransferRecord; currentConnectionGeneration: number; supportedServerVersions: readonly string[]; expectedByteLength: number; historyCommitted: boolean; validApproval: boolean; graceElapsed: boolean; noReference: boolean; }
 export interface CleanupDecision { allowed: boolean; reasons: string[]; }
 
 /**
@@ -64,27 +64,27 @@ export class ImmichClient {
   async deleteAsset(assetId: string): Promise<void> { await this.request('assets', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: [assetId] }) }); }
 }
 
-const recordColumns = 'id,user_id AS "userId",object_id AS "objectId",target_id AS "targetId",status,attempts,immich_asset_id AS "immichAssetId",own_sha256 AS sha256,verified_at AS "verifiedAt",verified_server_version AS "verifiedServerVersion",verified_target_account_id AS "verifiedTargetAccountId",verified_connection_generation AS "verifiedConnectionGeneration",error';
+const recordColumns = 'id,user_id AS "userId",object_id AS "objectId",target_id AS "targetId",status,attempts,immich_asset_id AS "immichAssetId",own_sha256 AS sha256,verified_at AS "verifiedAt",verified_server_version AS "verifiedServerVersion",verified_target_account_id AS "verifiedTargetAccountId",verified_connection_generation AS "verifiedConnectionGeneration",verified_byte_size AS "verifiedByteLength",verified_album_state AS "verifiedAlbumState",verified_album_id AS "verifiedAlbumId",error';
 export class TransferRepository {
   constructor(private readonly pool: Pool) {}
-  async create(input: Omit<TransferRecord, 'id' | 'status' | 'attempts' | 'immichAssetId' | 'verifiedAt' | 'verifiedServerVersion' | 'verifiedTargetAccountId' | 'verifiedConnectionGeneration' | 'error'>): Promise<TransferRecord> {
+  async create(input: Omit<TransferRecord, 'id' | 'status' | 'attempts' | 'immichAssetId' | 'verifiedAt' | 'verifiedServerVersion' | 'verifiedTargetAccountId' | 'verifiedConnectionGeneration' | 'verifiedByteLength' | 'verifiedAlbumState' | 'verifiedAlbumId' | 'error'>): Promise<TransferRecord> {
     const result = await this.pool.query<TransferRecord>(`INSERT INTO immich_transfers (id,user_id,object_id,target_id,status,own_sha256) VALUES ($1,$2,$3,$4,'pending',$5) RETURNING ${recordColumns}`, [randomUUID(), input.userId, input.objectId, input.targetId, input.sha256]);
     return toTransferRecord(result.rows[0]!);
   }
   async get(id: string): Promise<TransferRecord | undefined> { const row = (await this.pool.query<TransferRecord>(`SELECT ${recordColumns} FROM immich_transfers WHERE id=$1`, [id])).rows[0]; return row ? toTransferRecord(row) : undefined; }
   async transition(id: string, from: TransferStatus[], to: TransferStatus, patch: { assetId?: string; error?: string | null; evidence?: VerificationEvidence } = {}): Promise<TransferRecord> {
-    const result = await this.pool.query<TransferRecord>(`UPDATE immich_transfers SET status=$3, attempts=attempts+CASE WHEN $3='uploading' THEN 1 ELSE 0 END, immich_asset_id=COALESCE($4,immich_asset_id), error=$5, verified_at=CASE WHEN $6::text IS NOT NULL THEN now() ELSE verified_at END, verified_server_version=COALESCE($6,verified_server_version), verified_target_account_id=COALESCE($7,verified_target_account_id), verified_connection_generation=COALESCE($8,verified_connection_generation), updated_at=now() WHERE id=$1 AND status=ANY($2::text[]) RETURNING ${recordColumns}`, [id, from, to, patch.assetId ?? null, patch.error ?? null, patch.evidence?.serverVersion ?? null, patch.evidence?.targetAccountId ?? null, patch.evidence?.connectionGeneration ?? null]);
+    const result = await this.pool.query<TransferRecord>(`UPDATE immich_transfers SET status=$3, attempts=attempts+CASE WHEN $3='uploading' THEN 1 ELSE 0 END, immich_asset_id=COALESCE($4,immich_asset_id), error=$5, verified_at=CASE WHEN $6::text IS NOT NULL THEN now() ELSE verified_at END, verified_server_version=COALESCE($6,verified_server_version), verified_target_account_id=COALESCE($7,verified_target_account_id), verified_connection_generation=COALESCE($8,verified_connection_generation), verified_byte_size=COALESCE($9,verified_byte_size), verified_album_state=COALESCE($10,verified_album_state), verified_album_id=CASE WHEN $10='none' THEN NULL WHEN $10='assigned' THEN $11 ELSE verified_album_id END, updated_at=now() WHERE id=$1 AND status=ANY($2::text[]) RETURNING ${recordColumns}`, [id, from, to, patch.assetId ?? null, patch.error ?? null, patch.evidence?.serverVersion ?? null, patch.evidence?.targetAccountId ?? null, patch.evidence?.connectionGeneration ?? null, patch.evidence?.byteLength ?? null, patch.evidence?.album.state ?? null, patch.evidence?.album.state === 'assigned' ? patch.evidence.album.id : null]);
     if (!result.rows[0]) throw new Error(`Invalid or concurrent transfer transition for ${id}`);
     return toTransferRecord(result.rows[0]);
   }
 }
 function toTransferRecord(row: TransferRecord): TransferRecord {
-  return { ...row, verifiedConnectionGeneration: row.verifiedConnectionGeneration === null ? null : Number(row.verifiedConnectionGeneration) };
+  return { ...row, verifiedConnectionGeneration: row.verifiedConnectionGeneration === null ? null : Number(row.verifiedConnectionGeneration), verifiedByteLength: row.verifiedByteLength === null ? null : Number(row.verifiedByteLength) };
 }
 
 export class TransferService {
   constructor(private readonly transfers: TransferRepository, private readonly client: ImmichClient) {}
-  async run(id: string, object: LocalObject, expectedAccountId: string, connectionGeneration: number): Promise<TransferRecord> {
+  async run(id: string, object: LocalObject, expectedAccountId: string, connectionGeneration: number, albumId: string | null = null): Promise<TransferRecord> {
     const transfer = await this.transfers.get(id); if (!transfer) throw new Error('Transfer not found');
     if (transfer.status === 'verified' || transfer.status === 'mismatch') return transfer;
     const connection = await this.client.connectionTest();
@@ -114,12 +114,13 @@ export class TransferService {
     if (asset.ownerId !== expectedAccountId) return this.transfers.transition(id, ['uploaded_unverified', 'reconciling'], 'mismatch', { error: 'Remote asset belongs to a different account' });
     const remote = await digest(await this.client.original(assetId));
     if (remote.sha256 !== object.sha256 || remote.bytes !== object.byteLength) return this.transfers.transition(id, ['uploaded_unverified'], 'mismatch', { error: 'Original byte readback differs from local object' });
-    return this.transfers.transition(id, ['uploaded_unverified'], 'verified', { evidence: { serverVersion: connection.version, targetAccountId: connection.userId, connectionGeneration }, error: null });
+    const album = albumId === null ? { state: 'none' as const } : (await this.client.addToAlbum(albumId, [assetId]), { state: 'assigned' as const, id: albumId });
+    return this.transfers.transition(id, ['uploaded_unverified'], 'verified', { evidence: { serverVersion: connection.version, targetAccountId: connection.userId, connectionGeneration, byteLength: remote.bytes, album }, error: null });
   }
 }
 
 export function decideLocalDeletion(input: CleanupDecisionInput): CleanupDecision {
-  const checks: Array<[boolean, string]> = [[input.verified, 'transfer is not verified'], [input.correctAccount, 'target account is not proven correct'], [input.historyCommitted, 'history is not durably committed'], [input.validApproval, 'no valid deletion approval'], [input.graceElapsed, 'grace period has not elapsed'], [input.noReference, 'local object still has a reference'], [input.configGenerationMatches, 'connection generation changed'], [input.albumComplete, 'required album assignment is incomplete']];
+  const checks: Array<[boolean, string]> = [[input.transfer.status === 'verified', 'transfer is not verified'], [input.transfer.verifiedServerVersion !== null && input.supportedServerVersions.includes(input.transfer.verifiedServerVersion), 'verified server version is not supported'], [input.transfer.verifiedConnectionGeneration === input.currentConnectionGeneration, 'connection generation changed'], [input.transfer.verifiedByteLength === input.expectedByteLength, 'verified byte length differs from local object'], [input.transfer.verifiedAlbumState === 'none' ? input.transfer.verifiedAlbumId === null : input.transfer.verifiedAlbumState === 'assigned' && input.transfer.verifiedAlbumId !== null, 'album assignment is not durably verified'], [input.historyCommitted, 'history is not durably committed'], [input.validApproval, 'no valid deletion approval'], [input.graceElapsed, 'grace period has not elapsed'], [input.noReference, 'local object still has a reference']];
   const reasons = checks.filter(([ok]) => !ok).map(([, reason]) => reason); return { allowed: reasons.length === 0, reasons };
 }
 

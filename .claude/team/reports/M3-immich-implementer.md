@@ -41,5 +41,13 @@ Risiken
 Offene Fragen
 - Echter Vertragstest und Versions-Pinning gegen eine freigegebene Immich-Instanz stehen aus.
 
-Nächster Schritt
-Einbindung: Migration 0030 mit dem bestehenden storage-Migrator ausführen; ImmichClient aus @kura/immich-client mit Basis-URL, secret://immich/<verbindung> und SecretResolver konstruieren; TransferRepository und TransferService im Transfer-Worker injizieren; TransferService.run die erwartete Konto-ID und aktuelle Verbindungsgeneration übergeben; lokale Datei nur bei decideLocalDeletion(...).allowed === true und in der Storage-Lane entfernen.
+Letzte Runde D-019
+`migrations/0031_immich_verification_evidence.sql` ergänzt ausschließlich die vorhandene Transfer-Tabelle um die geprüfte Bytezahl und den Album-Nachweis (`assigned` mit ID oder explizit `none`). Der verified-Übergang speichert diese Felder in demselben UPDATE wie Status, Zeit, Zielkonto, Serverversion und Verbindungsgeneration. `decideLocalDeletion` akzeptiert keine frei gesetzten Remote-Booleans mehr: Es verlangt den gespeicherten verified-Status, eine konfigurierte unterstützte Serverversion, gleiche aktuelle Verbindungsgeneration, gleiche lokale Bytezahl und einen vollständigen gespeicherten Album-Nachweis.
+
+`tests/immich/client.test.ts` prüft den atomar wieder aus der Datenbank gelesenen Byte-/Albumbeleg gegen den lokalen Fake sowie Ablehnungen für jeden Nachweis, jede externe Cleanup-Bedingung und unbekannte Versionen bzw. Generationswechsel. `pnpm check` ist nach der Änderung erfolgreich: 5 Testdateien und 25 Tests bestanden; Typecheck, ESLint und alle Builds ebenfalls erfolgreich. `git diff --check` war erfolgreich.
+
+Rückweg
+Vor Ausrollen kann der Commit reverted werden. Für bereits migrierte Daten ist keine destruktive Down-Migration enthalten; der datenwahrende Rückweg ist eine separat geprüfte Folgemigration, da ein Entfernen von Prüfbelegen Löschsicherheit mindern würde.
+
+Restpunkt
+Der echte Vertragstest und das Versions-Pinning gegen eine freigegebene Immich-Instanz bleiben offen. Darüber hinaus wurde kein Umfang erweitert.
