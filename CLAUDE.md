@@ -1,6 +1,6 @@
-# Downloader — Projektregeln
+# Kura — Projektregeln
 
-Downloader ist eine selbst gehostete Webanwendung mit dauerhaftem Hintergrunddienst für Medien-Downloads, Zeitpläne und geprüfte Übertragung nach Immich. Stand: nur Planung, keine Implementierung.
+Kura (Arbeitstitel bis 2026-10-06: Downloader) ist eine selbst gehostete Webanwendung mit dauerhaftem Hintergrunddienst für Medien-Downloads, Zeitpläne und geprüfte Übertragung nach Immich. Stand: nur Planung, keine Implementierung.
 
 Verbindliche Quellen:
 

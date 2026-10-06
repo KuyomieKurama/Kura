@@ -1,4 +1,4 @@
-# Downloader
+# Kura
 
 Self-hosted web application with a permanent background service for downloading media from supported platforms, scheduling, and verified transfer to Immich.
 
