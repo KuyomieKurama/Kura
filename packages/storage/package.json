@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
-  "bin": { "kura-migrate": "./src/cli.ts" },
+  "exports": "./dist/index.js",
+  "bin": { "kura-migrate": "./dist/cli.js" },
   "scripts": { "typecheck": "tsc --noEmit", "build": "tsc -b", "migrate": "tsx src/cli.ts" },
   "dependencies": { "pg": "8.23.1" },
   "devDependencies": { "tsx": "4.21.0" }
