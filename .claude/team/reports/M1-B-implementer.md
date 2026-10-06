@@ -8,7 +8,7 @@ Artefakte
 - packages/identity/src/index.ts: OIDC-Client mit Discovery-Cache, Authorization-Code + PKCE S256, State/Nonce, JWKS-/JWT-Prüfung mit jose, Claim-/Gruppenprüfung, RP-Logout-URL, Back-Channel-Logout-Prüfung, Ports und PostgreSQL-Repository.
 - packages/identity/package.json und pnpm-lock.yaml: jose 6.1.3 (MIT), pg 8.23.1 (MIT) als Paketabhängigkeiten.
 - migrations/0010_oidc_identity.sql: users.role_source (local|idp) und Identity-Index.
-- tests/identity/oidc.test.ts: lokal signierte JWT-Fixtures für OIDC-Fluss, Identity-Zuordnung, PKCE-/State-/Nonce-/Signatur-Fehler, Gruppenmapping, Rollenwechsel und lokale Sperren.
+- tests/identity/oidc.test.ts und tests/identity/fake-oidc-provider.ts: lokaler Node-HTTP-Fake mit Discovery, Auto-Zustimmung, Token-Endpunkt und S256-PKCE-Prüfung sowie lokal signierte JWT-Fixtures für OIDC-Fluss, Identity-Zuordnung, PKCE-/State-/Nonce-/Signatur-Fehler, Gruppenmapping, Rollenwechsel und lokale Sperren.
 
 Zusammenfassung
 Die Bibliothek bindet eine Providerkonfiguration an ihren HTTPS-Issuer, verweigert untrusted Discovery-Endpunkte und verarbeitet keine Klartextsecrets; Secrets kommen ausschließlich über SecretResolver. Die stabile Zuordnung lautet issuer+subject. Gleiche E-Mail-Adressen werden nicht für Zuordnungen abgefragt. IdP-Rollen werden nur bei role_source=idp aktualisiert; status=blocked verhindert die Anmeldung vor dem Rollenwechsel.
@@ -24,9 +24,9 @@ Einbindung
 Prüfung
 - Vorher: corepack pnpm check: 16 Tests bestanden.
 - Ausgeführt: corepack pnpm --filter @kura/identity typecheck: erfolgreich.
-- Ausgeführt: corepack pnpm exec vitest run tests/identity/oidc.test.ts: 3 Tests bestanden.
+- Ausgeführt: corepack pnpm exec vitest run tests/identity/oidc.test.ts: 4 Tests bestanden.
 - Ausgeführt: corepack pnpm audit --audit-level=high: 2 Befunde, 1 low und 1 moderate; keine High/Critical.
-- Ausgeführt: corepack pnpm check: erfolgreich; 5 Testdateien und 19 Tests bestanden; Typecheck, Lint und alle Builds erfolgreich.
+- Ausgeführt: corepack pnpm check: erfolgreich; 5 Testdateien und 20 Tests bestanden; Typecheck, Lint und alle Builds erfolgreich.
 - Unbekannt: Verträge gegen konkrete Authentik- und Keycloak-Versionen; D-011 verbietet deren Testinstanzen.
 
 Annahmen
@@ -38,10 +38,10 @@ Risiken
 - Die aktuelle JWKS-Prüfung delegiert Schlüsselrotation an jose RemoteJWKSet; ein separater Rotationstest fehlt.
 - Die API-Einbindung, Sitzungswiderruf durch Back-Channel-Logout und die M1b-Lifecycle-Sperrsynchronisation liegen ausdrücklich außerhalb dieser Paket-Lane.
 - Keine echten Authentik-/Keycloak-Instanzen getestet (D-011).
-- Der Test-Fake ist ein lokaler HTTP-/Fetch-Adapter mit signierten JWT-Fixtures, nicht der in der Anforderung beschriebene vollständige Node-http-Autorisierungs- und Tokenanbieter. Die implementierten Protokollgrenzen sind damit nur teilweise testbar belegt.
+- Der lokale Fake prüft Discovery, Auto-Zustimmung, Token-Austausch und PKCE; besondere JWT-Fehlerfälle werden separat über signierte lokale Fixtures abgedeckt.
 
 Offene Fragen
 - Keine.
 
 Nächster Schritt
-- Orchestrator bindet die Bibliothek über die dokumentierten Ports an die API-Sitzungslogik an; ein Folgeauftrag sollte den vollständigen Node-http-Fake-Anbieter mit Autorisierungs-, Token- und Schlüsselrotationspfad ergänzen.
+- Orchestrator bindet die Bibliothek über die dokumentierten Ports an die API-Sitzungslogik an; ein Folgeauftrag sollte Schlüsselrotation gegen den Fake ergänzen.

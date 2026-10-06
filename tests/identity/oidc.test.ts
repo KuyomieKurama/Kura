@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT, OidcClient, type IdentityRepository, type UserRecord } from '../../packages/identity/src/index.js';
+import { startFakeOidcProvider } from './fake-oidc-provider.js';
 
 const issuer = 'https://issuer.test';
 const config = { id: 'fake', kind: 'generic' as const, issuer, clientId: 'kura-client', redirectUri: 'https://kura.test/callback', groupClaim: 'groups', userGroups: ['downloader-users'], adminGroups: ['downloader-admins'], provisionOnFirstLogin: true };
@@ -49,5 +51,18 @@ describe('OIDC library', () => {
     const subject = fixture(); cleanups.push(subject.restore); const keys = await generateKeyPair('RS256'); const publicJwk = await exportJWK(keys.publicKey); subject.setJwks({ keys: [{ ...publicJwk, kid: 'one', alg: 'RS256', use: 'sig' }] }); const begin = await subject.client.begin(config);
     subject.setToken(await signedToken(keys.privateKey, { sub: 'person-a', nonce: begin.transaction.nonce, groups: ['other'] })); await expect(subject.client.finish(config, { ...begin.transaction, verifier: 'expected' }, { code: 'c', state: begin.transaction.state }, subject.repository)).rejects.toMatchObject({ code: 'OIDC_GROUP_UNAUTHORIZED' });
     const allowed = await subject.client.begin(config); subject.setToken(await signedToken(keys.privateKey, { sub: 'person-a', nonce: allowed.transaction.nonce, groups: ['downloader-users'] })); const result = await subject.client.finish(config, { ...allowed.transaction, verifier: 'expected' }, { code: 'c', state: allowed.transaction.state }, subject.repository); subject.repository.users.get(result.userId)!.status = 'blocked'; const blocked = await subject.client.begin(config); subject.setToken(await signedToken(keys.privateKey, { sub: 'person-a', nonce: blocked.transaction.nonce, groups: ['downloader-admins'] })); await expect(subject.client.finish(config, { ...blocked.transaction, verifier: 'expected' }, { code: 'c', state: blocked.transaction.state }, subject.repository)).rejects.toMatchObject({ code: 'OIDC_USER_BLOCKED' });
+  });
+
+  it('provides a local Node HTTP OIDC fake with auto-consent and enforced S256 PKCE', async () => {
+    const fake = await startFakeOidcProvider({ issuer, jwks: { keys: [] }, idToken: 'signed-fixture-token' });
+    try {
+      const verifier = 'test-verifier'; const state = 'state-value'; const codeChallenge = createHash('sha256').update(verifier).digest('base64url');
+      const authorize = new URL('/authorize', fake.endpoint); authorize.search = new URLSearchParams({ redirect_uri: config.redirectUri, state, code_challenge: codeChallenge, code_challenge_method: 'S256' }).toString();
+      const consent = await fetch(authorize, { redirect: 'manual' }); expect(consent.status).toBe(302);
+      const callback = new URL(consent.headers.get('location')!); expect(callback.searchParams.get('state')).toBe(state);
+      const token = await fetch(new URL('/token', fake.endpoint), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code: callback.searchParams.get('code')!, redirect_uri: config.redirectUri, code_verifier: verifier }) });
+      expect(await token.json()).toMatchObject({ id_token: 'signed-fixture-token' });
+      const rejected = await fetch(new URL('/token', fake.endpoint), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code: 'unknown', redirect_uri: config.redirectUri, code_verifier: verifier }) }); expect(rejected.status).toBe(400);
+    } finally { await fake.close(); }
   });
 });
