@@ -91,9 +91,19 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  packages/adapters: {}
+
+  packages/blobstore: {}
+
   packages/contracts: {}
 
   packages/domain: {}
+
+  packages/identity: {}
+
+  packages/immich-client: {}
+
+  packages/scheduler: {}
 
   packages/storage:
     dependencies:
