@@ -8,7 +8,7 @@ Artefakte
 - packages/immich-client/src/index.ts: fetch-basierter, typisierter Client; SecretResolver-Port für secret://immich/<verbindung>; Verbindungstest, Upload, Dublettenabgleich, Asset-Metadaten/Original-Readback, Album- und Delete-Operationen; persistierte Transfer-Zustandsmaschine und Cleanup-Entscheidung.
 - migrations/0030_immich_transfers.sql: immich_transfers und immich_cleanup_intents einschließlich Generation und Referenzzähler.
 - tests/immich/client.test.ts: lokaler Node-HTTP-Fake und fünf Tests.
-- Commit: 71a421b feat: add immich transfer client (nachfolgende Lint-Korrektur noch uncommittet).
+- Commits: 71a421b feat: add immich transfer client; f4c338c fix: satisfy immich client lint.
 
 Zusammenfassung
 Nach Upload wird ausschließlich ein vollständiger Original-Stream mit eigenem SHA-256 und Bytezahl verglichen. Ein HTTP-Erfolg erlaubt keine Löschfreigabe. Bei verlorener Uploadantwort wird über den SHA-1-Dublettenabgleich wieder abgeglichen, nicht erneut hochgeladen. Die Löschentscheidung führt keine Dateilöschung aus und verweigert sie bei jeder fehlenden Bedingung.
