@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.worktrees/
+test-results*/
+playwright-report/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/data/
+/media/
