@@ -1,0 +1,73 @@
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { DatabaseBlobStore, FilesystemBlobStore, sanitizePathSegment, sha256Digest } from '../../packages/blobstore/src/index.js';
+import { runMigrations } from '../../packages/storage/src/migrator.js';
+import { createTestDatabase } from '../helpers/database.js';
+
+const ownerA = randomUUID();
+const ownerB = randomUUID();
+const collect = async (stream: AsyncIterable<Uint8Array>): Promise<Buffer> => {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+};
+
+function bytes(size: number): Uint8Array {
+  const result = new Uint8Array(size);
+  for (let index = 0; index < size; index++) result[index] = index % 251;
+  return result;
+}
+
+describe('filesystem blobstore', () => {
+  const roots: string[] = [];
+  afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+
+  it('streams CAS bytes, deduplicates per owner, protects reads, and aborts invisibly', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kura-blobstore-')); roots.push(root);
+    const store = new FilesystemBlobStore(root, 'cas', { quotaBytes: 1024, chunkSize: 16 });
+    const source = bytes(32); const digest = sha256Digest(source);
+    const first = await store.beginWrite({ ownerUserId: ownerA });
+    await store.append(first, source.subarray(0, 16)); await store.append(first, source.subarray(16));
+    const stored = await store.finalize(first, digest);
+    expect(await collect(store.openRead(stored))).toEqual(Buffer.from(source));
+    await expect(collect(store.openRead({ id: stored.id, ownerUserId: ownerB }))).rejects.toThrow('Object not found');
+    const duplicate = await store.beginWrite({ ownerUserId: ownerA });
+    await store.append(duplicate, source.subarray(0, 16)); await store.append(duplicate, source.subarray(16));
+    expect((await store.finalize(duplicate, digest)).id).toBe(stored.id);
+    const aborted = await store.beginWrite({ ownerUserId: ownerA }); await store.append(aborted, bytes(8)); await store.abort(aborted);
+    await expect(store.stat({ id: aborted.id, ownerUserId: ownerA })).rejects.toThrow('Object not found');
+  });
+
+  it('rejects hostile paths and enforces quota before committing data', async () => {
+    for (const path of ['../escape', '/absolute', 'NUL', 'a/b', 'C:drive', 'x\0y']) expect(() => sanitizePathSegment(path)).toThrow();
+    const root = await mkdtemp(join(tmpdir(), 'kura-blobstore-')); roots.push(root);
+    const store = new FilesystemBlobStore(root, 'template', { quotaBytes: 8, chunkSize: 8 });
+    const write = await store.beginWrite({ ownerUserId: ownerA });
+    await store.append(write, bytes(8));
+    await expect(store.append(write, bytes(1))).rejects.toThrow('Owner quota exceeded');
+    await store.abort(write);
+  });
+});
+
+describe('database blobstore', () => {
+  it('keeps chunks invisible until finalization, enforces owner isolation, and roundtrips streamed bytes', async () => {
+    const database = await createTestDatabase();
+    try {
+      await runMigrations(database.pool, join(process.cwd(), 'migrations'));
+      await database.pool.query('INSERT INTO users (id, display_name) VALUES ($1, $2), ($3, $4)', [ownerA, 'A', ownerB, 'B']);
+      const store = new DatabaseBlobStore(database.pool, { quotaBytes: 1024, chunkSize: 16 });
+      const source = bytes(48); const write = await store.beginWrite({ ownerUserId: ownerA });
+      for (let index = 0; index < source.length; index += 16) await store.append(write, source.subarray(index, index + 16));
+      expect(await database.pool.query('SELECT count(*)::int AS count FROM blobstore_objects')).toMatchObject({ rows: [{ count: 0 }] });
+      const stored = await store.finalize(write, sha256Digest(source));
+      expect(await collect(store.openRead(stored))).toEqual(Buffer.from(source));
+      await expect(collect(store.openRead({ id: stored.id, ownerUserId: ownerB }))).rejects.toThrow('Object not found');
+      const wrong = await store.beginWrite({ ownerUserId: ownerA }); await store.append(wrong, bytes(16));
+      await expect(store.finalize(wrong, sha256Digest(bytes(15)))).rejects.toThrow('Digest mismatch');
+      await store.abort(wrong);
+    } finally { await database.cleanup(); }
+  });
+});
