@@ -91,12 +91,20 @@ export class TransferService {
     if (connection.userId !== expectedAccountId) return this.transfers.transition(id, ['pending', 'uploading', 'uploaded_unverified', 'reconciling', 'failed'], 'mismatch', { error: 'Connection belongs to a different account' });
     let assetId = transfer.immichAssetId;
     if (!assetId) {
-      await this.transfers.transition(id, ['pending', 'failed', 'reconciling', 'uploading'], 'uploading');
-      try { assetId = (await this.client.upload(object)).assetId; }
-      catch (error) {
-        const duplicate = object.sha1 ? await this.client.findDuplicate(object.sha1, id).catch(() => undefined) : undefined;
-        if (!duplicate) return this.transfers.transition(id, ['uploading'], 'reconciling', { error: safeError(error) });
-        assetId = duplicate;
+      const resumingUncertainUpload = transfer.status === 'uploading' || transfer.status === 'reconciling';
+      if (resumingUncertainUpload && object.sha1) {
+        // A prior process may have uploaded successfully before its local checkpoint.
+        // Reconcile the remote original before risking another upload.
+        assetId = await this.client.findDuplicate(object.sha1, id).catch(() => undefined);
+      }
+      if (!assetId) {
+        await this.transfers.transition(id, ['pending', 'failed', 'reconciling', 'uploading'], 'uploading');
+        try { assetId = (await this.client.upload(object)).assetId; }
+        catch (error) {
+          const duplicate = object.sha1 ? await this.client.findDuplicate(object.sha1, id).catch(() => undefined) : undefined;
+          if (!duplicate) return this.transfers.transition(id, ['uploading'], 'reconciling', { error: safeError(error) });
+          assetId = duplicate;
+        }
       }
       await this.transfers.transition(id, ['uploading', 'reconciling'], 'uploaded_unverified', { assetId, error: null });
     }
