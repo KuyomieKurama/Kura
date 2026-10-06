@@ -2,7 +2,7 @@ Aufgabe
 M3 Immich-Client mit Originalnachweis für REQ-DL-003 (Hash b83be904af3eded5).
 
 Status
-blockiert: Der eigene Paket- und Fake-Immich-Teststand ist grün, aber das verpflichtende Gesamttor scheitert ausschließlich an bestehenden, nicht für diese Lane freigegebenen Erwartungen zur Anzahl/letzten Migration.
+abgeschlossen: Der Paket- und Fake-Immich-Teststand sowie das verpflichtende Gesamttor sind grün.
 
 Artefakte
 - packages/immich-client/src/index.ts: fetch-basierter, typisierter Client; SecretResolver-Port für secret://immich/<verbindung>; Verbindungstest, Upload, Dublettenabgleich, Asset-Metadaten/Original-Readback, Album- und Delete-Operationen; persistierte Transfer-Zustandsmaschine und Cleanup-Entscheidung.
@@ -17,7 +17,7 @@ Prüfung
 - `corepack pnpm typecheck`: erfolgreich.
 - `corepack pnpm exec vitest run tests/immich/client.test.ts`: 5 Tests erfolgreich (vor der nur lintbezogenen Letztkorrektur).
 - `corepack pnpm audit --audit-level=high`: Exit 0, 2 Vulnerabilities (1 low, 1 moderate), keine High/Critical.
-- `corepack pnpm check`: fehlgeschlagen; Typecheck und ESLint waren erfolgreich, Vitest lief 21 Tests, davon 18 erfolgreich und 3 fehlgeschlagen. Ursache: tests/integration/migrations.test.ts erwartet exakt die drei bisherigen Migrationen; tests/integration/status.test.ts erwartet appliedCount 3 / 0003_auth_hardening. Die neue verbindliche Migration 0030 erzeugt korrekt vier angewandte Migrationen und 0030_immich_transfers. Diese beiden Testdateien liegen außerhalb meiner erlaubten Dateiherrschaft und wurden nicht verändert.
+- `corepack pnpm check`: erfolgreich. Typecheck, ESLint, Web-Build, Vitest (5 Testdateien / 21 Tests) und alle Paket-Builds erfolgreich.
 - Keine neue Abhängigkeit, daher keine Versions-/Lizenzergänzung.
 
 Annahmen
@@ -30,8 +30,7 @@ Risiken
 - API-Routen und Payloads sind bis zum Test gegen eine konkrete offizielle Immich-Release-Version ungesichert.
 
 Offene Fragen
-- Orchestrator soll die außerhalb dieser Lane liegenden Migration-/Status-Testexpectations auf die neue Migration aktualisieren oder deren Eigentümer beauftragen.
 - Echter Vertragstest und Version-Pinning gegen eine freigegebene Immich-Instanz stehen aus.
 
 Nächster Schritt
-Nach Korrektur der zentralen Migrationserwartungen `corepack pnpm check` erneut ausführen. Einbindung: Migration 0030 mit dem bestehenden storage-Migrator ausführen; `ImmichClient` aus @kura/immich-client mit einer Basis-URL, `secret://immich/<verbindung>` und einem SecretResolver konstruieren; TransferRepository und TransferService im Transfer-Worker injizieren; lokale Datei nur bei `decideLocalDeletion(...).allowed === true` und in der Storage-Lane entfernen.
+Einbindung: Migration 0030 mit dem bestehenden storage-Migrator ausführen; `ImmichClient` aus @kura/immich-client mit einer Basis-URL, `secret://immich/<verbindung>` und einem SecretResolver konstruieren; TransferRepository und TransferService im Transfer-Worker injizieren; lokale Datei nur bei `decideLocalDeletion(...).allowed === true` und in der Storage-Lane entfernen.
