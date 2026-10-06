@@ -34,7 +34,9 @@ describe('local authentication API', () => {
     expect([first.statusCode, second.statusCode].sort()).toEqual([201, 409]);
     expect(await subject.database.pool.query('SELECT * FROM users')).toHaveProperty('rowCount', 1);
     expect(`${first.body}${second.body}`).not.toContain('password_hash');
-    expect((await subject.database.pool.query('SELECT password_hash FROM local_credentials')).rows[0].password_hash).toMatch(/^scrypt\$32768\$8\$1\$/);
+    const storedHash = (await subject.database.pool.query('SELECT password_hash FROM local_credentials')).rows[0].password_hash as string;
+    expect(storedHash).toMatch(/^scrypt\$32768\$8\$1\$/);
+    expect(`${first.body}${second.body}`).not.toContain(storedHash);
   });
 
   it('rejects weak passwords and has identical login failures while ignoring forwarded headers without trust proxy', async () => {
@@ -121,5 +123,27 @@ describe('local authentication API', () => {
     expect(JSON.stringify(audit.rows)).not.toContain(adminPassword);
     expect(JSON.stringify(audit.rows)).not.toContain('kura_session');
     expect(aliceId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('covers state, user administration error paths, and stable local account identity across T29/T30 logins', async () => {
+    const subject = await fixture(); fixtures.push(subject);
+    expect((await subject.app.inject({ url: '/api/v1/auth/state' })).json()).toMatchObject({ configured: false, authenticated: false });
+    const admin = await setup(subject);
+    expect((await subject.app.inject({ url: '/api/v1/auth/state', headers: { cookie: admin.cookie } })).json()).toMatchObject({ configured: true, authenticated: true, role: 'admin', csrfToken: admin.csrf });
+    const first = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'admin', password: adminPassword } });
+    const second = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'admin', password: adminPassword } });
+    const firstHash = (await subject.database.pool.query('SELECT user_id FROM sessions WHERE csrf_token=$1', [first.json().csrfToken])).rows[0].user_id;
+    const secondHash = (await subject.database.pool.query('SELECT user_id FROM sessions WHERE csrf_token=$1', [second.json().csrfToken])).rows[0].user_id;
+    expect(firstHash).toBe(secondHash);
+    const created = await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(admin.cookie, admin.csrf), payload: { username: 'alice', displayName: 'Alice', initialPassword: 'a long enough password', role: 'user' } });
+    const aliceId = created.json().user.id as string;
+    expect((await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(admin.cookie, admin.csrf), payload: { username: 'alice', displayName: 'Again', initialPassword: 'a long enough password' } })).statusCode).toBe(409);
+    expect((await subject.app.inject({ method: 'PATCH', url: `/api/v1/users/${aliceId}`, headers: headers(admin.cookie, admin.csrf), payload: {} })).statusCode).toBe(400);
+    expect((await subject.app.inject({ method: 'PATCH', url: '/api/v1/users/00000000-0000-0000-0000-000000000000', headers: headers(admin.cookie, admin.csrf), payload: { status: 'blocked' } })).statusCode).toBe(404);
+    expect((await subject.app.inject({ method: 'PATCH', url: `/api/v1/users/${admin.id}`, headers: headers(admin.cookie, admin.csrf), payload: { role: 'user' } })).statusCode).toBe(409);
+    const aliceLogin = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'a long enough password' } });
+    const aliceCookie = aliceLogin.headers['set-cookie'] as string; const aliceCsrf = aliceLogin.json().csrfToken as string;
+    await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(aliceCookie, aliceCsrf), payload: { currentPassword: 'a long enough password', newPassword: 'different long enough password' } });
+    expect((await subject.app.inject({ method: 'PATCH', url: `/api/v1/users/${aliceId}`, headers: headers(aliceCookie, aliceCsrf), payload: { status: 'blocked' } })).statusCode).toBe(403);
   });
 });
