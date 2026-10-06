@@ -1,6 +1,6 @@
 # Kura — Projektregeln
 
-Kura (Arbeitstitel bis 2026-10-06: Downloader) ist eine selbst gehostete Webanwendung mit dauerhaftem Hintergrunddienst für Medien-Downloads, Zeitpläne und geprüfte Übertragung nach Immich. Stand: nur Planung, keine Implementierung.
+Kura (Arbeitstitel bis 2026-10-06: Downloader) ist eine selbst gehostete Webanwendung mit dauerhaftem Hintergrunddienst für Medien-Downloads, Zeitpläne und geprüfte Übertragung nach Immich. Stand: Gerüst (M1-A) in Arbeit, siehe `.claude/team/board.md`.
 
 Verbindliche Quellen:
 
@@ -34,7 +34,7 @@ Verständlich vor kurz. Aussagekräftige englische Namen, klarer Ablauf, keine A
 
 Zwei gleichzeitig laufende Agenten fassen nie dieselbe Datei an. Schnittstelle umbauen und Schnittstelle messen laufen in aufeinanderfolgenden Wellen. Gemeinsame Dateien ändert nur der Orchestrator: `CLAUDE.md`, `.claude/team/*.md`, `package.json`, `pnpm-workspace.yaml`, alle `tsconfig*.json`, `.github/**`, Reihenfolge der Migrationen.
 
-`.github/**` wird von Agenten nicht geändert, committet oder gepusht; nötige Änderungen werden dem Auftraggeber zur manuellen Umsetzung genannt. Es gibt vorerst kein GitHub-Remote: nichts pushen.
+`.github/**` wird von Agenten nicht geändert, committet oder gepusht; nötige Änderungen werden dem Auftraggeber zur manuellen Umsetzung genannt. Remote: `origin` = github.com/KuyomieKurama/Kura (öffentlich). Agenten pushen nie; Push, Merge nach `main` und Tags macht ausschließlich der Orchestrator vom Host.
 
 ## Ablauf und Berichte
 
@@ -49,4 +49,4 @@ Bei Blockade nicht raten, melden. Gelesen-nicht-gelaufen gehört in die Annahmen
 
 ## Befehle
 
-Noch keine. Werden mit M1 im Wurzel-`package.json` festgelegt (Orchestrator-Datei).
+`pnpm check` (Prüftor: eslint, vitest mit echter PostgreSQL, Build aller Pakete; Stand M1-A). Datenbank für Entwicklung/Tests: Podman-Container `kura-postgres`, siehe `docs/dev-setup.md` und D-010. In der Sandbox erreichbar unter 127.0.0.1:5432; der Orchestrator verwaltet den Container. Kein `sudo`, kein `apt` in der Sandbox.
