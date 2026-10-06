@@ -19,7 +19,7 @@ describe('status and static UI', () => {
       expect(status.statusCode).toBe(200);
       expect(Object.keys(status.json()).sort()).toEqual(['database', 'migrations', 'version']);
       expect(status.json().database).toBe('ok');
-      expect(status.json().migrations).toEqual({ appliedCount: 2, latestVersion: '0002_local_auth' });
+      expect(status.json().migrations).toEqual({ appliedCount: 3, latestVersion: '0003_auth_hardening' });
       const page = await app.inject('/not-a-page');
       expect(page.statusCode).toBe(200);
       expect(page.headers['content-security-policy']).toBe("default-src 'self'");
