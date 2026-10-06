@@ -95,7 +95,8 @@ export class TransferService {
       if (resumingUncertainUpload && object.sha1) {
         // A prior process may have uploaded successfully before its local checkpoint.
         // Reconcile the remote original before risking another upload.
-        assetId = await this.client.findDuplicate(object.sha1, id).catch(() => undefined);
+        const duplicate = await this.client.findDuplicate(object.sha1, id).catch(() => undefined);
+        if (duplicate) assetId = duplicate;
       }
       if (!assetId) {
         await this.transfers.transition(id, ['pending', 'failed', 'reconciling', 'uploading'], 'uploading');
