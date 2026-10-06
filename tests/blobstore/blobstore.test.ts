@@ -50,6 +50,17 @@ describe('filesystem blobstore', () => {
     await expect(store.append(write, bytes(1))).rejects.toThrow('Owner quota exceeded');
     await store.abort(write);
   });
+
+  it('marks deletion pending while a reader lease is active and completes it afterwards', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kura-blobstore-')); roots.push(root);
+    const store = new FilesystemBlobStore(root, 'cas', { quotaBytes: 64, chunkSize: 16 });
+    const source = bytes(16); const write = await store.beginWrite({ ownerUserId: ownerA });
+    await store.append(write, source); const stored = await store.finalize(write, sha256Digest(source));
+    const reader = store.openRead(stored)[Symbol.asyncIterator](); await reader.next();
+    expect(await store.remove(stored, { id: 'permit' })).toEqual({ removed: false });
+    await reader.return?.();
+    expect(await store.remove(stored, { id: 'permit' })).toEqual({ removed: true });
+  });
 });
 
 describe('database blobstore', () => {
@@ -68,6 +79,22 @@ describe('database blobstore', () => {
       const wrong = await store.beginWrite({ ownerUserId: ownerA }); await store.append(wrong, bytes(16));
       await expect(store.finalize(wrong, sha256Digest(bytes(15)))).rejects.toThrow('Digest mismatch');
       await store.abort(wrong);
+    } finally { await database.cleanup(); }
+  });
+
+  it('serializes quota use and completes pending deletion after a leased reader closes', async () => {
+    const database = await createTestDatabase();
+    try {
+      await runMigrations(database.pool, join(process.cwd(), 'migrations'));
+      await database.pool.query('INSERT INTO users (id, display_name) VALUES ($1, $2)', [ownerA, 'A']);
+      const store = new DatabaseBlobStore(database.pool, { quotaBytes: 16, chunkSize: 16 });
+      const first = await store.beginWrite({ ownerUserId: ownerA }); const second = await store.beginWrite({ ownerUserId: ownerA });
+      await store.append(first, bytes(16)); await expect(store.append(second, bytes(1))).rejects.toThrow('Owner quota exceeded'); await store.abort(second);
+      const stored = await store.finalize(first, sha256Digest(bytes(16)));
+      const reader = store.openRead(stored)[Symbol.asyncIterator](); await reader.next();
+      expect(await store.remove(stored, { id: 'permit' })).toEqual({ removed: false });
+      await reader.return?.();
+      expect(await store.remove(stored, { id: 'permit' })).toEqual({ removed: true });
     } finally { await database.cleanup(); }
   });
 });
