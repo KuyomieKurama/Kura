@@ -1,5 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import type { Pool } from 'pg';
+export { exportJWK, generateKeyPair, SignJWT } from 'jose';
 
 export type Role = 'admin' | 'user';
 export type Clock = { now: () => Date };
@@ -50,6 +52,24 @@ export interface IdentityRepository {
 }
 
 export interface LoginResult { userId: string; isNewUser: boolean; roles: Role[]; idTokenHint: string; }
+
+export class PostgresIdentityRepository implements IdentityRepository {
+  constructor(private readonly pool: Pool) {}
+  async findIdentity(issuer: string, subject: string): Promise<IdentityRecord | undefined> {
+    const result = await this.pool.query<IdentityRecord>('SELECT user_id AS "userId", issuer, subject, email FROM identities WHERE issuer=$1 AND subject=$2', [issuer, subject]); return result.rows[0];
+  }
+  async findUser(userId: string): Promise<UserRecord | undefined> {
+    const result = await this.pool.query<UserRecord>('SELECT id,status,role,role_source AS "roleSource" FROM users WHERE id=$1', [userId]); return result.rows[0];
+  }
+  async createUserWithIdentity(input: { id: string; displayName: string; status: 'active' | 'pending'; role: Role; roleSource: 'idp'; issuer: string; subject: string; email?: string }): Promise<UserRecord> {
+    const client = await this.pool.connect(); try { await client.query('BEGIN'); await client.query('INSERT INTO users (id,display_name,status,role,role_source) VALUES ($1,$2,$3,$4,$5)', [input.id, input.displayName, input.status, input.role, input.roleSource]); await client.query('INSERT INTO identities (id,user_id,issuer,subject,email,last_login_at) VALUES ($1,$2,$3,$4,$5,now())', [randomUUID(), input.id, input.issuer, input.subject, input.email ?? null]); await client.query('COMMIT'); return { id: input.id, status: input.status, role: input.role, roleSource: input.roleSource }; } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+  async updateIdpRole(userId: string, role: Role): Promise<UserRecord> {
+    const result = await this.pool.query<UserRecord>("UPDATE users SET role=$2, updated_at=now() WHERE id=$1 AND role_source='idp' RETURNING id,status,role,role_source AS \"roleSource\"", [userId, role]); const user = result.rows[0]; if (!user) throw new OidcError('OIDC_IDENTITY_ORPHANED'); return user;
+  }
+  async markLogin(issuer: string, subject: string): Promise<void> { await this.pool.query('UPDATE identities SET last_login_at=now() WHERE issuer=$1 AND subject=$2', [issuer, subject]); }
+}
+
 export class OidcError extends Error { constructor(public readonly code: string) { super(code); this.name = 'OidcError'; } }
 
 const DEFAULT_ALGORITHMS: string[] = ['RS256', 'ES256', 'PS256'];
