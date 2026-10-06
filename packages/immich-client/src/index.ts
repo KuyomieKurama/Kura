@@ -69,18 +69,18 @@ export class TransferRepository {
 export class TransferService {
   constructor(private readonly transfers: TransferRepository, private readonly client: ImmichClient) {}
   async run(id: string, object: LocalObject, expectedAccountId: string, deviceId: string): Promise<TransferRecord> {
-    let transfer = await this.transfers.get(id); if (!transfer) throw new Error('Transfer not found');
+    const transfer = await this.transfers.get(id); if (!transfer) throw new Error('Transfer not found');
     if (transfer.status === 'verified' || transfer.status === 'mismatch') return transfer;
     let assetId = transfer.immichAssetId;
     if (!assetId) {
-      transfer = await this.transfers.transition(id, ['pending', 'failed', 'reconciling', 'uploading'], 'uploading');
+      await this.transfers.transition(id, ['pending', 'failed', 'reconciling', 'uploading'], 'uploading');
       try { assetId = (await this.client.upload(object, deviceId, id)).assetId; }
       catch (error) {
         const duplicate = object.sha1 ? await this.client.findDuplicate(object.sha1).catch(() => undefined) : undefined;
         if (!duplicate) return this.transfers.transition(id, ['uploading'], 'reconciling', { error: safeError(error) });
         assetId = duplicate;
       }
-      transfer = await this.transfers.transition(id, ['uploading', 'reconciling'], 'uploaded_unverified', { assetId, error: null });
+      await this.transfers.transition(id, ['uploading', 'reconciling'], 'uploaded_unverified', { assetId, error: null });
     }
     const asset = await this.client.asset(assetId);
     if (asset.ownerId !== expectedAccountId) return this.transfers.transition(id, ['uploaded_unverified', 'reconciling'], 'mismatch', { error: 'Remote asset belongs to a different account' });
