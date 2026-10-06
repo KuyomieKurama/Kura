@@ -92,7 +92,8 @@ export class TransferService {
     let assetId = transfer.immichAssetId;
     if (!assetId) {
       const resumingUncertainUpload = transfer.status === 'uploading' || transfer.status === 'reconciling';
-      if (resumingUncertainUpload && object.sha1) {
+      if (resumingUncertainUpload) {
+        if (!object.sha1) return this.transfers.transition(id, [transfer.status], 'reconciling', { error: 'Cannot safely reconcile an uncertain upload without a SHA-1 checksum' });
         // A prior process may have uploaded successfully before its local checkpoint.
         // Reconcile the remote original before risking another upload.
         const duplicate = await this.client.findDuplicate(object.sha1, id).catch(() => undefined);
