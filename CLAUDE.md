@@ -1,6 +1,6 @@
 # Kura — Projektregeln
 
-Kura (Arbeitstitel bis 2026-10-06: Downloader) ist eine selbst gehostete Webanwendung mit dauerhaftem Hintergrunddienst für Medien-Downloads, Zeitpläne und geprüfte Übertragung nach Immich. Stand: Gerüst (M1-A) in Arbeit, siehe `.claude/team/board.md`.
+Kura (Arbeitstitel bis 2026-10-06: Downloader) ist eine selbst gehostete Webanwendung mit dauerhaftem Hintergrunddienst für Medien-Downloads, Zeitpläne und geprüfte Übertragung nach Immich. Stand: lauffähiger Teststand (M1: Gerüst, lokale Anmeldung, Weboberfläche; unverifiziert, siehe `.claude/team/board.md`).
 
 Verbindliche Quellen:
 
