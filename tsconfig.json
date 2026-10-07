@@ -1,11 +1,38 @@
 {
   "files": [],
   "references": [
-    { "path": "apps/api" },
-    { "path": "apps/web" },
-    { "path": "apps/worker" },
-    { "path": "packages/contracts" },
-    { "path": "packages/domain" },
-    { "path": "packages/storage" }
+    {
+      "path": "apps/api"
+    },
+    {
+      "path": "apps/web"
+    },
+    {
+      "path": "apps/worker"
+    },
+    {
+      "path": "packages/contracts"
+    },
+    {
+      "path": "packages/domain"
+    },
+    {
+      "path": "packages/storage"
+    },
+    {
+      "path": "packages/identity"
+    },
+    {
+      "path": "packages/blobstore"
+    },
+    {
+      "path": "packages/scheduler"
+    },
+    {
+      "path": "packages/immich-client"
+    },
+    {
+      "path": "packages/adapters"
+    }
   ]
 }
