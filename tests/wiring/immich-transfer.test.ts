@@ -57,7 +57,7 @@ class FakeImmich {
         request.once('data', () => request.socket.destroy());
         return;
       }
-      for await (const _chunk of request) { /* consume multipart input */ }
+      for await (const chunk of request) { void chunk; }
       this.assets.set('fake-asset', this.bytes);
       return this.send(response, 201, { id: 'fake-asset', status: 'created' });
     }

@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { DatabaseBlobStore, FilesystemBlobStore, sha256Digest, type OwnedObjectRef, type StorageBackend } from '@kura/blobstore';
+import { sha256Digest, type OwnedObjectRef, type StorageBackend } from '@kura/blobstore';
 import { ImmichClient, TransferRepository, TransferService, type SecretResolver } from '@kura/immich-client';
 import type { Pool } from 'pg';
 import type { ApiConfig } from './config.js';
