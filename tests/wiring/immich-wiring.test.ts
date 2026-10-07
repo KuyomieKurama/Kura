@@ -28,6 +28,6 @@ describe('W2 Immich wiring', () => {
     const stored = await subject.database.pool.query('SELECT api_key_ciphertext FROM immich_connections'); expect(Buffer.from(stored.rows[0].api_key_ciphertext).toString('utf8')).not.toContain(secret);
     const own = await subject.app.inject({ url: '/api/v1/immich/connection', headers: { cookie: alice.cookie } }); expect(own.body).not.toContain(secret); expect(own.json().connection.serverUrl).toBe('http://127.0.0.1:39999');
     const other = await subject.app.inject({ url: '/api/v1/immich/connection', headers: { cookie: admin.cookie } }); expect(other.json().connection).toBeNull();
-    const unknown = await subject.app.inject({ method: 'POST', url: '/api/v1/immich/connection/test', headers: headers(alice) }); expect(unknown.json()).toEqual({ version: 'unbekannt', supported: false });
+    const unknown = await subject.app.inject({ method: 'POST', url: '/api/v1/immich/connection/test', headers: headers(alice) }); expect(unknown.json()).toMatchObject({ version: 'unbekannt', supported: false });
   });
 });

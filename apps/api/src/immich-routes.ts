@@ -1,14 +1,26 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { sha256Digest, type OwnedObjectRef, type StorageBackend } from '@kura/blobstore';
-import { ImmichClient, TransferRepository, TransferService, type SecretResolver } from '@kura/immich-client';
+import {
+  classifyAddress,
+  createGuardedFetch,
+  endpointOf,
+  ImmichClient,
+  ImmichTargetBlockedError,
+  normalizeEndpoint,
+  TransferRepository,
+  TransferService,
+  type SecretResolver
+} from '@kura/immich-client';
+import { isIP } from 'node:net';
 import type { Pool } from 'pg';
 import { decodeStrictBase64 } from './base64.js';
 import type { ApiConfig } from './config.js';
+import { PostgresEndpointApprovals } from './immich-endpoint-approvals.js';
 
 const MAX_TEST_FILE_BYTES = 4 * 1024 * 1024;
 
-export type ImmichSession = { userId: string };
+export type ImmichSession = { userId: string; role: 'admin' | 'user' };
 type RequireSession = (request: FastifyRequest, reply: FastifyReply) => Promise<ImmichSession | undefined>;
 type Audit = (actor: string | null, action: string, target: string | null, request: FastifyRequest, outcome?: string) => Promise<void>;
 
@@ -33,13 +45,32 @@ function decryptSecret(key: Buffer, ciphertext: Buffer, nonce: Buffer): string {
   return Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]).toString('utf8');
 }
 
+/**
+ * Syntax check at save time. Whether the target may be contacted is decided on
+ * every connection by the guarded fetch, after DNS resolution.
+ */
 function isSafeImmichUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:';
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    if (url.username || url.password) return false;
+    const host = endpointOf(url).host;
+    return !isIP(host) || classifyAddress(host) !== 'always-blocked';
   } catch {
     return false;
   }
+}
+
+function targetNotAllowed(error: ImmichTargetBlockedError) {
+  return {
+    error: {
+      code: error.code === 'TARGET_BLOCKED' ? 'IMMICH_TARGET_BLOCKED' : 'IMMICH_TARGET_NOT_APPROVED',
+      message: error.code === 'TARGET_BLOCKED'
+        ? 'Das Immich-Ziel liegt in einem gesperrten Adressbereich (Link-Local oder Metadaten).'
+        : 'Das Immich-Ziel liegt in einem privaten Netz und muss zuerst von einem Administrator freigegeben werden.'
+    },
+    target: { host: error.host, port: error.port }
+  };
 }
 
 export function registerImmichRoutes(input: {
@@ -50,8 +81,12 @@ export function registerImmichRoutes(input: {
   clock: { now: () => Date };
   requireSession: RequireSession;
   audit: Audit;
+  resolveHost?: (host: string) => Promise<string[]>;
 }): void {
   const { app, pool, config, blobstore, clock, requireSession, audit } = input;
+  const guardedFetch = createGuardedFetch({ approvals: new PostgresEndpointApprovals(pool), resolveHost: input.resolveHost });
+  const newClient = (serverUrl: string, userId: string) =>
+    new ImmichClient(serverUrl, `secret://immich/${userId}`, secretResolver, guardedFetch);
   const secretResolver: SecretResolver = {
     resolve: async (reference) => {
       if (!config.secretKey) throw new Error('KURA_SECRET_KEY is not configured');
@@ -65,6 +100,55 @@ export function registerImmichRoutes(input: {
     }
   };
   const transfers = new TransferRepository(pool);
+
+  const requireAdmin = async (request: FastifyRequest, reply: FastifyReply): Promise<ImmichSession | undefined> => {
+    const session = await requireSession(request, reply);
+    if (!session) return undefined;
+    if (session.role !== 'admin') {
+      reply.code(403).send(responseError('FORBIDDEN', 'Administratorrechte erforderlich.'));
+      return undefined;
+    }
+    return session;
+  };
+
+  app.get('/api/v1/admin/immich/endpoint-approvals', async (request, reply) => {
+    const session = await requireAdmin(request, reply);
+    if (!session) return;
+    const rows = await pool.query<{ host: string; port: number; approved_at: Date }>(
+      'SELECT host,port,approved_at FROM immich_endpoint_approvals ORDER BY host,port'
+    );
+    return { approvals: rows.rows.map((row) => ({ host: row.host, port: row.port, approvedAt: row.approved_at })) };
+  });
+
+  app.post('/api/v1/admin/immich/endpoint-approvals', async (request, reply) => {
+    const session = await requireAdmin(request, reply);
+    if (!session) return;
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const endpoint = typeof body.host === 'string' && typeof body.port === 'number'
+      ? normalizeEndpoint(body.host, body.port)
+      : undefined;
+    if (!endpoint) return reply.code(400).send(responseError('VALIDATION_ERROR', 'Host oder Port ist ungültig.'));
+    if (isIP(endpoint.host) && classifyAddress(endpoint.host) === 'always-blocked') {
+      return reply.code(400).send(responseError('IMMICH_TARGET_BLOCKED', 'Link-Local- und Metadaten-Adressen können nicht freigegeben werden.'));
+    }
+    await pool.query(
+      'INSERT INTO immich_endpoint_approvals (host,port,approved_by) VALUES ($1,$2,$3) ON CONFLICT (host,port) DO NOTHING',
+      [endpoint.host, endpoint.port, session.userId]
+    );
+    await audit(session.userId, 'immich.endpoint_approve', `${endpoint.host}:${endpoint.port}`, request);
+    return reply.code(201).send({ approval: endpoint });
+  });
+
+  app.delete('/api/v1/admin/immich/endpoint-approvals/:host/:port', async (request, reply) => {
+    const session = await requireAdmin(request, reply);
+    if (!session) return;
+    const params = request.params as { host: string; port: string };
+    const endpoint = normalizeEndpoint(params.host, Number(params.port));
+    if (!endpoint) return reply.code(400).send(responseError('VALIDATION_ERROR', 'Host oder Port ist ungültig.'));
+    await pool.query('DELETE FROM immich_endpoint_approvals WHERE host=$1 AND port=$2', [endpoint.host, endpoint.port]);
+    await audit(session.userId, 'immich.endpoint_revoke', `${endpoint.host}:${endpoint.port}`, request);
+    return reply.code(204).send();
+  });
 
   app.get('/api/v1/immich/connection', async (request, reply) => {
     const session = await requireSession(request, reply);
@@ -107,9 +191,12 @@ export function registerImmichRoutes(input: {
     const row = await pool.query<{ server_url: string }>('SELECT server_url FROM immich_connections WHERE user_id=$1', [session.userId]);
     if (!row.rowCount) return reply.code(404).send(responseError('NOT_FOUND', 'Keine Immich-Verbindung gespeichert.'));
     try {
-      const result = await new ImmichClient(row.rows[0].server_url, `secret://immich/${session.userId}`, secretResolver).connectionTest();
+      const result = await newClient(row.rows[0].server_url, session.userId).connectionTest();
       return { version: result.version || 'unbekannt', supported: false };
-    } catch {
+    } catch (cause) {
+      if (cause instanceof ImmichTargetBlockedError) {
+        return { version: 'unbekannt', supported: false, ...targetNotAllowed(cause) };
+      }
       return { version: 'unbekannt', supported: false };
     }
   });
@@ -129,6 +216,15 @@ export function registerImmichRoutes(input: {
     const connection = await pool.query<{ server_url: string; generation: string }>('SELECT server_url,generation FROM immich_connections WHERE user_id=$1', [session.userId]);
     if (!connection.rowCount) return reply.code(404).send(responseError('NOT_FOUND', 'Keine Immich-Verbindung gespeichert.'));
 
+    const client = newClient(connection.rows[0].server_url, session.userId);
+    let target: { version: string; userId: string };
+    try {
+      target = await client.connectionTest();
+    } catch (cause) {
+      if (cause instanceof ImmichTargetBlockedError) return reply.code(403).send(targetNotAllowed(cause));
+      throw cause;
+    }
+
     const write = await blobstore.beginWrite({ ownerUserId: session.userId });
     try {
       await blobstore.append(write, bytes);
@@ -143,8 +239,6 @@ export function registerImmichRoutes(input: {
         createdAt: clock.now(),
         modifiedAt: clock.now()
       };
-      const client = new ImmichClient(connection.rows[0].server_url, `secret://immich/${session.userId}`, secretResolver);
-      const target = await client.connectionTest();
       const transfer = await transfers.create({ userId: session.userId, objectId: stored.id, targetId: target.userId, sha256: local.sha256 });
       const result = await new TransferService(transfers, client).run(transfer.id, local, target.userId, Number(connection.rows[0].generation));
       await audit(session.userId, 'immich.test_transfer', result.id, request);

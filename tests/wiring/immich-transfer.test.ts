@@ -95,6 +95,18 @@ function headers(login: Login) {
   return { cookie: login.cookie, 'x-kura-csrf': login.csrf, origin: 'http://localhost', host: 'localhost' };
 }
 
+// The fake Immich listens on loopback, which needs an administrator approval.
+async function approveFakeEndpoint(subject: Fixture, admin: Login) {
+  const port = Number(new URL(subject.serverUrl).port);
+  const response = await subject.app.inject({
+    method: 'POST',
+    url: '/api/v1/admin/immich/endpoint-approvals',
+    headers: headers(admin),
+    payload: { host: '127.0.0.1', port }
+  });
+  expect(response.statusCode).toBe(201);
+}
+
 async function saveConnection(subject: Fixture, login: Login) {
   const response = await subject.app.inject({
     method: 'PUT',
@@ -120,6 +132,7 @@ describe('W2 Immich test transfer wiring', () => {
     const subject = await fixture();
     fixtures.push(subject);
     const admin = await setup(subject);
+    await approveFakeEndpoint(subject, admin);
     await saveConnection(subject, admin);
 
     const response = await subject.app.inject({
@@ -150,6 +163,7 @@ describe('W2 Immich test transfer wiring', () => {
     const subject = await fixture(true);
     fixtures.push(subject);
     const admin = await setup(subject);
+    await approveFakeEndpoint(subject, admin);
     await saveConnection(subject, admin);
 
     const response = await subject.app.inject({

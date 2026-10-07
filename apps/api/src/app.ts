@@ -60,7 +60,7 @@ async function audit(client: Pool | PoolClient, actor: string | null, action: st
 }
 
 
-export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient; logStream?: Writable } = {}): FastifyInstance {
+export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient; logStream?: Writable; resolveImmichHost?: (host: string) => Promise<string[]> } = {}): FastifyInstance {
   const app = Fastify({ logger: loggerOptions(dependencies.logStream), trustProxy: config.trustProxy });
   const storageConfig = config.storage ?? { backend: 'filesystem' as const, root: './data/blobstore', quotaBytes: 10 * 1024 * 1024 * 1024, layout: 'cas' as const };
   const blobstore: StorageBackend = storageConfig.backend === 'database' ? new DatabaseBlobStore(pool, { quotaBytes: storageConfig.quotaBytes }) : new FilesystemBlobStore(storageConfig.root, storageConfig.layout, { quotaBytes: storageConfig.quotaBytes });
@@ -176,6 +176,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     blobstore,
     clock,
     requireSession,
+    resolveHost: dependencies.resolveImmichHost,
     audit: (actor, action, target, request, outcome) => audit(pool, actor, action, target, clientAddress(request), outcome)
   });
   if (webDirectory && existsSync(webDirectory)) { void app.register(fastifyStatic, { root: webDirectory, index: ['index.html'], cacheControl: false, setHeaders: (reply, filePath) => reply.header('Cache-Control', filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable') }); app.setNotFoundHandler((request, reply) => request.url.startsWith('/api/') || request.url === '/healthz' ? reply.code(404).send({ statusCode: 404, ...error('NOT_FOUND', 'Nicht gefunden.') }) : reply.type('text/html').sendFile('index.html')); }
