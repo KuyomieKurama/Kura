@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { DatabaseBlobStore, FilesystemBlobStore, type StorageBackend } from '@kura/blobstore';
+import type { Writable } from 'node:stream';
 import { promisify } from 'node:util';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
@@ -9,6 +10,7 @@ import type { Pool, PoolClient } from 'pg';
 import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransaction, type OidcProviderConfig } from '@kura/identity';
 import type { ApiConfig } from './config.js';
 import { registerImmichRoutes } from './immich-routes.js';
+import { loggerOptions } from './logging.js';
 
 const scrypt = promisify(scryptCallback) as (password: string | Buffer, salt: string | Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
 const SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
@@ -58,8 +60,8 @@ async function audit(client: Pool | PoolClient, actor: string | null, action: st
 }
 
 
-export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient } = {}): FastifyInstance {
-  const app = Fastify({ logger: true, trustProxy: config.trustProxy });
+export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient; logStream?: Writable } = {}): FastifyInstance {
+  const app = Fastify({ logger: loggerOptions(dependencies.logStream), trustProxy: config.trustProxy });
   const storageConfig = config.storage ?? { backend: 'filesystem' as const, root: './data/blobstore', quotaBytes: 10 * 1024 * 1024 * 1024, layout: 'cas' as const };
   const blobstore: StorageBackend = storageConfig.backend === 'database' ? new DatabaseBlobStore(pool, { quotaBytes: storageConfig.quotaBytes }) : new FilesystemBlobStore(storageConfig.root, storageConfig.layout, { quotaBytes: storageConfig.quotaBytes });
   void app.register(fastifyCookie);

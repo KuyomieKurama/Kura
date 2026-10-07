@@ -1,3 +1,4 @@
+import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { exportJWK, generateKeyPair, OidcClient, SignJWT } from '../../packages/identity/src/index.js';
@@ -13,7 +14,7 @@ const config = {
 };
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-async function fixture(subject = 'person-a', tokenNonce?: string) {
+async function fixture(subject = 'person-a', tokenNonce?: string, logStream?: Writable) {
   const keys = await generateKeyPair('RS256'); const publicJwk = await exportJWK(keys.publicKey);
   let nonce = ''; let idToken = '';
   const fake = await startFakeOidcProvider({ issuer, jwks: { keys: [{ ...publicJwk, kid: 'one', alg: 'RS256', use: 'sig' }] }, idToken: 'unused-by-api-token-stub' });
@@ -30,8 +31,8 @@ async function fixture(subject = 'person-a', tokenNonce?: string) {
   }) as typeof fetch;
   const originalBegin = client.begin.bind(client);
   client.begin = async (provider) => { const started = await originalBegin(provider); nonce = started.transaction.nonce; idToken = await new SignJWT({ sub: subject, nonce: tokenNonce ?? nonce, groups: ['downloader-users'], email: 'same@example.test' }).setProtectedHeader({ alg: 'RS256', kid: 'one' }).setIssuer(issuer).setAudience(config.oidc.clientId).setIssuedAt().setExpirationTime('5m').sign(keys.privateKey); return started; };
-  const app = buildApp(config, new Pool({ connectionString: database.databaseUrl }), undefined, undefined, { oidcClient: client });
-  return { app, database, migrations, fake, oldFetch, cleanup: async () => { globalThis.fetch = oldFetch; await app.close(); await fake.close(); await migrations.cleanup(); await database.cleanup(); } };
+  const app = buildApp(config, new Pool({ connectionString: database.databaseUrl }), undefined, undefined, { oidcClient: client, logStream });
+  return { app, database, migrations, fake, oldFetch, loginSecrets: () => ({ nonce, idToken }), cleanup: async () => { globalThis.fetch = oldFetch; await app.close(); await fake.close(); await migrations.cleanup(); await database.cleanup(); } };
 }
 
 describe('OIDC API login', () => {
@@ -60,6 +61,44 @@ describe('OIDC API login', () => {
     expect(rejected.statusCode).toBe(302); expect(rejected.headers.location).toBe('/?oidc=error');
     const audit = await subject.database.pool.query("SELECT action,outcome,details FROM audit_events WHERE action='auth.oidc_login'");
     expect(audit.rows).toHaveLength(1); expect(JSON.stringify(audit.rows)).not.toContain('untrusted-code');
+  });
+  it('never writes the authorization code, state, nonce, tokens or secrets to the request log', async () => {
+    const chunks: string[] = [];
+    const logStream = new Writable({ write(chunk, _encoding, done) { chunks.push(String(chunk)); done(); } });
+    const subject = await fixture('person-log', undefined, logStream); fixtures.push(subject);
+    const start = await subject.app.inject({ url: '/api/v1/auth/oidc/start' });
+    const transactionCookie = start.headers['set-cookie'] as string;
+    const authorizationUrl = new URL(start.headers.location!);
+    const authorization = await fetch(authorizationUrl, { redirect: 'manual' });
+    const callback = new URL(authorization.headers.get('location')!);
+    const code = callback.searchParams.get('code')!;
+    const state = callback.searchParams.get('state')!;
+    const callbackResponse = await subject.app.inject({ url: `${callback.pathname}${callback.search}`, headers: { cookie: transactionCookie } });
+    expect(callbackResponse.statusCode).toBe(302); expect(callbackResponse.headers.location).toBe('/?oidc=success');
+    const callbackCookies = callbackResponse.headers['set-cookie'];
+    const sessionCookie = (Array.isArray(callbackCookies) ? callbackCookies : [callbackCookies]).find((cookie) => cookie?.startsWith('kura_session='))!;
+    await subject.app.inject({ url: '/api/v1/auth/state', headers: { cookie: sessionCookie } });
+    // A failing callback must be redacted as well.
+    await subject.app.inject({ url: '/api/v1/auth/oidc/callback?code=rejected-code-value&state=rejected-state-value', headers: { cookie: transactionCookie } });
+    await subject.app.close();
+
+    const log = chunks.join('');
+    expect(log).toContain('/api/v1/auth/oidc/callback');
+    const { nonce, idToken } = subject.loginSecrets();
+    const sessionToken = sessionCookie.split(';')[0]!.slice('kura_session='.length);
+    const transactionToken = transactionCookie.split(';')[0]!.slice('kura_oidc_transaction='.length);
+    const forbidden = {
+      code, state, nonce, idToken, sessionToken, transactionToken,
+      clientSecret: 'test-secret',
+      codeChallenge: authorizationUrl.searchParams.get('code_challenge')!,
+      rejectedCode: 'rejected-code-value', rejectedState: 'rejected-state-value'
+    };
+    for (const [name, value] of Object.entries(forbidden)) {
+      expect(value, `${name} must be a real value`).toBeTruthy();
+      expect(log, `${name} leaked into the log`).not.toContain(value);
+    }
+    expect(log).not.toContain('code=');
+    expect(log).not.toContain('state=');
   });
   it('rejects an ID token with a wrong nonce', async () => {
     const subject = await fixture('person-b', 'wrong-nonce'); fixtures.push(subject);
