@@ -1,5 +1,5 @@
 export type ApiError = Error & { status?: number; code?: string };
-export type AuthState = { configured: boolean; authenticated: boolean; role: 'admin' | 'user' | null; csrfToken: string | null; passwordChangeRequired: boolean };
+export type AuthState = { configured: boolean; authenticated: boolean; role: 'admin' | 'user' | null; csrfToken: string | null; passwordChangeRequired: boolean; oidcEnabled?: boolean };
 export type User = { id: string; display_name: string; username: string; role: 'admin' | 'user'; status: 'active' | 'blocked'; created_at: string };
 
 let csrfToken: string | null = null;

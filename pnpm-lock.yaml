@@ -44,6 +44,9 @@ importers:
       '@kura/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@kura/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
       '@kura/storage':
         specifier: workspace:*
         version: link:../../packages/storage

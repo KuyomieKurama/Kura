@@ -12,6 +12,7 @@
     "@fastify/cookie": "11.0.2",
     "@fastify/static": "10.1.1",
     "@kura/contracts": "workspace:*",
+    "@kura/identity": "workspace:*",
     "@kura/storage": "workspace:*",
     "fastify": "5.12.5",
     "pg": "8.23.1"

@@ -26,6 +26,8 @@ export const labels = {
   loginTitle: 'Anmelden',
   loginSubmit: 'Anmelden',
   loginFailed: 'Anmeldung fehlgeschlagen. Prüfen Sie Benutzername und Passwort.',
+  ssoLogin: 'Mit SSO anmelden',
+  ssoLoginFailed: 'Die SSO-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder verwenden Sie die lokale Anmeldung.',
   logout: 'Abmelden',
   account: 'Konto',
   users: 'Benutzerverwaltung',

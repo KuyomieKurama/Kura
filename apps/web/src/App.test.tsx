@@ -43,6 +43,11 @@ it('renders a generic login failure', async () => {
   fireEvent.change(screen.getByLabelText('Benutzername'), { target: { value: 'a' } }); fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'a' } }); fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Anmeldung fehlgeschlagen. Prüfen Sie Benutzername und Passwort.');
 });
+it('shows the SSO login only when the API enables it', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ configured: true, authenticated: false, role: null, csrfToken: null, passwordChangeRequired: false, oidcEnabled: true })));
+  render(<App />);
+  expect(await screen.findByRole('link', { name: 'Mit SSO anmelden' })).toHaveAttribute('href', '/api/v1/auth/oidc/start');
+});
 it('opens the create-user dialog for an administrator', async () => {
   vi.stubGlobal('fetch', mockAuthenticated()); render(<App />); await screen.findByText('Erreichbar'); fireEvent.click(screen.getByRole('button', { name: 'Benutzerverwaltung' })); fireEvent.click(await screen.findByRole('button', { name: 'Benutzer anlegen' }));
   expect(screen.getByRole('dialog')).toBeInTheDocument();

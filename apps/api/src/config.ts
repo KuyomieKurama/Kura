@@ -5,6 +5,15 @@ export interface ApiConfig {
   trustProxy: boolean | string[];
   cookieSecure?: boolean;
   setupToken?: string;
+  oidc?: {
+    issuer: string;
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+    groupClaim: string;
+    userGroups: string[];
+    adminGroups: string[];
+  };
 }
 
 function required(name: string, value: string | undefined): string {
@@ -34,6 +43,22 @@ function parseTrustProxy(value: string | undefined): boolean | string[] {
   return addresses;
 }
 
+function parseGroups(value: string | undefined, defaultValue: string[]): string[] {
+  const groups = (value ?? defaultValue.join(',')).split(',').map((entry) => entry.trim()).filter(Boolean);
+  if (!groups.length) throw new Error('OIDC group configuration must not be empty');
+  return groups;
+}
+
+function oidcConfig(environment: NodeJS.ProcessEnv): ApiConfig['oidc'] {
+  const values = [environment.OIDC_ISSUER_URL, environment.OIDC_CLIENT_ID, environment.OIDC_CLIENT_SECRET, environment.OIDC_REDIRECT_URL];
+  if (values.every((value) => value === undefined || value === '')) return undefined;
+  if (values.some((value) => value === undefined || value === '')) throw new Error('OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URL must be configured together');
+  return {
+    issuer: environment.OIDC_ISSUER_URL!, clientId: environment.OIDC_CLIENT_ID!, clientSecret: environment.OIDC_CLIENT_SECRET!, redirectUri: environment.OIDC_REDIRECT_URL!,
+    groupClaim: environment.OIDC_GROUP_CLAIM ?? 'downloader_groups', userGroups: parseGroups(environment.OIDC_USER_GROUPS, ['downloader-users']), adminGroups: parseGroups(environment.OIDC_ADMIN_GROUPS, ['downloader-admins'])
+  };
+}
+
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiConfig {
   const databaseUrl = required('DATABASE_URL', environment.DATABASE_URL);
   try { new URL(databaseUrl); } catch { throw new Error('DATABASE_URL must be a URL'); }
@@ -43,6 +68,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     port: parsePort(environment.PORT),
     trustProxy: parseTrustProxy(environment.TRUST_PROXY),
     cookieSecure: parseBoolean('COOKIE_SECURE', environment.COOKIE_SECURE, true),
-    setupToken: environment.KURA_SETUP_TOKEN
+    setupToken: environment.KURA_SETUP_TOKEN,
+    oidc: oidcConfig(environment)
   };
 }

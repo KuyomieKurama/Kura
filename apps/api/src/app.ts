@@ -5,6 +5,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
+import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransaction, type OidcProviderConfig } from '@kura/identity';
 import type { ApiConfig } from './config.js';
 
 const scrypt = promisify(scryptCallback) as (password: string | Buffer, salt: string | Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
@@ -54,9 +55,22 @@ async function audit(client: Pool | PoolClient, actor: string | null, action: st
   await client.query('INSERT INTO audit_events (id, actor_user_id, action, target_id, outcome, details) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), actor, action, target, outcome, JSON.stringify({ sourceAddress: source })]);
 }
 
-export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }): FastifyInstance {
+export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient } = {}): FastifyInstance {
   const app = Fastify({ logger: true, trustProxy: config.trustProxy });
   void app.register(fastifyCookie);
+  const oidcProvider: OidcProviderConfig | undefined = config.oidc ? {
+    id: 'configured', kind: 'generic', issuer: config.oidc.issuer, clientId: config.oidc.clientId, clientSecretRef: 'secret://oidc/configured', redirectUri: config.oidc.redirectUri,
+    groupClaim: config.oidc.groupClaim, userGroups: config.oidc.userGroups, adminGroups: config.oidc.adminGroups, provisionOnFirstLogin: true
+  } : undefined;
+  const oidcClient = dependencies.oidcClient ?? (oidcProvider ? new OidcClient({
+    getJson: async (url) => {
+      const response = await fetch(url); if (!response.ok) throw new OidcError('OIDC_HTTP_ERROR'); return response.json();
+    },
+    postForm: async (url, form) => {
+      const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form) }); if (!response.ok) throw new OidcError('OIDC_HTTP_ERROR'); return response.json();
+    }
+  }, { resolve: async () => config.oidc!.clientSecret }, clock) : undefined);
+  const oidcTransactions = new Map<string, LoginTransaction>();
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('Content-Security-Policy', "default-src 'self'"); reply.header('X-Content-Type-Options', 'nosniff'); reply.header('Referrer-Policy', 'no-referrer'); return payload;
   });
@@ -76,7 +90,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     const token = request.cookies.kura_session; if (!token) return undefined;
     const hash = await sessionHash(token);
     const now = clock.now();
-    const result = await pool.query<{ user_id: string; role: Role; csrf_token: string; must_change_password: boolean }>("SELECT s.user_id, u.role, s.csrf_token, c.must_change_password FROM sessions s JOIN users u ON u.id=s.user_id JOIN local_credentials c ON c.user_id=u.id WHERE s.id_hash=$1 AND s.revoked_at IS NULL AND s.expires_at > $2 AND s.last_seen_at > $2 - interval '2 hours' AND u.status='active'", [hash, now]);
+    const result = await pool.query<{ user_id: string; role: Role; csrf_token: string; must_change_password: boolean }>("SELECT s.user_id, u.role, s.csrf_token, COALESCE(c.must_change_password,false) AS must_change_password FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN local_credentials c ON c.user_id=u.id WHERE s.id_hash=$1 AND s.revoked_at IS NULL AND s.expires_at > $2 AND s.last_seen_at > $2 - interval '2 hours' AND u.status='active'", [hash, now]);
     const row = result.rows[0]; if (!row) return undefined;
     await pool.query("UPDATE sessions SET last_seen_at=$2 WHERE id_hash=$1 AND expires_at > $2", [hash, now]);
     return { userId: row.user_id, role: row.role, csrf: row.csrf_token, mustChangePassword: row.must_change_password };
@@ -103,7 +117,27 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   }
   app.get('/healthz', async () => { await pool.query('SELECT 1'); return { status: 'ok' }; });
   app.get('/api/v1/status', async () => { const migrations = await pool.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version'); return { version: '0.1.0', database: 'ok', migrations: { appliedCount: migrations.rowCount, latestVersion: migrations.rows.at(-1)?.version ?? null } }; });
-  app.get('/api/v1/auth/state', async (request) => { const count = await pool.query('SELECT 1 FROM users LIMIT 1'); const session = await getSession(request); return { configured: count.rowCount !== 0, authenticated: Boolean(session), role: session?.role ?? null, csrfToken: session?.csrf ?? null, passwordChangeRequired: session?.mustChangePassword ?? false, cookieSecure: config.cookieSecure ?? true }; });
+  app.get('/api/v1/auth/config', async () => ({ oidcEnabled: Boolean(oidcProvider) }));
+  app.get('/api/v1/auth/state', async (request) => { const count = await pool.query('SELECT 1 FROM users LIMIT 1'); const session = await getSession(request); return { configured: count.rowCount !== 0, authenticated: Boolean(session), role: session?.role ?? null, csrfToken: session?.csrf ?? null, passwordChangeRequired: session?.mustChangePassword ?? false, cookieSecure: config.cookieSecure ?? true, oidcEnabled: Boolean(oidcProvider) }; });
+  app.get('/api/v1/auth/oidc/start', async (_request, reply) => {
+    if (!oidcProvider || !oidcClient) return reply.code(404).send(error('OIDC_DISABLED', 'SSO-Anmeldung ist nicht eingerichtet.'));
+    try {
+      const started = await oidcClient.begin(oidcProvider); const transactionId = randomBytes(32).toString('base64url'); oidcTransactions.set(transactionId, started.transaction);
+      reply.setCookie('kura_oidc_transaction', transactionId, { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure ?? true, path: '/api/v1/auth/oidc/', maxAge: 600 });
+      return reply.redirect(started.authorizationUrl);
+    } catch (cause) { await audit(pool, null, 'auth.oidc_login', 'oidc:start', clientAddress(_request), 'failure'); throw cause; }
+  });
+  app.get('/api/v1/auth/oidc/callback', async (request, reply) => {
+    if (!oidcProvider || !oidcClient) return reply.code(404).send(error('OIDC_DISABLED', 'SSO-Anmeldung ist nicht eingerichtet.'));
+    const transactionId = request.cookies.kura_oidc_transaction; const transaction = transactionId ? oidcTransactions.get(transactionId) : undefined;
+    if (transactionId) oidcTransactions.delete(transactionId); reply.clearCookie('kura_oidc_transaction', { path: '/api/v1/auth/oidc/' });
+    try {
+      if (!transaction) throw new OidcError('OIDC_STATE_INVALID');
+      const result = await oidcClient.finish(oidcProvider, transaction, request.query as { code?: string; state?: string }, new PostgresIdentityRepository(pool));
+      await createSession(result.userId, reply); await audit(pool, result.userId, 'auth.oidc_login', result.userId, clientAddress(request));
+      return reply.redirect('/?oidc=success');
+    } catch { await audit(pool, null, 'auth.oidc_login', 'oidc:callback', clientAddress(request), 'failure'); return reply.redirect('/?oidc=error'); }
+  });
   app.post('/api/v1/auth/setup', async (request, reply) => {
     if (!originIsValid(request)) return reply.code(403).send(error('ORIGIN_REJECTED', 'Die Herkunft der Anfrage ist ungültig.'));
     const body = request.body as Record<string, unknown>; const username = normalized(body.username); const displayName = string(body.displayName); const password = String(body.password ?? '');
@@ -122,7 +156,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     await pool.query("DELETE FROM login_attempts WHERE subject=$1 AND source_address='*'", [username]); const csrf = await createSession(account.user_id, reply); await audit(pool, account.user_id, 'auth.login', account.user_id, source); return { csrfToken: csrf, passwordChangeRequired: account.must_change_password };
   });
   app.post('/api/v1/auth/logout', async (request, reply) => { const session = await requireSession(request, reply); if (!session) return; await pool.query('UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND csrf_token=$2 AND revoked_at IS NULL', [session.userId, session.csrf]); reply.clearCookie('kura_session', cookieOptions(config)); await audit(pool, session.userId, 'auth.logout', session.userId, clientAddress(request)); return reply.code(204).send(); });
-  app.get('/api/v1/users', async (request, reply) => { const session = await requireSession(request, reply); if (!session) return; const query = session.role === 'admin' ? 'SELECT u.id,u.display_name,u.role,u.status,u.created_at,c.login_email_normalized AS username FROM users u JOIN local_credentials c ON c.user_id=u.id ORDER BY u.created_at' : 'SELECT u.id,u.display_name,u.role,u.status,u.created_at,c.login_email_normalized AS username FROM users u JOIN local_credentials c ON c.user_id=u.id WHERE u.id=$1'; const result = await pool.query(query, session.role === 'admin' ? [] : [session.userId]); return { users: result.rows }; });
+  app.get('/api/v1/users', async (request, reply) => { const session = await requireSession(request, reply); if (!session) return; const query = session.role === 'admin' ? 'SELECT u.id,u.display_name,u.role,u.status,u.created_at,COALESCE(c.login_email_normalized, i.subject) AS username FROM users u LEFT JOIN local_credentials c ON c.user_id=u.id LEFT JOIN identities i ON i.user_id=u.id ORDER BY u.created_at' : 'SELECT u.id,u.display_name,u.role,u.status,u.created_at,COALESCE(c.login_email_normalized, i.subject) AS username FROM users u LEFT JOIN local_credentials c ON c.user_id=u.id LEFT JOIN identities i ON i.user_id=u.id WHERE u.id=$1'; const result = await pool.query(query, session.role === 'admin' ? [] : [session.userId]); return { users: result.rows }; });
   app.get('/api/v1/users/:id', async (request, reply) => { const session = await requireSession(request, reply); if (!session) return; const targetId = (request.params as { id: string }).id; if (session.role !== 'admin' && targetId !== session.userId) return reply.code(403).send(error('FORBIDDEN', 'Zugriff verweigert.')); const result = await pool.query('SELECT u.id,u.display_name,u.role,u.status,u.created_at,c.login_email_normalized AS username FROM users u JOIN local_credentials c ON c.user_id=u.id WHERE u.id=$1', [targetId]); if (!result.rowCount) return reply.code(404).send(error('NOT_FOUND', 'Benutzer nicht gefunden.')); return { user: result.rows[0] }; });
   app.post('/api/v1/users', async (request, reply) => { const session = await requireSession(request, reply); if (!session) return; if (session.role !== 'admin') return reply.code(403).send(error('FORBIDDEN', 'Administratorrechte erforderlich.')); const body = request.body as Record<string, unknown>; const username = normalized(body.username); const displayName = string(body.displayName); const role = body.role === 'admin' ? 'admin' : 'user'; const password = String(body.initialPassword ?? ''); if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username) || !displayName || passwordError(password)) return reply.code(400).send(error('VALIDATION_ERROR', passwordError(password) ?? 'Ungültige Benutzerdaten.')); const id = randomUUID(); const client = await pool.connect(); try { await client.query('BEGIN'); await client.query("INSERT INTO users (id,display_name,role,status) VALUES ($1,$2,$3,'active')", [id, displayName, role]); await client.query('INSERT INTO local_credentials (user_id,login_email_normalized,password_hash,must_change_password) VALUES ($1,$2,$3,true)', [id, username, await hashPassword(password)]); await audit(client, session.userId, 'user.create', id, clientAddress(request)); await client.query('COMMIT'); return reply.code(201).send({ user: { id, username, displayName, role, status: 'active' } }); } catch (cause) { await client.query('ROLLBACK'); if ((cause as { code?: string }).code === '23505') return reply.code(409).send(error('USERNAME_TAKEN', 'Benutzername bereits vergeben.')); throw cause; } finally { client.release(); } });
   app.patch('/api/v1/users/:id', async (request, reply) => { const session = await requireSession(request, reply); if (!session) return; if (session.role !== 'admin') return reply.code(403).send(error('FORBIDDEN', 'Administratorrechte erforderlich.')); const targetId = (request.params as { id: string }).id; const body = request.body as Record<string, unknown>; const requestedStatus = body.status === 'blocked' || body.status === 'active' ? body.status : undefined; const requestedRole = body.role === 'admin' || body.role === 'user' ? body.role : undefined; if (!requestedStatus && !requestedRole) return reply.code(400).send(error('VALIDATION_ERROR', 'Keine gültige Änderung.')); const target = await pool.query<{ role: Role; status: string }>('SELECT role,status FROM users WHERE id=$1', [targetId]); if (!target.rowCount) return reply.code(404).send(error('NOT_FOUND', 'Benutzer nicht gefunden.')); if (targetId === session.userId && (requestedStatus === 'blocked' || requestedRole === 'user') && target.rows[0].role === 'admin') { const admins = await pool.query("SELECT count(*)::int AS count FROM users WHERE role='admin' AND status='active'"); if (admins.rows[0].count <= 1) return reply.code(409).send(error('LAST_ADMIN_PROTECTED', 'Der letzte aktive Administrator kann nicht gesperrt oder herabgestuft werden.')); }
