@@ -136,6 +136,14 @@ describe('W2 Immich test transfer wiring', () => {
     expect(status.json().transfer).toMatchObject({ status: 'verified', localOriginalRetained: true, evidence: { serverVersion: '3.2.1', byteLength: subject.fake.bytes.length, album: 'none' } });
     expect(subject.fake.uploads).toBe(1);
     expect((await subject.database.pool.query('SELECT count(*)::int AS count FROM blobstore_objects')).rows[0].count).toBe(1);
+
+    const created = await subject.app.inject({ method: 'POST', url: '/api/v1/users', headers: headers(admin), payload: { username: 'alice', displayName: 'Alice', initialPassword: 'a sufficiently long password', role: 'user' } });
+    expect(created.statusCode).toBe(201);
+    const login = await subject.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: 'alice', password: 'a sufficiently long password' } });
+    const alice = { cookie: login.headers['set-cookie'] as string, csrf: login.json().csrfToken as string };
+    await subject.app.inject({ method: 'POST', url: '/api/v1/auth/change-password', headers: headers(alice), payload: { currentPassword: 'a sufficiently long password', newPassword: 'another sufficiently long password' } });
+    const foreignStatus = await subject.app.inject({ url: `/api/v1/immich/transfers/${transferId}`, headers: { cookie: alice.cookie } });
+    expect(foreignStatus.statusCode).toBe(404);
   });
 
   it('keeps the transfer reconciling after an uncertain upload and does not delete its local original', async () => {
