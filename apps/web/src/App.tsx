@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { api, type AuthState, type ImmichTransfer, type User } from './api.js';
+import { api, type AuthState, type ImmichEndpointApproval, type ImmichTransfer, type User } from './api.js';
 import { labels } from './labels.js';
 
 type View = 'loading' | 'setup' | 'login' | 'forced-password' | 'dashboard' | 'account' | 'users' | 'immich';
@@ -16,7 +16,61 @@ function PasswordForm({ forced, done }: { forced?: boolean; done: () => void }) 
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const currentPassword = String(data.get('currentPassword')); const newPassword = String(data.get('newPassword')); if (newPassword !== String(data.get('repeatPassword'))) { setError(labels.passwordMismatch); return; } try { await api.changePassword({ currentPassword, newPassword }); done(); } catch (cause) { setError(message(cause)); } }
   return <section><h2>{forced ? labels.changePasswordRequired : labels.changePasswordTitle}</h2>{forced && <p>{labels.changePasswordRequiredHint}</p>}<form onSubmit={submit}><label>{labels.currentPassword}<input name="currentPassword" type="password" autoComplete="current-password" required /></label><label>{labels.newPassword}<input name="newPassword" type="password" autoComplete="new-password" minLength={12} required /></label><label>{labels.passwordRepeat}<input name="repeatPassword" type="password" autoComplete="new-password" minLength={12} required /></label><p>{labels.passwordHint}</p>{error && <p className="form-error" role="alert">{error}</p>}<button>{labels.changePasswordSubmit}</button></form></section>;
 }
-function ImmichPage() {
+function ImmichEndpointApprovals() {
+  const [approvals, setApprovals] = useState<ImmichEndpointApproval[]>([]);
+  const [notice, setNotice] = useState('');
+
+  async function reload() {
+    try {
+      setApprovals((await api.immichEndpointApprovals()).approvals);
+    } catch (cause) {
+      setNotice(message(cause));
+    }
+  }
+
+  useEffect(() => { void reload(); }, []);
+
+  async function approve(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    try {
+      await api.approveImmichEndpoint({ host: String(data.get('host')), port: Number(data.get('port')) });
+      form.reset();
+      setNotice('Endpunkt freigegeben.');
+      await reload();
+    } catch (cause) {
+      setNotice(message(cause));
+    }
+  }
+
+  async function revoke(approval: ImmichEndpointApproval) {
+    try {
+      await api.revokeImmichEndpoint(approval);
+      setNotice('Freigabe entzogen.');
+      await reload();
+    } catch (cause) {
+      setNotice(message(cause));
+    }
+  }
+
+  return <section aria-label="Freigaben für private Immich-Endpunkte">
+    <h3>Freigaben für private Immich-Endpunkte</h3>
+    <p>Ziele in privaten Netzen oder auf diesem Rechner werden nur nach Freigabe von Host und Port durch einen Administrator kontaktiert. Link-Local- und Metadaten-Adressen sind immer gesperrt.</p>
+    {approvals.length === 0 ? <p>Keine Freigaben vorhanden.</p> : <ul>
+      {approvals.map((approval) => <li key={`${approval.host}:${approval.port}`}>
+        {approval.host}:{approval.port} <button type="button" className="secondary" onClick={() => void revoke(approval)}>Freigabe entziehen</button>
+      </li>)}
+    </ul>}
+    <form onSubmit={approve}>
+      <label>Host<input name="host" required autoComplete="off" /></label>
+      <label>Port<input name="port" type="number" min="1" max="65535" required /></label>
+      <button>Endpunkt freigeben</button>
+    </form>
+    {notice && <p role="status">{notice}</p>}
+  </section>;
+}
+function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
   const [connectionUrl, setConnectionUrl] = useState('');
   const [result, setResult] = useState('');
   const [transfer, setTransfer] = useState<ImmichTransfer | null>(null);
@@ -41,6 +95,10 @@ function ImmichPage() {
   async function test() {
     try {
       const response = await api.testImmichConnection();
+      if (response.error) {
+        setResult(`${response.error.message} (${response.target?.host ?? 'unbekannt'}:${response.target?.port ?? 'unbekannt'})`);
+        return;
+      }
       setResult(`Serverversion: ${response.version}; unterstützt: ${response.supported ? 'ja' : 'nein'}.`);
     } catch (cause) {
       setResult(message(cause));
@@ -98,6 +156,7 @@ function ImmichPage() {
       <p>Originalnachweis: {transfer.evidence ? `Server ${transfer.evidence.serverVersion ?? 'unbekannt'}, ${transfer.evidence.byteLength ?? 'unbekannt'} Bytes, Album ${transfer.evidence.album ?? 'unbekannt'}.` : 'noch nicht vorhanden.'}</p>
     </section>}
     {result && <p role="status">{result}</p>}
+    {isAdmin && <ImmichEndpointApprovals />}
   </section>;
 }
 
@@ -116,5 +175,5 @@ export function App() {
   if (view === 'setup') return <main className="auth"><h1>{labels.title}</h1>{banner}<section><h2>{labels.setupTitle}</h2><p>{labels.setupIntro}</p><form onSubmit={submitSetup}><label>{labels.displayName}<input name="displayName" autoComplete="name" required /></label><label>{labels.username}<input name="username" autoComplete="username" required /></label><label>{labels.password}<input name="password" type="password" autoComplete="new-password" minLength={12} required /></label><label>{labels.passwordRepeat}<input name="repeatPassword" type="password" autoComplete="new-password" minLength={12} required /></label><label>{labels.setupToken}<input name="setupToken" autoComplete="off" /></label><p>{labels.setupTokenHint}</p><p>{labels.passwordHint}</p>{error && <p className="form-error" role="alert">{error}</p>}<button>{labels.setupSubmit}</button></form></section></main>;
   if (view === 'login') return <main className="auth"><h1>{labels.title}</h1>{banner}<section><h2>{labels.loginTitle}</h2><form onSubmit={submitLogin}><label>{labels.username}<input name="username" autoComplete="username" required /></label><label>{labels.password}<input name="password" type="password" autoComplete="current-password" required /></label>{error && <p className="form-error" role="alert">{error}</p>}<button>{labels.loginSubmit}</button></form>{auth?.oidcEnabled && <p><a className="button-link" href="/api/v1/auth/oidc/start">{labels.ssoLogin}</a></p>}</section></main>;
   if (view === 'forced-password') return <main className="auth"><h1>{labels.title}</h1>{banner}<PasswordForm forced done={() => setView('dashboard')} /><button type="button" className="secondary" onClick={() => void logout()}>{labels.logout}</button></main>;
-  return <main><header className="app-header"><div><h1>{labels.title}</h1><span>{current?.display_name ?? current?.username ?? ''}{auth?.role ? ` · ${auth.role === 'admin' ? labels.adminRole : labels.userRole}` : ''}</span></div><nav><button type="button" onClick={() => setView('dashboard')}>{labels.title}</button><button type="button" onClick={() => setView('immich')}>Immich</button>{auth?.role === 'admin' && <button type="button" onClick={() => setView('users')}>{labels.users}</button>}<button type="button" onClick={() => setView('account')}>{labels.account}</button><button type="button" onClick={() => void logout()}>{labels.logout}</button></nav></header>{banner}{view === 'immich' && <ImmichPage />}{view === 'account' && <PasswordForm done={() => setView('dashboard')} />}{view === 'dashboard' && <><section className="cards"><article><h2>{labels.service}</h2><p className={healthOk ? 'ok' : 'error'}>{healthOk ? labels.available : labels.unavailable}</p><p>{labels.databaseAvailable}: {healthOk ? labels.available : labels.unavailable}</p></article><article><h2>{labels.database}</h2><p>{labels.migrations}: {status?.migrations.appliedCount ?? '–'}</p><p>{labels.latestMigration}: {status?.migrations.latestVersion ?? '–'}</p></article></section><section><h2>{labels.areas[0]}</h2><ul>{labels.areas.map((area) => <li key={area} aria-disabled="true">{area}</li>)}</ul></section></>}{view === 'users' && auth?.role === 'admin' && <section><div className="section-header"><h2>{labels.users}</h2><button type="button" onClick={() => setCreateOpen(true)}>{labels.createUser}</button></div>{users.length === 0 ? <p>{labels.noUsers}</p> : <div className="table-wrap"><table><thead><tr><th>{labels.userNameColumn}</th><th>{labels.userUsernameColumn}</th><th>{labels.userRoleColumn}</th><th>{labels.userStatusColumn}</th><th>{labels.userCreatedColumn}</th><th>{labels.userActionsColumn}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.display_name}</td><td>{user.username}</td><td>{user.role === 'admin' ? labels.adminRole : labels.userRole}</td><td>{user.status === 'active' ? labels.active : labels.blocked}</td><td>{new Date(user.created_at).toLocaleDateString('de-DE')}</td><td>{!(user.id === current?.id && user.role === 'admin' && user.status === 'active' && users.filter((item) => item.role === 'admin' && item.status === 'active').length === 1) && <button type="button" onClick={() => setConfirmUser(user)}>{user.status === 'active' ? labels.lock : labels.unlock}</button>}</td></tr>)}</tbody></table></div>}</section>}{createOpen && <Dialog title={labels.createUserTitle} close={() => setCreateOpen(false)}><form onSubmit={async (event) => { event.preventDefault(); const data = new FormData(event.currentTarget); try { await api.createUser({ displayName: String(data.get('displayName')), username: String(data.get('username')), role: data.get('role') === 'admin' ? 'admin' : 'user', initialPassword: String(data.get('initialPassword')) }); await loadUsers(); setCreateOpen(false); } catch (cause) { setError(message(cause)); } }}><label>{labels.displayName}<input name="displayName" required autoComplete="name" /></label><label>{labels.username}<input name="username" required autoComplete="username" /></label><label>{labels.role}<select name="role"><option value="user">{labels.userRole}</option><option value="admin">{labels.adminRole}</option></select></label><label>{labels.initialPassword}<input name="initialPassword" type="password" minLength={12} required autoComplete="new-password" /></label><p>{labels.passwordHint}</p>{error && <p className="form-error" role="alert">{error}</p>}<button>{labels.save}</button><button type="button" className="secondary" onClick={() => setCreateOpen(false)}>{labels.cancel}</button></form></Dialog>}{confirmUser && <Dialog title={confirmUser.status === 'active' ? labels.lock : labels.unlock} close={() => setConfirmUser(null)}><p>{confirmUser.status === 'active' ? labels.lockConfirm : labels.unlockConfirm}</p><button type="button" onClick={async () => { try { await api.updateUser(confirmUser.id, confirmUser.status === 'active' ? 'blocked' : 'active'); await loadUsers(); setConfirmUser(null); } catch (cause) { setError(message(cause)); setConfirmUser(null); } }}>{confirmUser.status === 'active' ? labels.lock : labels.unlock}</button><button type="button" className="secondary" onClick={() => setConfirmUser(null)}>{labels.cancel}</button></Dialog>}</main>;
+  return <main><header className="app-header"><div><h1>{labels.title}</h1><span>{current?.display_name ?? current?.username ?? ''}{auth?.role ? ` · ${auth.role === 'admin' ? labels.adminRole : labels.userRole}` : ''}</span></div><nav><button type="button" onClick={() => setView('dashboard')}>{labels.title}</button><button type="button" onClick={() => setView('immich')}>Immich</button>{auth?.role === 'admin' && <button type="button" onClick={() => setView('users')}>{labels.users}</button>}<button type="button" onClick={() => setView('account')}>{labels.account}</button><button type="button" onClick={() => void logout()}>{labels.logout}</button></nav></header>{banner}{view === 'immich' && <ImmichPage isAdmin={auth?.role === 'admin'} />}{view === 'account' && <PasswordForm done={() => setView('dashboard')} />}{view === 'dashboard' && <><section className="cards"><article><h2>{labels.service}</h2><p className={healthOk ? 'ok' : 'error'}>{healthOk ? labels.available : labels.unavailable}</p><p>{labels.databaseAvailable}: {healthOk ? labels.available : labels.unavailable}</p></article><article><h2>{labels.database}</h2><p>{labels.migrations}: {status?.migrations.appliedCount ?? '–'}</p><p>{labels.latestMigration}: {status?.migrations.latestVersion ?? '–'}</p></article></section><section><h2>{labels.areas[0]}</h2><ul>{labels.areas.map((area) => <li key={area} aria-disabled="true">{area}</li>)}</ul></section></>}{view === 'users' && auth?.role === 'admin' && <section><div className="section-header"><h2>{labels.users}</h2><button type="button" onClick={() => setCreateOpen(true)}>{labels.createUser}</button></div>{users.length === 0 ? <p>{labels.noUsers}</p> : <div className="table-wrap"><table><thead><tr><th>{labels.userNameColumn}</th><th>{labels.userUsernameColumn}</th><th>{labels.userRoleColumn}</th><th>{labels.userStatusColumn}</th><th>{labels.userCreatedColumn}</th><th>{labels.userActionsColumn}</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.display_name}</td><td>{user.username}</td><td>{user.role === 'admin' ? labels.adminRole : labels.userRole}</td><td>{user.status === 'active' ? labels.active : labels.blocked}</td><td>{new Date(user.created_at).toLocaleDateString('de-DE')}</td><td>{!(user.id === current?.id && user.role === 'admin' && user.status === 'active' && users.filter((item) => item.role === 'admin' && item.status === 'active').length === 1) && <button type="button" onClick={() => setConfirmUser(user)}>{user.status === 'active' ? labels.lock : labels.unlock}</button>}</td></tr>)}</tbody></table></div>}</section>}{createOpen && <Dialog title={labels.createUserTitle} close={() => setCreateOpen(false)}><form onSubmit={async (event) => { event.preventDefault(); const data = new FormData(event.currentTarget); try { await api.createUser({ displayName: String(data.get('displayName')), username: String(data.get('username')), role: data.get('role') === 'admin' ? 'admin' : 'user', initialPassword: String(data.get('initialPassword')) }); await loadUsers(); setCreateOpen(false); } catch (cause) { setError(message(cause)); } }}><label>{labels.displayName}<input name="displayName" required autoComplete="name" /></label><label>{labels.username}<input name="username" required autoComplete="username" /></label><label>{labels.role}<select name="role"><option value="user">{labels.userRole}</option><option value="admin">{labels.adminRole}</option></select></label><label>{labels.initialPassword}<input name="initialPassword" type="password" minLength={12} required autoComplete="new-password" /></label><p>{labels.passwordHint}</p>{error && <p className="form-error" role="alert">{error}</p>}<button>{labels.save}</button><button type="button" className="secondary" onClick={() => setCreateOpen(false)}>{labels.cancel}</button></form></Dialog>}{confirmUser && <Dialog title={confirmUser.status === 'active' ? labels.lock : labels.unlock} close={() => setConfirmUser(null)}><p>{confirmUser.status === 'active' ? labels.lockConfirm : labels.unlockConfirm}</p><button type="button" onClick={async () => { try { await api.updateUser(confirmUser.id, confirmUser.status === 'active' ? 'blocked' : 'active'); await loadUsers(); setConfirmUser(null); } catch (cause) { setError(message(cause)); setConfirmUser(null); } }}>{confirmUser.status === 'active' ? labels.lock : labels.unlock}</button><button type="button" className="secondary" onClick={() => setConfirmUser(null)}>{labels.cancel}</button></Dialog>}</main>;
 }

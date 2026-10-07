@@ -115,3 +115,50 @@ it('opens the create-user dialog for an administrator', async () => {
   expect(screen.getByRole('dialog')).toBeInTheDocument();
   fireEvent.keyDown(window, { key: 'Escape' }); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 });
+
+it('lets an administrator approve and revoke private Immich endpoints', async () => {
+  const approvals = [{ host: '192.168.1.20', port: 2283, approvedAt: '2026-10-08T10:00:00Z' }];
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith('/auth/state')) return response({ configured: true, authenticated: true, role: 'admin', csrfToken: 'csrf', passwordChangeRequired: false });
+    if (path.endsWith('/users')) return response({ users: [admin] });
+    if (path.endsWith('/healthz')) return response({ status: 'ok' });
+    if (path.endsWith('/status')) return response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } });
+    if (path.endsWith('/immich/connection')) return response({ connection: null });
+    if (path.endsWith('/admin/immich/endpoint-approvals') && init?.method === 'POST') {
+      approvals.push({ host: '10.0.0.5', port: 2283, approvedAt: '2026-10-08T10:01:00Z' });
+      return response({ approval: { host: '10.0.0.5', port: 2283 } }, 201);
+    }
+    if (path.endsWith('/admin/immich/endpoint-approvals')) return response({ approvals });
+    if (path.includes('/admin/immich/endpoint-approvals/') && init?.method === 'DELETE') {
+      approvals.splice(0, approvals.length);
+      return { ok: true, status: 204, json: async () => undefined };
+    }
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Immich' }));
+  expect(await screen.findByText('192.168.1.20:2283')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText('Host'), { target: { value: '10.0.0.5' } });
+  fireEvent.change(screen.getByLabelText('Port'), { target: { value: '2283' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Endpunkt freigeben' }));
+  expect(await screen.findByText('10.0.0.5:2283')).toBeInTheDocument();
+  const post = fetch.mock.calls.find(([, init]) => init?.method === 'POST' && String(init.body).includes('10.0.0.5'));
+  expect(JSON.parse(String(post?.[1]?.body))).toEqual({ host: '10.0.0.5', port: 2283 });
+
+  fireEvent.click(screen.getAllByRole('button', { name: 'Freigabe entziehen' })[0]!);
+  expect(await screen.findByText('Keine Freigaben vorhanden.')).toBeInTheDocument();
+  expect(fetch.mock.calls.some(([input, init]) => String(input).endsWith('/admin/immich/endpoint-approvals/192.168.1.20/2283') && init?.method === 'DELETE')).toBe(true);
+});
+it('does not offer Immich endpoint approval to a normal user', async () => {
+  vi.stubGlobal('fetch', mockAuthenticated('user'));
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Immich' }));
+  await screen.findByRole('heading', { name: 'Immich' });
+  expect(screen.queryByRole('button', { name: 'Endpunkt freigeben' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Freigaben für private Immich-Endpunkte')).not.toBeInTheDocument();
+});

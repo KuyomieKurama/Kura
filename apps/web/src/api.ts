@@ -36,11 +36,15 @@ export const api = {
   immichConnection() { return request<{ connection: { serverUrl: string; generation: number; updatedAt: string } | null }>('/immich/connection'); },
   saveImmichConnection(input: { serverUrl: string; apiKey: string }) { return request<void>('/immich/connection', { method: 'PUT', body: JSON.stringify(input) }); },
   deleteImmichConnection() { return request<void>('/immich/connection', { method: 'DELETE' }); },
-  testImmichConnection() { return request<{ version: string; supported: boolean }>('/immich/connection/test', { method: 'POST' }); },
+  testImmichConnection() { return request<{ version: string; supported: boolean; error?: { code: string; message: string }; target?: { host: string; port: number } }>('/immich/connection/test', { method: 'POST' }); },
   testImmichTransfer(input: { fileName: string; contentBase64: string }) { return request<{ transfer: ImmichTransfer }>('/immich/test-transfer', { method: 'POST', body: JSON.stringify(input) }); },
+  immichEndpointApprovals() { return request<{ approvals: ImmichEndpointApproval[] }>('/admin/immich/endpoint-approvals'); },
+  approveImmichEndpoint(input: { host: string; port: number }) { return request<{ approval: { host: string; port: number } }>('/admin/immich/endpoint-approvals', { method: 'POST', body: JSON.stringify(input) }); },
+  revokeImmichEndpoint(input: { host: string; port: number }) { return request<void>(`/admin/immich/endpoint-approvals/${encodeURIComponent(input.host)}/${input.port}`, { method: 'DELETE' }); },
   immichTransfer(id: string) { return request<{ transfer: ImmichTransfer }>(`/immich/transfers/${id}`); }
 };
 
+export type ImmichEndpointApproval = { host: string; port: number; approvedAt: string };
 export type ImmichTransfer = {
   id: string;
   status: string;
