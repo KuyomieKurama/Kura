@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
+export * from './network-guard.js';
 
 export type TransferStatus = 'pending' | 'uploading' | 'uploaded_unverified' | 'verified' | 'mismatch' | 'failed' | 'reconciling';
 export interface SecretResolver { resolve(reference: `secret://immich/${string}`): Promise<string>; }
