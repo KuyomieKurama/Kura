@@ -1,0 +1,64 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import { ImmichClient, TransferRepository, TransferService, decideLocalDeletion, type LocalObject, type SecretResolver } from '../../packages/immich-client/src/index.js';
+import { createMigrationsCopy, createTestDatabase } from '../helpers/database.js';
+import { runMigrations } from '../../packages/storage/src/migrator.js';
+
+const bytes = new TextEncoder().encode('original test bytes');
+const sha256 = createHash('sha256').update(bytes).digest('hex');
+const sha1 = createHash('sha1').update(bytes).digest('hex');
+const local = (): LocalObject => ({ bytes: (async function* () { yield bytes; })(), sha256, sha1, byteLength: bytes.length, fileName: 'original.jpg', createdAt: new Date('2026-01-01T00:00:00Z'), modifiedAt: new Date('2026-01-01T00:00:00Z') });
+const resolver: SecretResolver = { resolve: async () => 'not-a-real-key' };
+
+class FakeImmich {
+  readonly assets = new Map<string, { ownerId: string; bytes: Uint8Array; sha1: string }>();
+  readonly albumAssignments = new Map<string, string[]>();
+  uploads = 0; mode: 'ok' | 'timeout' | 'mismatch' | 'wrong-account' | 'five-hundred' | 'duplicate' | 'truncated' | 'slow' | 'invalid-response' = 'ok';
+  private receivedFirstChunkResolve: (() => void) | undefined;
+  readonly receivedFirstChunk = new Promise<void>((resolve) => { this.receivedFirstChunkResolve = resolve; });
+  private server = createServer((request, response) => { void this.route(request, response); });
+  async start(): Promise<string> { await new Promise<void>((resolve) => this.server.listen(0, '127.0.0.1', resolve)); const address = this.server.address(); if (!address || typeof address === 'string') throw new Error('fake server did not bind'); return `http://127.0.0.1:${address.port}`; }
+  async stop(): Promise<void> { await new Promise<void>((resolve, reject) => this.server.close((error) => error ? reject(error) : resolve())); }
+  seed(assetId = 'asset-existing'): void { this.assets.set(assetId, { ownerId: 'account-a', bytes, sha1 }); }
+  private send(response: ServerResponse, status: number, body: unknown): void { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(body)); }
+  private async route(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const path = new URL(request.url ?? '/', 'http://fake').pathname;
+    if (path === '/api/server/ping') return this.send(response, 200, { ping: 'pong' });
+    if (path === '/api/server/version') return this.send(response, 200, { major: 3, minor: 2, patch: 1, prerelease: null });
+    if (path === '/api/users/me') return this.send(response, 200, { id: 'account-a' });
+    if (path === '/api/assets' && request.method === 'POST') {
+      this.uploads += 1; if (this.mode === 'five-hundred') return this.send(response, 500, { error: 'internal' });
+      if (this.mode === 'truncated') { request.once('data', () => { this.receivedFirstChunkResolve?.(); request.socket.destroy(); }); return; }
+      const chunks: Buffer[] = []; for await (const chunk of request) { this.receivedFirstChunkResolve?.(); chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); }
+      const assetId = 'asset-1'; this.assets.set(assetId, { ownerId: this.mode === 'wrong-account' ? 'account-b' : 'account-a', bytes, sha1 });
+      if (this.mode === 'timeout') return request.socket.destroy();
+      if (this.mode === 'slow') await new Promise((resolve) => setTimeout(resolve, 30));
+      return this.send(response, 201, this.mode === 'invalid-response' ? { id: assetId, status: 'unknown' } : { id: assetId, status: this.mode === 'duplicate' ? 'duplicate' : 'created' });
+    }
+    if (path === '/api/assets/bulk-upload-check') { const id = [...this.assets.keys()][0]; return this.send(response, 200, { results: id ? [{ assetId: id }] : [] }); }
+    const album = /^\/api\/albums\/([^/]+)\/assets$/.exec(path);
+    if (album && request.method === 'PUT') { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); this.albumAssignments.set(album[1]!, (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { ids: string[] }).ids); return this.send(response, 200, {}); }
+    const match = /^\/api\/assets\/([^/]+)(?:\/(original))?$/.exec(path);
+    if (match) { const asset = this.assets.get(match[1]!); if (!asset) return this.send(response, 404, {}); if (match[2] === 'original') { const body = this.mode === 'mismatch' ? new TextEncoder().encode('changed') : asset.bytes; response.writeHead(200, { 'content-type': 'application/octet-stream' }); response.end(body); return; } return this.send(response, 200, { id: match[1], ownerId: asset.ownerId }); }
+    return this.send(response, 404, {});
+  }
+}
+
+async function setup() { const fake = new FakeImmich(); const baseUrl = await fake.start(); const database = await createTestDatabase(); const migrations = await createMigrationsCopy(); await runMigrations(database.pool, migrations.directory); const userId = randomUUID(); await database.pool.query('INSERT INTO users (id,display_name) VALUES ($1,$2)', [userId, 'Transfer User']); const repository = new TransferRepository(database.pool); const client = new ImmichClient(baseUrl, 'secret://immich/test', resolver); return { fake, database, migrations, userId, repository, client, service: new TransferService(repository, client) }; }
+const run = (fixture: Awaited<ReturnType<typeof setup>>, id: string, object = local()) => fixture.service.run(id, object, 'account-a', 7);
+const cleanupInput = (transfer: Awaited<ReturnType<TransferRepository['get']>> extends infer Record ? Exclude<Record, undefined> : never, overrides: Record<string, unknown> = {}) => ({ transfer, currentConnectionGeneration: 7, supportedServerVersions: ['3.2.1'], expectedByteLength: bytes.length, historyCommitted: true, validApproval: true, graceElapsed: true, noReference: true, ...overrides });
+
+describe('Immich transfer contract fake', () => {
+  const fixtures: Array<Awaited<ReturnType<typeof setup>>> = [];
+  afterEach(async () => { await Promise.all(fixtures.splice(0).map(async (fixture) => { await fixture.fake.stop(); await fixture.migrations.cleanup(); await fixture.database.cleanup(); })); });
+  it('streams the documented multipart DTO instead of consuming input before the server receives bytes', async () => { const fixture = await setup(); fixtures.push(fixture); let released = false; const gated: LocalObject = { ...local(), bytes: (async function* () { yield new Uint8Array([1]); await fixture.fake.receivedFirstChunk; released = true; yield new Uint8Array([2]); })() }; await fixture.client.upload(gated); expect(released).toBe(true); });
+  it('atomically persists byte readback and selected album evidence when verifying', async () => { const fixture = await setup(); fixtures.push(fixture); expect(await fixture.client.connectionTest()).toEqual({ version: '3.2.1', userId: 'account-a' }); const transfer = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-a', targetId: 'target-a', sha256 }); const result = await fixture.service.run(transfer.id, local(), 'account-a', 7, 'album-1'); expect(result).toMatchObject({ status: 'verified', verifiedServerVersion: '3.2.1', verifiedTargetAccountId: 'account-a', verifiedConnectionGeneration: 7, verifiedByteLength: bytes.length, verifiedAlbumState: 'assigned', verifiedAlbumId: 'album-1' }); expect(result.verifiedAt).toBeInstanceOf(Date); expect(fixture.fake.albumAssignments.get('album-1')).toEqual(['asset-1']); expect(await fixture.repository.get(transfer.id)).toMatchObject({ verifiedByteLength: bytes.length, verifiedAlbumState: 'assigned', verifiedAlbumId: 'album-1' }); });
+  it('never authorizes mismatch or a wrong remote account', async () => { const fixture = await setup(); fixtures.push(fixture); fixture.fake.mode = 'mismatch'; const first = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-b', targetId: 'target-a', sha256 }); expect((await run(fixture, first.id)).status).toBe('mismatch'); fixture.fake.mode = 'wrong-account'; const second = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-c', targetId: 'target-a', sha256 }); expect((await run(fixture, second.id)).status).toBe('mismatch'); });
+  it('reconciles a lost response using the duplicate check without a second upload', async () => { const fixture = await setup(); fixtures.push(fixture); fixture.fake.mode = 'timeout'; const transfer = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-d', targetId: 'target-a', sha256 }); expect((await run(fixture, transfer.id)).status).toBe('verified'); expect(fixture.fake.uploads).toBe(1); fixture.fake.mode = 'ok'; expect((await run(fixture, transfer.id)).status).toBe('verified'); expect(fixture.fake.uploads).toBe(1); });
+  it('handles the documented AssetMediaResponseDto duplicate status and rejects unknown status values', async () => { const fixture = await setup(); fixtures.push(fixture); fixture.fake.mode = 'duplicate'; const upload = await fixture.client.upload(local()); expect(upload).toEqual({ assetId: 'asset-1', duplicate: true }); fixture.fake.mode = 'invalid-response'; await expect(fixture.client.upload(local())).rejects.toThrow('invalid id or status'); });
+  it('reconciles a crash after remote success before the local asset checkpoint without a second upload', async () => { const fixture = await setup(); fixtures.push(fixture); const transfer = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-crash', targetId: 'target-a', sha256 }); await fixture.repository.transition(transfer.id, ['pending'], 'uploading'); await fixture.client.upload(local()); expect(fixture.fake.uploads).toBe(1); const resumed = await run(fixture, transfer.id); expect(resumed.status).toBe('verified'); expect(fixture.fake.uploads).toBe(1); });
+  it('verifies a pre-existing duplicate during a transfer without uploading it again', async () => { const fixture = await setup(); fixtures.push(fixture); fixture.fake.seed(); const transfer = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-existing', targetId: 'target-a', sha256 }); await fixture.repository.transition(transfer.id, ['pending'], 'reconciling'); expect((await run(fixture, transfer.id)).status).toBe('verified'); expect(fixture.fake.uploads).toBe(0); });
+  it('keeps a truncated upload reconciling and accepts a slow response safely', async () => { const fixture = await setup(); fixtures.push(fixture); fixture.fake.mode = 'truncated'; const cut = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-cut', targetId: 'target-a', sha256 }); expect((await run(fixture, cut.id)).status).toBe('reconciling'); fixture.fake.mode = 'slow'; const slow = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-slow', targetId: 'target-a', sha256 }); expect((await run(fixture, slow.id)).status).toBe('verified'); });
+  it('derives cleanup permission from stored evidence and never exposes a secret', async () => { const fixture = await setup(); fixtures.push(fixture); const transfer = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-e', targetId: 'target-a', sha256 }); const verified = await run(fixture, transfer.id); expect(decideLocalDeletion(cleanupInput(verified))).toEqual({ allowed: true, reasons: [] }); expect(decideLocalDeletion(cleanupInput({ ...verified, status: 'uploaded_unverified' })).allowed).toBe(false); expect(decideLocalDeletion(cleanupInput(verified, { supportedServerVersions: [] })).allowed).toBe(false); expect(decideLocalDeletion(cleanupInput(verified, { currentConnectionGeneration: 8 })).allowed).toBe(false); expect(decideLocalDeletion(cleanupInput(verified, { expectedByteLength: bytes.length + 1 })).allowed).toBe(false); expect(decideLocalDeletion(cleanupInput({ ...verified, verifiedAlbumState: null })).allowed).toBe(false); expect(decideLocalDeletion(cleanupInput({ ...verified, verifiedAlbumState: 'assigned', verifiedAlbumId: null })).allowed).toBe(false); for (const key of ['historyCommitted', 'validApproval', 'graceElapsed', 'noReference'] as const) expect(decideLocalDeletion(cleanupInput(verified, { [key]: false })).allowed).toBe(false); fixture.fake.assets.clear(); fixture.fake.mode = 'five-hundred'; const failed = await fixture.repository.create({ userId: fixture.userId, objectId: 'object-f', targetId: 'target-a', sha256 }); const result = await run(fixture, failed.id); expect(result.error).not.toContain('not-a-real-key'); expect(result.error).not.toContain('secret://immich/test'); });
+});
