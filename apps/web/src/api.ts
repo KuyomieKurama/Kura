@@ -33,8 +33,17 @@ export const api = {
   updateUser(id: string, status: 'active' | 'blocked') { return request<void>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }); },
   changePassword(input: { currentPassword: string; newPassword: string }) { return request<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(input) }); },
   status() { return Promise.all([fetch('/healthz', { credentials: 'same-origin' }), fetch('/api/v1/status', { credentials: 'same-origin' })]); },
-  immichConnection() { return request<{ connection: { serverUrl: string; generation: number } | null }>('/immich/connection'); },
+  immichConnection() { return request<{ connection: { serverUrl: string; generation: number; updatedAt: string } | null }>('/immich/connection'); },
   saveImmichConnection(input: { serverUrl: string; apiKey: string }) { return request<void>('/immich/connection', { method: 'PUT', body: JSON.stringify(input) }); },
+  deleteImmichConnection() { return request<void>('/immich/connection', { method: 'DELETE' }); },
   testImmichConnection() { return request<{ version: string; supported: boolean }>('/immich/connection/test', { method: 'POST' }); },
-  testImmichTransfer(input: { fileName: string; contentBase64: string }) { return request<{ transfer: { id: string; status: string; localOriginalRetained: boolean } }>('/immich/test-transfer', { method: 'POST', body: JSON.stringify(input) }); }
+  testImmichTransfer(input: { fileName: string; contentBase64: string }) { return request<{ transfer: ImmichTransfer }>('/immich/test-transfer', { method: 'POST', body: JSON.stringify(input) }); },
+  immichTransfer(id: string) { return request<{ transfer: ImmichTransfer }>(`/immich/transfers/${id}`); }
+};
+
+export type ImmichTransfer = {
+  id: string;
+  status: string;
+  localOriginalRetained: boolean;
+  evidence: { serverVersion: string | null; byteLength: number | null; album: string | null } | null;
 };

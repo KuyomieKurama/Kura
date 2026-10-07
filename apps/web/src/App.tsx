@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { api, type AuthState, type User } from './api.js';
+import { api, type AuthState, type ImmichTransfer, type User } from './api.js';
 import { labels } from './labels.js';
 
 type View = 'loading' | 'setup' | 'login' | 'forced-password' | 'dashboard' | 'account' | 'users' | 'immich';
@@ -17,11 +17,83 @@ function PasswordForm({ forced, done }: { forced?: boolean; done: () => void }) 
   return <section><h2>{forced ? labels.changePasswordRequired : labels.changePasswordTitle}</h2>{forced && <p>{labels.changePasswordRequiredHint}</p>}<form onSubmit={submit}><label>{labels.currentPassword}<input name="currentPassword" type="password" autoComplete="current-password" required /></label><label>{labels.newPassword}<input name="newPassword" type="password" autoComplete="new-password" minLength={12} required /></label><label>{labels.passwordRepeat}<input name="repeatPassword" type="password" autoComplete="new-password" minLength={12} required /></label><p>{labels.passwordHint}</p>{error && <p className="form-error" role="alert">{error}</p>}<button>{labels.changePasswordSubmit}</button></form></section>;
 }
 function ImmichPage() {
+  const [connectionUrl, setConnectionUrl] = useState('');
   const [result, setResult] = useState('');
-  async function save(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); try { await api.saveImmichConnection({ serverUrl: String(data.get('serverUrl')), apiKey: String(data.get('apiKey')) }); setResult('Verbindung gespeichert. Der API-Schlüssel wird nicht angezeigt.'); } catch (cause) { setResult(message(cause)); } }
-  async function test() { try { const response = await api.testImmichConnection(); setResult(`Serverversion: ${response.version}; unterstützt: ${response.supported ? 'ja' : 'nein'}.`); } catch (cause) { setResult(message(cause)); } }
-  return <section><h2>Immich</h2><p>Lokale Originale werden bei diesem Test niemals gelöscht.</p><form onSubmit={save}><label>Server-URL<input name="serverUrl" type="url" required /></label><label>API-Schlüssel<input name="apiKey" type="password" required autoComplete="off" /></label><button>Verbindung speichern</button></form><button type="button" className="secondary" onClick={() => void test()}>Verbindung testen</button>{result && <p role="status">{result}</p>}<h3>Testdatei übertragen</h3><p>Die Testübertragung ist über die API verfügbar; ihr Status enthält den Originalnachweis und bestätigt den Erhalt des lokalen Originals.</p></section>;
+  const [transfer, setTransfer] = useState<ImmichTransfer | null>(null);
+
+  useEffect(() => {
+    void api.immichConnection().then(({ connection }) => setConnectionUrl(connection?.serverUrl ?? '')).catch((cause) => setResult(message(cause)));
+  }, []);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    try {
+      await api.saveImmichConnection({ serverUrl: String(data.get('serverUrl')), apiKey: String(data.get('apiKey')) });
+      setConnectionUrl(String(data.get('serverUrl')));
+      setResult('Verbindung gespeichert. Der API-Schlüssel wird nicht angezeigt.');
+      event.currentTarget.reset();
+    } catch (cause) {
+      setResult(message(cause));
+    }
+  }
+
+  async function test() {
+    try {
+      const response = await api.testImmichConnection();
+      setResult(`Serverversion: ${response.version}; unterstützt: ${response.supported ? 'ja' : 'nein'}.`);
+    } catch (cause) {
+      setResult(message(cause));
+    }
+  }
+
+  async function upload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const file = new FormData(event.currentTarget).get('testFile');
+    if (!(file instanceof File) || file.size === 0) {
+      setResult('Bitte wählen Sie eine Testdatei aus.');
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setResult('Die Testdatei darf höchstens 4 MiB groß sein.');
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    try {
+      const response = await api.testImmichTransfer({ fileName: file.name, contentBase64: btoa(binary) });
+      setTransfer(response.transfer);
+      setResult('Testübertragung abgeschlossen. Das lokale Original bleibt erhalten.');
+    } catch (cause) {
+      setResult(message(cause));
+    }
+  }
+
+  return <section>
+    <h2>Immich</h2>
+    <p>Lokale Originale werden bei diesem Test niemals gelöscht.</p>
+    <form onSubmit={save}>
+      <label>Server-URL<input name="serverUrl" type="url" value={connectionUrl} onChange={(event) => setConnectionUrl(event.target.value)} required /></label>
+      <label>API-Schlüssel<input name="apiKey" type="password" required autoComplete="off" /></label>
+      <button>Verbindung speichern</button>
+    </form>
+    <button type="button" className="secondary" onClick={() => void test()}>Verbindung testen</button>
+    <form onSubmit={upload}>
+      <h3>Testdatei übertragen</h3>
+      <label>Testdatei<input name="testFile" type="file" required /></label>
+      <button>Testdatei übertragen</button>
+    </form>
+    {transfer && <section aria-label="Status der letzten Testübertragung">
+      <h3>Status der letzten Übertragung</h3>
+      <p>Status: {transfer.status}</p>
+      <p>Lokales Original: {transfer.localOriginalRetained ? 'bleibt erhalten' : 'unbekannt'}</p>
+      <p>Originalnachweis: {transfer.evidence ? `Server ${transfer.evidence.serverVersion ?? 'unbekannt'}, ${transfer.evidence.byteLength ?? 'unbekannt'} Bytes, Album ${transfer.evidence.album ?? 'unbekannt'}.` : 'noch nicht vorhanden.'}</p>
+    </section>}
+    {result && <p role="status">{result}</p>}
+  </section>;
 }
+
 export function App() {
   const [view, setView] = useState<View>('loading'); const [auth, setAuth] = useState<AuthState | null>(null); const [users, setUsers] = useState<User[]>([]); const [status, setStatus] = useState<Status | null>(null); const [healthOk, setHealthOk] = useState(false); const [error, setError] = useState(''); const [createOpen, setCreateOpen] = useState(false); const [confirmUser, setConfirmUser] = useState<User | null>(null);
   const loadUsers = async () => { const result = await api.users(); setUsers(result.users); };

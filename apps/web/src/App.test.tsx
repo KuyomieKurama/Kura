@@ -48,6 +48,17 @@ it('shows the SSO login only when the API enables it', async () => {
   render(<App />);
   expect(await screen.findByRole('link', { name: 'Mit SSO anmelden' })).toHaveAttribute('href', '/api/v1/auth/oidc/start');
 });
+it('opens the Immich page with connection and test-file controls', async () => {
+  vi.stubGlobal('fetch', mockAuthenticated());
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Immich' }));
+  expect(await screen.findByRole('heading', { name: 'Immich' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Server-URL')).toBeInTheDocument();
+  expect(screen.getByLabelText('API-Schlüssel')).toHaveAttribute('type', 'password');
+  expect(screen.getByLabelText('Testdatei')).toHaveAttribute('type', 'file');
+  expect(screen.getByText('Lokale Originale werden bei diesem Test niemals gelöscht.')).toBeInTheDocument();
+});
 it('opens the create-user dialog for an administrator', async () => {
   vi.stubGlobal('fetch', mockAuthenticated()); render(<App />); await screen.findByText('Erreichbar'); fireEvent.click(screen.getByRole('button', { name: 'Benutzerverwaltung' })); fireEvent.click(await screen.findByRole('button', { name: 'Benutzer anlegen' }));
   expect(screen.getByRole('dialog')).toBeInTheDocument();
