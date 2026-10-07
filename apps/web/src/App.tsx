@@ -63,8 +63,15 @@ function ImmichPage() {
     for (const byte of bytes) binary += String.fromCharCode(byte);
     try {
       const response = await api.testImmichTransfer({ fileName: file.name, contentBase64: btoa(binary) });
-      setTransfer(response.transfer);
-      setResult('Testübertragung abgeschlossen. Das lokale Original bleibt erhalten.');
+      const status = await api.immichTransfer(response.transfer.id);
+      setTransfer(status.transfer);
+      if (status.transfer.status === 'verified') {
+        setResult('Testübertragung verifiziert. Das lokale Original bleibt erhalten.');
+      } else if (status.transfer.status === 'reconciling') {
+        setResult('Testübertragung ist unklar und wird abgeglichen. Das lokale Original bleibt erhalten.');
+      } else {
+        setResult(`Testübertragung: ${status.transfer.status}. Das lokale Original bleibt erhalten.`);
+      }
     } catch (cause) {
       setResult(message(cause));
     }

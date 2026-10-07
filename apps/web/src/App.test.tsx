@@ -59,6 +59,57 @@ it('opens the Immich page with connection and test-file controls', async () => {
   expect(screen.getByLabelText('Testdatei')).toHaveAttribute('type', 'file');
   expect(screen.getByText('Lokale Originale werden bei diesem Test niemals gelöscht.')).toBeInTheDocument();
 });
+it('shows verification evidence after a verified test upload', async () => {
+  const verified = { id: 'transfer-1', status: 'verified', localOriginalRetained: true, evidence: { serverVersion: '3.2.1', byteLength: 4, album: 'none' } };
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith('/auth/state')) return response({ configured: true, authenticated: true, role: 'admin', csrfToken: 'csrf', passwordChangeRequired: false });
+    if (path.endsWith('/users')) return response({ users: [admin] });
+    if (path === '/healthz') return response({ status: 'ok' });
+    if (path.endsWith('/status')) return response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } });
+    if (path.endsWith('/immich/connection')) return response({ connection: { serverUrl: 'https://immich.example', generation: 1, updatedAt: '2026-01-01T00:00:00Z' } });
+    if (path.endsWith('/immich/test-transfer')) return response({ transfer: { id: verified.id, status: 'uploading', localOriginalRetained: true, evidence: null } });
+    if (path.endsWith(`/immich/transfers/${verified.id}`)) return response({ transfer: verified });
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Immich' }));
+  await screen.findByRole('heading', { name: 'Immich' });
+  const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+  vi.stubGlobal('FormData', class { get(name: string) { return name === 'testFile' ? file : null; } });
+  fireEvent.submit(screen.getByLabelText('Testdatei').closest('form')!);
+  expect(await screen.findByText('Testübertragung verifiziert. Das lokale Original bleibt erhalten.')).toBeInTheDocument();
+  expect(screen.getByText('Originalnachweis: Server 3.2.1, 4 Bytes, Album none.')).toBeInTheDocument();
+});
+
+it('labels a reconciling test upload as uncertain instead of completed', async () => {
+  const reconciling = { id: 'transfer-2', status: 'reconciling', localOriginalRetained: true, evidence: null };
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith('/auth/state')) return response({ configured: true, authenticated: true, role: 'admin', csrfToken: 'csrf', passwordChangeRequired: false });
+    if (path.endsWith('/users')) return response({ users: [admin] });
+    if (path === '/healthz') return response({ status: 'ok' });
+    if (path.endsWith('/status')) return response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } });
+    if (path.endsWith('/immich/connection')) return response({ connection: { serverUrl: 'https://immich.example', generation: 1, updatedAt: '2026-01-01T00:00:00Z' } });
+    if (path.endsWith('/immich/test-transfer')) return response({ transfer: { id: reconciling.id, status: 'reconciling', localOriginalRetained: true, evidence: null } });
+    if (path.endsWith(`/immich/transfers/${reconciling.id}`)) return response({ transfer: reconciling });
+    throw new Error(`Unexpected request: ${path}`);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Immich' }));
+  await screen.findByRole('heading', { name: 'Immich' });
+  const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
+  vi.stubGlobal('FormData', class { get(name: string) { return name === 'testFile' ? file : null; } });
+  fireEvent.submit(screen.getByLabelText('Testdatei').closest('form')!);
+  expect(await screen.findByText('Testübertragung ist unklar und wird abgeglichen. Das lokale Original bleibt erhalten.')).toBeInTheDocument();
+  expect(screen.getByText('Originalnachweis: noch nicht vorhanden.')).toBeInTheDocument();
+  expect(screen.queryByText('Testübertragung abgeschlossen. Das lokale Original bleibt erhalten.')).not.toBeInTheDocument();
+});
+
 it('opens the create-user dialog for an administrator', async () => {
   vi.stubGlobal('fetch', mockAuthenticated()); render(<App />); await screen.findByText('Erreichbar'); fireEvent.click(screen.getByRole('button', { name: 'Benutzerverwaltung' })); fireEvent.click(await screen.findByRole('button', { name: 'Benutzer anlegen' }));
   expect(screen.getByRole('dialog')).toBeInTheDocument();
