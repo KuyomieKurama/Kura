@@ -3,7 +3,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { sha256Digest, type OwnedObjectRef, type StorageBackend } from '@kura/blobstore';
 import { ImmichClient, TransferRepository, TransferService, type SecretResolver } from '@kura/immich-client';
 import type { Pool } from 'pg';
+import { decodeStrictBase64 } from './base64.js';
 import type { ApiConfig } from './config.js';
+
+const MAX_TEST_FILE_BYTES = 4 * 1024 * 1024;
 
 export type ImmichSession = { userId: string };
 type RequireSession = (request: FastifyRequest, reply: FastifyReply) => Promise<ImmichSession | undefined>;
@@ -117,13 +120,12 @@ export function registerImmichRoutes(input: {
     const body = request.body as Record<string, unknown>;
     const encoded = typeof body.contentBase64 === 'string' ? body.contentBase64 : '';
     const fileName = requiredString(body.fileName) || 'test-upload.bin';
-    let bytes: Buffer;
-    try {
-      bytes = Buffer.from(encoded, 'base64');
-    } catch {
-      return reply.code(400).send(responseError('VALIDATION_ERROR', 'Testdatei ist ungültig.'));
+    const decoded = decodeStrictBase64(encoded, MAX_TEST_FILE_BYTES);
+    if (!decoded.ok) {
+      if (decoded.reason === 'invalid') return reply.code(400).send(responseError('VALIDATION_ERROR', 'Testdatei ist ungültig.'));
+      return reply.code(400).send(responseError('VALIDATION_ERROR', 'Testdatei fehlt oder ist größer als 4 MiB.'));
     }
-    if (!encoded || bytes.length > 4 * 1024 * 1024) return reply.code(400).send(responseError('VALIDATION_ERROR', 'Testdatei fehlt oder ist größer als 4 MiB.'));
+    const bytes = decoded.bytes;
     const connection = await pool.query<{ server_url: string; generation: string }>('SELECT server_url,generation FROM immich_connections WHERE user_id=$1', [session.userId]);
     if (!connection.rowCount) return reply.code(404).send(responseError('NOT_FOUND', 'Keine Immich-Verbindung gespeichert.'));
 
