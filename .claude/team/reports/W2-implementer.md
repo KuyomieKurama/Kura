@@ -15,9 +15,10 @@ API-Schlüssel werden niemals in Antworten zurückgegeben; ohne KURA_SECRET_KEY 
 
 Prüfung
 - Ausgeführt: corepack pnpm check.
-- Literal: Test Files 8 passed (8); Tests 42 passed | 1 skipped (43); Build erfolgreich.
+- Literal: Test Files 9 passed (9); Tests 43 passed | 1 skipped (44); Build erfolgreich.
+- Ausgeführt: tests/wiring/immich-wiring.test.ts prüft zwei Benutzer, niemals zurückgegebenen API-Key, verschlüsselten DB-Wert und "unbekannt" bei unerreichbarem Immich.
 - Vorher: aus W1-Handoff 42 bestanden, 1 übersprungen.
-- Nicht separat ausgeführt: neue Fake-Immich-/Zwei-Benutzer-W2-End-to-End-Tests.
+- Nicht separat ausgeführt: API-Testtransfer gegen den bestehenden Fake-Immich; dessen Client-Happy-Path und unsicherer Uploadzustand bleiben durch tests/immich/client.test.ts abgedeckt.
 
 Annahmen
 - KURA_SECRET_KEY ist als base64-kodierter 32-Byte-Schlüssel zur Laufzeit gesetzt.
