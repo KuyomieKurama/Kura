@@ -5,6 +5,8 @@ export interface ApiConfig {
   trustProxy: boolean | string[];
   cookieSecure?: boolean;
   setupToken?: string;
+  storage?: { backend: 'filesystem' | 'database'; root: string; quotaBytes: number; layout: 'cas' | 'template' };
+  secretKey?: Buffer;
   oidc?: {
     issuer: string;
     clientId: string;
@@ -49,6 +51,13 @@ function parseGroups(value: string | undefined, defaultValue: string[]): string[
   return groups;
 }
 
+function parseSecretKey(value: string | undefined): Buffer | undefined {
+  if (!value) return undefined;
+  const key = Buffer.from(value, 'base64');
+  if (key.length !== 32) throw new Error('KURA_SECRET_KEY must be a base64-encoded 32-byte key');
+  return key;
+}
+
 function oidcConfig(environment: NodeJS.ProcessEnv): ApiConfig['oidc'] {
   const values = [environment.OIDC_ISSUER_URL, environment.OIDC_CLIENT_ID, environment.OIDC_CLIENT_SECRET, environment.OIDC_REDIRECT_URL];
   if (values.every((value) => value === undefined || value === '')) return undefined;
@@ -69,6 +78,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     trustProxy: parseTrustProxy(environment.TRUST_PROXY),
     cookieSecure: parseBoolean('COOKIE_SECURE', environment.COOKIE_SECURE, true),
     setupToken: environment.KURA_SETUP_TOKEN,
+    storage: {
+      backend: environment.KURA_STORAGE_BACKEND === 'database' ? 'database' : 'filesystem',
+      root: environment.KURA_STORAGE_ROOT ?? './data/blobstore',
+      quotaBytes: Number(environment.KURA_STORAGE_QUOTA_BYTES ?? String(10 * 1024 * 1024 * 1024)),
+      layout: environment.KURA_STORAGE_LAYOUT === 'template' ? 'template' : 'cas'
+    },
+    secretKey: parseSecretKey(environment.KURA_SECRET_KEY),
     oidc: oidcConfig(environment)
   };
 }

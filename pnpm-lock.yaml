@@ -41,12 +41,18 @@ importers:
       '@fastify/static':
         specifier: 10.1.1
         version: 10.1.1
+      '@kura/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
       '@kura/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@kura/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@kura/immich-client':
+        specifier: workspace:*
+        version: link:../../packages/immich-client
       '@kura/storage':
         specifier: workspace:*
         version: link:../../packages/storage
