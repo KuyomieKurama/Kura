@@ -14,3 +14,8 @@ Stand 2026-10-06: Projekt angelegt. Nächste Stufe: M0 Machbarkeit (siehe `docs/
 ## Stand 2026-10-08 (früh)
 - `main` = Tag `m3` + D1 (Paket-Exports auf dist). Läuft auf der Test-VM (Commit e2c2de8), Port 8080, mit OIDC (nur bei Konfiguration), Speicherkern (Datenbank-Backend), Immich-Verbindung mit Admin-Freigabe privater Ziele, Test-Upload mit Originalnachweis. Urteil PARTIALLY VERIFIED (D-021). Keine Löschung lokaler Originale.
 - Offen: M4 (Zeitpläne), M5 (Adapter), Test gegen echtes Immich (R-05/R-12), echte IdP-Verträge (R-08), R-13.
+
+## Stand 2026-10-08 (Vormittag) – M5 geliefert
+- `main` = Tag `m5`: M0–M5 als Prototyp-Stand, Urteil PARTIALLY VERIFIED (D-023). Läuft auf der VM: kura-postgres, kura-app (Port 8080), kura-worker (Zeitpläne, Download-Ausführung).
+- Funktionsumfang: lokale Anmeldung, OIDC (nur bei Konfiguration, gegen Fake geprüft), Speicherkern, Immich-Verbindung mit Originalnachweis (keine Löschung), Zeitpläne (Cron/Zeitzone/Sommerzeit), Admin-Limits (`/admin/runtime-policy`), Quellenverwaltung, Direct-URL-Downloads, Verlauf.
+- Gesperrt/offen: yt-dlp/gallery-dl (nicht installiert, Egress-Sperre nötig, R-09), echtes Immich (R-05/R-12), echte IdPs (R-08), Dateisystem-Backend (R-14), TLS (R-11).
