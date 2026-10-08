@@ -109,7 +109,11 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
 
-  packages/adapters: {}
+  packages/adapters:
+    dependencies:
+      '@kura/immich-client':
+        specifier: workspace:*
+        version: link:../immich-client
 
   packages/blobstore:
     dependencies:
