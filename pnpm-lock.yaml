@@ -100,7 +100,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
-  packages/adapters: {}
+  packages/adapters:
+    dependencies:
+      '@kura/immich-client':
+        specifier: workspace:*
+        version: link:../immich-client
 
   packages/blobstore:
     dependencies:
