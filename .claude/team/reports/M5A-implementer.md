@@ -55,7 +55,7 @@ Ausgeführt (Sandbox, `DATABASE_URL=postgres://kura_dev:kura_dev@127.0.0.1:5432/
   `Test Files  14 passed (14)` / `Tests  135 passed | 1 skipped (136)`, Exit 0.
 - Nachher (nach `488e08a`, Datei `/tmp/m5-check-after.log`):
   `Test Files  20 passed (20)` / `Tests  336 passed | 1 skipped (337)`, Exit 0.
-  Das sind +6 Dateien und +201 Tests, alle in `tests/adapters/`. Der Endlauf nach dem letzten Code-Commit `fb317d0` steht am Ende dieses Abschnitts.
+  Das sind +6 Dateien und +201 Tests, alle in `tests/adapters/`. Endlauf nach dem letzten Code-Commit `fb317d0` und mit diesem Bericht (`/tmp/m5-check-final.log`): identisch, `Test Files  20 passed (20)` / `Tests  336 passed | 1 skipped (337)`, Exit 0.
 - `tsc --noEmit -p packages/adapters` ohne Ausgabe; `eslint packages/adapters tests/adapters --max-warnings=0` ohne Ausgabe.
 - Build-Artefakt geladen: `node -e "import('./dist/index.js')"` in `packages/adapters` → 38 Exporte, `DirectUrlAdapter` und `YtDlpAdapter` sind Funktionen (dist löst `@kura/immich-client` über dessen dist auf).
 - Mutationsprobe: Entfernt man im Runner das Beenden der Gruppe nach normalem Exit, schlägt genau der Test „kills helper processes that outlive a normally exiting tool“ fehl (danach wiederhergestellt).
