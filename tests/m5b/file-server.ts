@@ -10,6 +10,12 @@ export interface ServedFile {
   headers?: Record<string, string>;
   /** Send this many bytes, then wait for `release()` before sending the rest. */
   stallAfterBytes?: number;
+  /**
+   * Which requests to this path stall (1-based). The direct URL adapter asks four times before it
+   * delivers bytes (probe, discover, resolve, download), so the download is the fourth request.
+   * Default: all of them.
+   */
+  stallRequests?: number[];
 }
 
 /** A plain HTTP server on loopback that serves files. Tests reach it through an injected fetcher. */
@@ -70,7 +76,11 @@ export class FileServer {
       response.end();
       return;
     }
-    if (file.stallAfterBytes !== undefined && file.stallAfterBytes < file.body.length) {
+    const number = this.count(path);
+    const stall = file.stallAfterBytes !== undefined
+      && file.stallAfterBytes < file.body.length
+      && (file.stallRequests === undefined || file.stallRequests.includes(number));
+    if (stall && file.stallAfterBytes !== undefined) {
       response.write(file.body.subarray(0, file.stallAfterBytes));
       await this.stalled;
       if (response.destroyed) return;
