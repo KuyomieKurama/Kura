@@ -15,6 +15,9 @@ export async function createTestDatabase(): Promise<{ pool: Pool; databaseUrl: s
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   await admin.end();
   const pool = new Pool({ connectionString: databaseUrl });
+  // cleanup() terminates backends right after pool.end(). A client that is still closing then reports
+  // 57P01 on the pool; without a listener that 'error' event is unhandled and fails the whole run.
+  pool.on('error', () => undefined);
 
   return {
     pool,

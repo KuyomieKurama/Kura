@@ -64,6 +64,9 @@ async function audit(client: Pool | PoolClient, actor: string | null, action: st
 
 export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient; logStream?: Writable; resolveImmichHost?: (host: string) => Promise<string[]> } = {}): FastifyInstance {
   const app = Fastify({ logger: loggerOptions(dependencies.logStream), trustProxy: config.trustProxy });
+  // An idle connection that the database closes (restart, failover) is reported on the pool.
+  // Without a listener Node would treat the event as an unhandled error and end the process.
+  pool.on('error', (poolError) => app.log.error({ message: poolError.message }, 'database pool error'));
   const storageConfig = config.storage ?? { backend: 'filesystem' as const, root: './data/blobstore', quotaBytes: 10 * 1024 * 1024 * 1024, layout: 'cas' as const };
   const blobstore: StorageBackend = storageConfig.backend === 'database' ? new DatabaseBlobStore(pool, { quotaBytes: storageConfig.quotaBytes }) : new FilesystemBlobStore(storageConfig.root, storageConfig.layout, { quotaBytes: storageConfig.quotaBytes });
   void app.register(fastifyCookie);

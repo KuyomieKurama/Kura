@@ -258,6 +258,7 @@ describe('worker process wiring (M4-B)', () => {
     const database = await createTestDatabase();
     const migrations = await createMigrationsCopy();
     const probe = new Pool({ connectionString: database.databaseUrl, max: 1 });
+    probe.on('error', () => undefined);
     const connectionCount = async () => {
       const result = await probe.query(
         'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()'
