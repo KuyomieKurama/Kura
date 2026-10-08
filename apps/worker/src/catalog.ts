@@ -42,6 +42,8 @@ interface CatalogOptions {
   maxAssetBytes: number;
   directUrl: DirectUrlSettings;
   logger: Logger;
+  /** Additional environment variables per tool. Tests only (the fake tools log through them). */
+  toolEnvironment?: { ytDlp?: Record<string, string>; galleryDl?: Record<string, string> };
 }
 
 interface KillSwitchRow {
@@ -95,12 +97,15 @@ export class AdapterCatalog {
     const registry = new AdapterRegistry(this.killSwitches);
     const availability: AdapterAvailability[] = [];
     const { tools, workDir } = this.options;
-    const extraEnv = tools.toolPath ? { PATH: tools.toolPath } : undefined;
+    const environmentFor = (extra: Record<string, string> | undefined) => {
+      const merged = { ...(tools.toolPath ? { PATH: tools.toolPath } : {}), ...extra };
+      return Object.keys(merged).length > 0 ? merged : undefined;
+    };
 
     availability.push(await this.registerCli(registry, 'gallery-dl', tools.galleryDl, (binary) =>
-      GalleryDlAdapter.create({ binary, workRoot: workDir, extraEnv })));
+      GalleryDlAdapter.create({ binary, workRoot: workDir, extraEnv: environmentFor(this.options.toolEnvironment?.galleryDl) })));
     availability.push(await this.registerCli(registry, 'yt-dlp', tools.ytDlp, (binary) =>
-      YtDlpAdapter.create({ binary, workRoot: workDir, extraEnv })));
+      YtDlpAdapter.create({ binary, workRoot: workDir, extraEnv: environmentFor(this.options.toolEnvironment?.ytDlp) })));
 
     // Last, so that platform adapters are asked first (selectSource also relies on this).
     const direct = new DirectUrlAdapter({

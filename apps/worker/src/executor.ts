@@ -129,6 +129,7 @@ export class JobExecutor {
       }
       const disposition = this.dispositionFor(error, signal);
       if (!(error instanceof RunStop) && !signal.aborted) logger.error('run failed', { runId: lease.runId, code: disposition.code });
+      this.logUnexpected(lease, disposition, error);
       return this.conclude(lease, runId, stats, { disposition, partial: stats.assetsStored > 0 });
     }
   }
@@ -181,7 +182,9 @@ export class JobExecutor {
       } catch (error) {
         if (error instanceof LeaseLostError || error instanceof RunStop) throw error;
         if (signal.aborted) throw error;
-        outcome = { status: 'failed', discoveryComplete: false, failure: classifyFailure(error) };
+        const failure = classifyFailure(error);
+        this.logUnexpected(lease, failure, error);
+        outcome = { status: 'failed', discoveryComplete: false, failure };
       }
       outcomes.push(outcome);
       firstFailure ??= outcome.failure;
@@ -469,6 +472,15 @@ export class JobExecutor {
       return { runState: 'retry_wait', code: 'SHUTDOWN', message: 'Der Worker wurde beendet. Der Lauf wird wiederholt.', retryable: true };
     }
     return classifyFailure(error);
+  }
+
+  /** An error Kura did not anticipate is logged with its name and message (no stack, no history text). */
+  private logUnexpected(lease: JobLease, disposition: Disposition, error: unknown): void {
+    if (disposition.code !== 'UNEXPECTED') return;
+    this.deps.logger.error('unexpected error in run', {
+      runId: lease.runId,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error'
+    });
   }
 
   private throwIfAborted(signal: AbortSignal): void {

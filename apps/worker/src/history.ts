@@ -230,8 +230,8 @@ export class HistoryRepository {
   async upsertAssets(postId: string, userId: string, assets: readonly ManifestAsset[]): Promise<AssetRecord[]> {
     for (const asset of assets) {
       await this.pool.query(
-        `INSERT INTO download_assets (id, post_id, user_id, asset_index, source_asset_id, original_name, media_type, role, variant)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO download_assets (id, post_id, user_id, asset_index, source_asset_id, original_name, media_type, role, variant, state)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
          ON CONFLICT (post_id, source_asset_id) DO UPDATE
            SET original_name = EXCLUDED.original_name, media_type = EXCLUDED.media_type, updated_at = now()
          WHERE download_assets.state <> 'stored'`,
