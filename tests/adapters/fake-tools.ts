@@ -66,8 +66,7 @@ if (args.includes('--dump-single-json')) {
   if (config.infoHang) {
     setInterval(() => {}, 1000);
   } else {
-    process.stdout.write(config.rawInfoOutput ?? JSON.stringify(config.info));
-    process.exit(config.infoExitCode ?? 0);
+    process.stdout.write(config.rawInfoOutput ?? JSON.stringify(config.info), () => process.exit(config.infoExitCode ?? 0));
   }
 }
 else switch (config.download ?? 'ok') {
@@ -102,15 +101,15 @@ const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake png payload')]);
 if (args.includes('--version')) { console.log(config.version ?? '1.32.2'); process.exit(0); }
 if (args.includes('--dump-json')) {
-  process.stdout.write(config.rawListingOutput ?? JSON.stringify(config.listing));
-  process.exit(config.listingExitCode ?? 0);
+  process.stdout.write(config.rawListingOutput ?? JSON.stringify(config.listing), () => process.exit(config.listingExitCode ?? 0));
+} else {
+  const rangeIndex = Number(args[args.indexOf('--range') + 1]) - 1;
+  const directory = args[args.indexOf('-D') + 1];
+  if (!Number.isInteger(rangeIndex) || rangeIndex < 0 || !directory) { process.stderr.write('bad arguments'); process.exit(64); }
+  if ((config.failIndexes ?? []).includes(rangeIndex)) { process.stderr.write('HttpError: 429 Too Many Requests'); process.exit(4); }
+  const extension = (config.fileExtensions ?? {})[rangeIndex] ?? 'jpg';
+  fs.writeFileSync(directory + '/asset.' + extension, extension === 'png' ? PNG : JPEG);
 }
-const rangeIndex = Number(args[args.indexOf('--range') + 1]) - 1;
-const directory = args[args.indexOf('-D') + 1];
-if (!Number.isInteger(rangeIndex) || rangeIndex < 0 || !directory) { process.stderr.write('bad arguments'); process.exit(64); }
-if ((config.failIndexes ?? []).includes(rangeIndex)) { process.stderr.write('HttpError: 429 Too Many Requests'); process.exit(4); }
-const extension = (config.fileExtensions ?? {})[rangeIndex] ?? 'jpg';
-fs.writeFileSync(directory + '/asset.' + extension, extension === 'png' ? PNG : JPEG);
 `);
 }
 

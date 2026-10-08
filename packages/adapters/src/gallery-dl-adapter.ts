@@ -305,10 +305,9 @@ function readListing(result: ProcessResult, target: CanonicalTarget): PostListin
       break;
     }
     first ??= metadata;
-    const number = positiveInteger(metadata.num, 100_000);
     files.push({
       index: files.length,
-      sourceAssetId: `file-${number ?? files.length + 1}`,
+      sourceAssetId: `file-${files.length}`,
       extension: typeof metadata.extension === 'string' && /^[A-Za-z0-9]{1,5}$/.test(metadata.extension) ? metadata.extension.toLowerCase() : null,
       name: cleanText(metadata.filename, 200),
       width: positiveInteger(metadata.width),
@@ -326,7 +325,7 @@ function readListing(result: ProcessResult, target: CanonicalTarget): PostListin
       ? { code: 'TOOL_REPORTED_ERRORS', message: `The tool exited with code ${result.exitCode} after listing; the list may be partial` }
       : null;
   return {
-    creatorId: identifierText(user?.id, /^[\w.@:-]{1,100}$/) ?? 'unknown',
+    creatorId: identifierText(user?.id, /^[A-Za-z0-9][\w.@:-]{0,99}$/) ?? 'unknown',
     creatorName: cleanText(user?.name ?? user?.full_name, 200),
     title: cleanText(first?.title, 300),
     date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null,

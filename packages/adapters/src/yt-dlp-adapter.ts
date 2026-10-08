@@ -288,7 +288,7 @@ function readVideoInfo(raw: unknown, target: CanonicalTarget): VideoInfo {
   return {
     id,
     title: cleanText(record.title, 300),
-    creatorId: identifierText(record.channel_id ?? record.uploader_id, /^[\w.@:-]{1,100}$/) ?? 'unknown',
+    creatorId: identifierText(record.channel_id ?? record.uploader_id, /^[A-Za-z0-9][\w.@:-]{0,99}$/) ?? 'unknown',
     creatorName: cleanText(record.channel ?? record.uploader, 200),
     uploadDate,
     duration: typeof record.duration === 'number' && Number.isFinite(record.duration) ? Math.round(record.duration) : null,

@@ -184,7 +184,7 @@ export function positiveInteger(value: unknown, max = 100_000): number | null {
 
 /** A label that is safe to show: letters, digits and a few separators only. */
 export function labelFromName(name: string | null, fallback: string): string {
-  const cleaned = (name ?? '').replace(/[^\p{L}\p{N}._ -]+/gu, '_').replace(/^\.+/, '').trim().slice(0, 120);
+  const cleaned = (name ?? '').replace(/[^\p{L}\p{N}._ -]+/gu, '_').replace(/^[.\s-]+/, '').trim().slice(0, 120);
   return cleaned || fallback;
 }
 
