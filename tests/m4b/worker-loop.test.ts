@@ -275,7 +275,8 @@ describe('worker process wiring (M4-B)', () => {
       await vi.waitFor(async () => expect(await connectionCount()).toBeGreaterThan(before));
 
       await worker.stop();
-      expect(await connectionCount()).toBe(before);
+      // The server needs a moment to drop backends whose clients have just disconnected.
+      await vi.waitFor(async () => expect(await connectionCount()).toBe(before));
       expect(logger.entries.filter((entry) => entry.level === 'error')).toEqual([]);
     } finally {
       await probe.end();
