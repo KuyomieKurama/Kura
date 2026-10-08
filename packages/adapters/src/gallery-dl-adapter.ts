@@ -319,7 +319,7 @@ function readListing(result: ProcessResult, target: CanonicalTarget): PostListin
   const postId = first ? postIdOf(first, target) : null;
   assertSamePost(target, postId, first);
   const user = asRecord(first?.user) ?? asRecord(first?.creator) ?? asRecord(first?.owner);
-  const parsedDate = typeof first?.date === 'string' ? new Date(first.date) : undefined;
+  const parsedDate = typeof first?.date === 'string' ? new Date(asUtcTimestamp(first.date)) : undefined;
   const incomplete = truncated
     ? { code: 'LISTING_TRUNCATED', message: `More than ${MAX_FILES_PER_POST} files; the list was cut off` }
     : result.exitCode !== 0
@@ -333,6 +333,12 @@ function readListing(result: ProcessResult, target: CanonicalTarget): PostListin
     files,
     incomplete
   };
+}
+
+/** gallery-dl prints naive timestamps ("2026-01-01T00:00:00"); they are UTC, not local time. */
+function asUtcTimestamp(value: string): string {
+  const withT = value.replace(' ', 'T');
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(withT) ? withT : `${withT}Z`;
 }
 
 function postIdOf(metadata: Record<string, unknown>, target: CanonicalTarget): string | null {
