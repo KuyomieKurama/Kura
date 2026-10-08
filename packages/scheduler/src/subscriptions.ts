@@ -6,15 +6,34 @@ import { InvalidScheduleRuleError, nextDue, normalizeRule, type ScheduleRule } f
 
 export type SubscriptionStatus = 'active' | 'paused';
 
+/** Result of checking the target against a platform adapter. Adapters (M5-B) set it; M4 only stores 'unvalidated'. */
+export type TargetState = 'unvalidated' | 'valid' | 'invalid';
+
 export interface SubscriptionRecord {
   id: string;
   userId: string;
   name: string;
   sourceRef: string | null;
+  platformHint: string | null;
+  targetState: TargetState;
   status: SubscriptionStatus;
   pausedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SubscriptionChanges {
+  name?: string;
+  sourceRef?: string | null;
+  platformHint?: string | null;
+}
+
+/** The subscription cannot be deleted while a worker holds a lease on one of its runs. */
+export class SubscriptionBusyError extends Error {
+  constructor() {
+    super('Subscription has a running job and cannot be deleted');
+    this.name = 'SubscriptionBusyError';
+  }
 }
 
 export interface ScheduleRecord {
@@ -42,6 +61,8 @@ interface SubscriptionRow {
   user_id: string;
   name: string;
   source_ref: string | null;
+  platform_hint: string | null;
+  target_state: TargetState;
   status: SubscriptionStatus;
   paused_at: Date | null;
   created_at: Date;
@@ -68,6 +89,8 @@ function toSubscription(row: SubscriptionRow): SubscriptionRecord {
     userId: row.user_id,
     name: row.name,
     sourceRef: row.source_ref,
+    platformHint: row.platform_hint,
+    targetState: row.target_state,
     status: row.status,
     pausedAt: row.paused_at,
     createdAt: row.created_at,
@@ -98,13 +121,89 @@ export function toSchedule(row: ScheduleRow): ScheduleRecord {
 export class SubscriptionRepository {
   constructor(private readonly pool: Pool, private readonly clock: Clock = systemClock) {}
 
-  async createSubscription(input: { userId: string; name: string; sourceRef?: string }): Promise<SubscriptionRecord> {
+  async createSubscription(input: {
+    userId: string;
+    name: string;
+    sourceRef?: string;
+    platformHint?: string;
+  }): Promise<SubscriptionRecord> {
     const result = await this.pool.query<SubscriptionRow>(
-      `INSERT INTO subscriptions (id, user_id, name, source_ref, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $5) RETURNING *`,
-      [randomUUID(), input.userId, input.name, input.sourceRef ?? null, this.clock.now()]
+      `INSERT INTO subscriptions (id, user_id, name, source_ref, platform_hint, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING *`,
+      [randomUUID(), input.userId, input.name, input.sourceRef ?? null, input.platformHint ?? null, this.clock.now()]
     );
     return toSubscription(result.rows[0]);
+  }
+
+  async listSubscriptions(userId: string): Promise<SubscriptionRecord[]> {
+    const result = await this.pool.query<SubscriptionRow>(
+      'SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY created_at, id',
+      [userId]
+    );
+    return result.rows.map(toSubscription);
+  }
+
+  /**
+   * Changing the target resets its validation: a new URL has not been checked by an adapter.
+   * Fields that are not part of `changes` stay as they are; null clears sourceRef and platformHint.
+   */
+  async updateSubscription(
+    userId: string,
+    subscriptionId: string,
+    changes: SubscriptionChanges
+  ): Promise<SubscriptionRecord> {
+    return inTransaction(this.pool, async (client) => {
+      const current = await client.query<SubscriptionRow>(
+        'SELECT * FROM subscriptions WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [subscriptionId, userId]
+      );
+      if (!current.rows[0]) throw new NotFoundError('Subscription');
+      const existing = toSubscription(current.rows[0]);
+
+      const sourceRef = changes.sourceRef === undefined ? existing.sourceRef : changes.sourceRef;
+      const targetChanged = sourceRef !== existing.sourceRef;
+      const updated = await client.query<SubscriptionRow>(
+        `UPDATE subscriptions
+            SET name = $3, source_ref = $4, platform_hint = $5, target_state = $6, updated_at = $7
+          WHERE id = $1 AND user_id = $2 RETURNING *`,
+        [
+          subscriptionId,
+          userId,
+          changes.name ?? existing.name,
+          sourceRef,
+          changes.platformHint === undefined ? existing.platformHint : changes.platformHint,
+          targetChanged ? 'unvalidated' : existing.targetState,
+          this.clock.now()
+        ]
+      );
+      return toSubscription(updated.rows[0]);
+    });
+  }
+
+  /**
+   * Removes the subscription with its schedules, occurrences and run history (scheduling metadata
+   * only; downloaded media is not touched by M4). Refused while a run is leased by a worker.
+   */
+  async deleteSubscription(userId: string, subscriptionId: string): Promise<void> {
+    await inTransaction(this.pool, async (client) => {
+      const current = await client.query(
+        'SELECT 1 FROM subscriptions WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [subscriptionId, userId]
+      );
+      if (!current.rows[0]) throw new NotFoundError('Subscription');
+
+      const leased = await client.query(
+        "SELECT 1 FROM job_runs WHERE subscription_id = $1 AND user_id = $2 AND state = 'leased'",
+        [subscriptionId, userId]
+      );
+      if (leased.rows[0]) throw new SubscriptionBusyError();
+
+      const scope = [subscriptionId, userId];
+      await client.query('DELETE FROM schedule_occurrences WHERE subscription_id = $1 AND user_id = $2', scope);
+      await client.query('DELETE FROM job_runs WHERE subscription_id = $1 AND user_id = $2', scope);
+      await client.query('DELETE FROM schedules WHERE subscription_id = $1 AND user_id = $2', scope);
+      await client.query('DELETE FROM subscriptions WHERE id = $1 AND user_id = $2', scope);
+    });
   }
 
   async getSubscription(userId: string, subscriptionId: string): Promise<SubscriptionRecord> {
@@ -181,6 +280,36 @@ export class SubscriptionRepository {
     );
     if (!result.rows[0]) throw new NotFoundError('Subscription');
     return toSchedule(result.rows[0]);
+  }
+
+  async listSchedules(userId: string, subscriptionId?: string): Promise<ScheduleRecord[]> {
+    const result = await this.pool.query<ScheduleRow>(
+      `SELECT * FROM schedules
+        WHERE user_id = $1 AND ($2::uuid IS NULL OR subscription_id = $2)
+        ORDER BY created_at, id`,
+      [userId, subscriptionId ?? null]
+    );
+    return result.rows.map(toSchedule);
+  }
+
+  /**
+   * Removes the schedule and its occurrence records. Job runs it created stay as history; they
+   * lose the link to the schedule (their config snapshot still names the rule).
+   */
+  async deleteSchedule(userId: string, scheduleId: string): Promise<void> {
+    await inTransaction(this.pool, async (client) => {
+      const current = await client.query(
+        'SELECT 1 FROM schedules WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [scheduleId, userId]
+      );
+      if (!current.rows[0]) throw new NotFoundError('Schedule');
+      await client.query(
+        'UPDATE job_runs SET schedule_id = NULL, schedule_version = NULL WHERE schedule_id = $1 AND user_id = $2',
+        [scheduleId, userId]
+      );
+      await client.query('DELETE FROM schedule_occurrences WHERE schedule_id = $1 AND user_id = $2', [scheduleId, userId]);
+      await client.query('DELETE FROM schedules WHERE id = $1 AND user_id = $2', [scheduleId, userId]);
+    });
   }
 
   async getSchedule(userId: string, scheduleId: string): Promise<ScheduleRecord> {

@@ -53,6 +53,9 @@ importers:
       '@kura/immich-client':
         specifier: workspace:*
         version: link:../../packages/immich-client
+      '@kura/scheduler':
+        specifier: workspace:*
+        version: link:../../packages/scheduler
       '@kura/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -99,6 +102,12 @@ importers:
       '@kura/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@kura/scheduler':
+        specifier: workspace:*
+        version: link:../../packages/scheduler
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
 
   packages/adapters: {}
 

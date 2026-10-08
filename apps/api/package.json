@@ -15,6 +15,7 @@
     "@kura/contracts": "workspace:*",
     "@kura/identity": "workspace:*",
     "@kura/immich-client": "workspace:*",
+    "@kura/scheduler": "workspace:*",
     "@kura/storage": "workspace:*",
     "fastify": "5.12.5",
     "pg": "8.23.1"

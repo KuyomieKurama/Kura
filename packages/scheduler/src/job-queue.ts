@@ -279,6 +279,16 @@ export class JobQueue {
     return result.rows.map(toJobRun);
   }
 
+  /** Newest runs first (by logical due time), for the subscription page. */
+  async listRecentRuns(userId: string, subscriptionId: string, limit = 20): Promise<JobRunRecord[]> {
+    const result = await this.pool.query<JobRunRow>(
+      `SELECT * FROM job_runs WHERE user_id = $1 AND subscription_id = $2
+        ORDER BY scheduled_for DESC, id DESC LIMIT $3`,
+      [userId, subscriptionId, limit]
+    );
+    return result.rows.map(toJobRun);
+  }
+
   /**
    * Gives the worker the next run it may start, or null. Order of decisions:
    * 1. Runs whose lease expired are reclaimed (crash recovery).
