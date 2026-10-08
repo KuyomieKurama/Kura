@@ -49,7 +49,7 @@ CREATE INDEX download_runs_subscription_idx ON download_runs (user_id, subscript
 CREATE TABLE download_posts (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  -- The run that created or last worked on the post.
+  -- The run that found the post first; later runs that see it again do not move it.
   run_id uuid NOT NULL REFERENCES download_runs(id) ON DELETE RESTRICT,
   subscription_id uuid NOT NULL,
   platform text NOT NULL,

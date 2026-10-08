@@ -1,4 +1,5 @@
 import { createCipheriv, randomBytes, randomUUID } from 'node:crypto';
+import type { Pool } from 'pg';
 import { DatabaseBlobStore } from '../../packages/blobstore/src/index.js';
 import { createGuardedFetch } from '../../packages/immich-client/src/index.js';
 import {
@@ -26,6 +27,8 @@ export const JPEG_HEAD = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 export const jpeg = (label: string): Buffer => Buffer.concat([JPEG_HEAD, Buffer.from(`kura test image ${label}`)]);
 
 export interface FixtureOptions {
+  /** Use an existing, already migrated database (for example the one of an API fixture). It is not closed here. */
+  database?: { pool: Pool; databaseUrl?: string };
   quotaBytes?: number;
   clock?: Clock;
   tools?: { ytDlp?: ControllableTool; galleryDl?: ControllableTool };
@@ -38,10 +41,11 @@ export interface FixtureOptions {
 export interface LogEntry { level: 'info' | 'error'; message: string; fields?: Record<string, unknown> }
 
 export async function createPipelineFixture(options: FixtureOptions = {}) {
-  const database = await createTestDatabase();
-  const migrations = await createMigrationsCopy();
-  await runMigrations(database.pool, migrations.directory);
-  const { pool } = database;
+  const ownDatabase = options.database ? undefined : await createTestDatabase();
+  const migrations = ownDatabase ? await createMigrationsCopy() : undefined;
+  if (ownDatabase && migrations) await runMigrations(ownDatabase.pool, migrations.directory);
+  const pool = ownDatabase?.pool ?? options.database!.pool;
+  const databaseUrl = ownDatabase?.databaseUrl ?? options.database!.databaseUrl ?? '';
 
   const clock = options.clock ?? new ManualClock('2026-06-01T10:00:00Z');
   const workDir = await tempDir('kura-m5b-work-');
@@ -139,13 +143,13 @@ export async function createPipelineFixture(options: FixtureOptions = {}) {
     (await pool.query(sql, params)).rows as T[];
 
   return {
-    pool, clock, advance, workDir, files, immich, immichUrl, secretKey, logs, logger, directUrl, catalog, blobstore, history,
+    pool, databaseUrl, clock, advance, workDir, files, immich, immichUrl, secretKey, logs, logger, directUrl, catalog, blobstore, history,
     subscriptions, queue, executor, handover, newUser, connectImmich, subscribe, queueAndClaim, runOnce, rows,
     async cleanup() {
       await files.stop();
       await immich.stop();
-      await migrations.cleanup();
-      await database.cleanup();
+      await migrations?.cleanup();
+      await ownDatabase?.cleanup();
     }
   };
 }

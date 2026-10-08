@@ -192,7 +192,10 @@ export class HistoryRepository {
     await this.pool.query(`UPDATE download_runs SET ${assignments.join(', ')} WHERE id = $1`, values);
   }
 
-  /** Inserts the post or, if this revision is already known, returns it unchanged apart from the run link. */
+  /**
+   * Inserts the post or, if this revision is already known, returns it. The post stays linked to the run
+   * that found it first, so the history of that run does not change when later runs see the post again.
+   */
   async upsertPost(post: NewPost): Promise<PostRecord> {
     const result = await this.pool.query<{ id: string; state: PostState; discovery_complete: boolean }>(
       `INSERT INTO download_posts (id, user_id, run_id, subscription_id, platform, adapter_id, adapter_version,
@@ -200,7 +203,7 @@ export class HistoryRepository {
                                    source_url, published_at, state, discovered_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'discovered', $15)
        ON CONFLICT (user_id, platform, platform_post_id, revision_key)
-         DO UPDATE SET run_id = EXCLUDED.run_id, adapter_version = EXCLUDED.adapter_version
+         DO UPDATE SET adapter_version = EXCLUDED.adapter_version
        RETURNING id, state, discovery_complete`,
       [
         randomUUID(), post.userId, post.runId, post.subscriptionId, post.platform, post.adapterId, post.adapterVersion,

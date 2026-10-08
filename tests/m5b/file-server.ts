@@ -11,9 +11,8 @@ export interface ServedFile {
   /** Send this many bytes, then wait for `release()` before sending the rest. */
   stallAfterBytes?: number;
   /**
-   * Which requests to this path stall (1-based). The direct URL adapter asks four times before it
-   * delivers bytes (probe, discover, resolve, download), so the download is the fourth request.
-   * Default: all of them.
+   * Which requests to this path stall (1-based), default all. Only a request whose body is read really
+   * waits: probe, discover and resolve cancel the body of their response and are not held up.
    */
   stallRequests?: number[];
 }
