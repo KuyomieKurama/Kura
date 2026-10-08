@@ -95,10 +95,11 @@ export class DirectUrlAdapter implements SourceAdapter {
   }
 
   async probe(context: ProbeContext): Promise<SourceSummary> {
-    const fetched = await this.open(context.target.canonicalUrl, context.signal, this.maxAssetBytes);
+    const target = this.recheckTarget(context.target);
+    const fetched = await this.open(target.canonicalUrl, context.signal, this.maxAssetBytes);
     await fetched.response.body?.cancel();
     return {
-      target: context.target,
+      target,
       available: true,
       title: originalNameOf(fetched.finalUrl, fetched.mediaType),
       creatorId: new URL(context.target.canonicalUrl).hostname,
@@ -107,17 +108,18 @@ export class DirectUrlAdapter implements SourceAdapter {
   }
 
   async *discover(context: DiscoveryContext): AsyncIterable<SourcePost> {
-    const fetched = await this.open(context.target.canonicalUrl, context.signal, this.maxAssetBytes);
+    const target = this.recheckTarget(context.target);
+    const fetched = await this.open(target.canonicalUrl, context.signal, this.maxAssetBytes);
     await fetched.response.body?.cancel();
     yield {
       adapterId: DIRECT_URL_ADAPTER_ID,
       sourceType: 'direct_media',
-      platformPostId: context.target.platformId,
-      creator: { platformId: new URL(context.target.canonicalUrl).hostname, displayName: null },
+      platformPostId: target.platformId,
+      creator: { platformId: new URL(target.canonicalUrl).hostname, displayName: null },
       title: originalNameOf(fetched.finalUrl, fetched.mediaType),
       publishedAt: null,
       revisionKey: revisionKeyOf(fetched.response.headers, fetched.contentLength),
-      canonicalUrl: context.target.canonicalUrl
+      canonicalUrl: target.canonicalUrl
     };
   }
 
@@ -125,6 +127,7 @@ export class DirectUrlAdapter implements SourceAdapter {
     if (policy.preset !== 'BEST_AVAILABLE' && policy.preset !== 'SOURCE_BYTES') {
       throw new AdapterError('POLICY_UNSUPPORTED', `Preset ${policy.preset} is not supported by the direct URL adapter`);
     }
+    this.recheckPost(post);
     const fetched = await this.open(post.canonicalUrl, undefined, this.maxAssetBytes);
     await fetched.response.body?.cancel();
     const asset: ResolvedAsset = {
@@ -154,6 +157,7 @@ export class DirectUrlAdapter implements SourceAdapter {
   }
 
   async *download(asset: ResolvedAsset, context: DownloadContext): AsyncIterable<Uint8Array> {
+    this.recheckPost(context.post);
     const maxBytes = Math.min(context.limits.maxBytes, this.maxAssetBytes);
     const idle = new AbortController();
     let timer = setTimeout(() => idle.abort(), this.idleTimeoutMs);
@@ -195,6 +199,25 @@ export class DirectUrlAdapter implements SourceAdapter {
     }
   }
 
+  /** Re-validates a target handed in from outside, so a tampered one cannot reach the network. */
+  private recheckTarget(target: CanonicalTarget): CanonicalTarget {
+    if (target.adapterId !== DIRECT_URL_ADAPTER_ID) throw new AdapterError('TARGET_INVALID', 'Target belongs to a different adapter');
+    const checked = this.validateTarget(target.canonicalUrl);
+    if (checked.canonicalUrl !== target.canonicalUrl || checked.platformId !== target.platformId) {
+      throw new AdapterError('TARGET_INVALID', 'Target does not match its canonical URL');
+    }
+    return checked;
+  }
+
+  /** Re-validates the URL stored in a post, as the CLI adapters do. */
+  private recheckPost(post: SourcePost): void {
+    if (post.adapterId !== DIRECT_URL_ADAPTER_ID) throw new AdapterError('TARGET_INVALID', 'Post belongs to a different adapter');
+    const checked = this.validateTarget(post.canonicalUrl);
+    if (checked.canonicalUrl !== post.canonicalUrl || checked.platformId !== post.platformPostId || checked.sourceType !== post.sourceType) {
+      throw new AdapterError('TARGET_INVALID', 'Post does not match its canonical URL');
+    }
+  }
+
   /**
    * Requests the URL and follows redirects by hand so that every hop is
    * verified by the guarded fetch. Returns the final 200 response with its
@@ -204,8 +227,9 @@ export class DirectUrlAdapter implements SourceAdapter {
     const idle = new AbortController();
     const timer = setTimeout(() => idle.abort(), this.idleTimeoutMs);
     const effectiveSignal = signal ? AbortSignal.any([signal, idle.signal]) : idle.signal;
-    let current = startUrl;
     try {
+      let current = startUrl;
+      assertStartUrl(startUrl);
       for (let hop = 0; hop <= this.maxRedirects; hop += 1) {
         const response = await this.fetcher(current, {
           method: 'GET',
@@ -227,6 +251,17 @@ export class DirectUrlAdapter implements SourceAdapter {
       clearTimeout(timer);
     }
   }
+}
+
+/** Every URL that is requested, not only redirect hops, must be a plain https URL. */
+function assertStartUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new AdapterError('TARGET_INVALID', 'URL cannot be parsed');
+  }
+  assertPlainHttps(parsed);
 }
 
 function nextRedirectTarget(currentUrl: string, location: string | null): string {

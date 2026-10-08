@@ -329,3 +329,67 @@ describe('DirectUrlAdapter response checks', () => {
     expect(await codeOf(collect(adapter.download(asset, downloadContext(post))))).toBe('NETWORK_FAILED');
   });
 });
+
+describe('DirectUrlAdapter re-validates URLs before any request', () => {
+  function recordingAdapter(): { adapter: DirectUrlAdapter; calls: string[] } {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async (input) => {
+      calls.push(String(input instanceof URL ? input.href : input));
+      return image();
+    };
+    return { adapter: adapterWith(fetcher), calls };
+  }
+
+  async function genuine(adapter: DirectUrlAdapter): Promise<{ post: SourcePost; asset: ResolvedAsset }> {
+    return resolveOnly(adapter, 'https://cdn.example.test/a.jpg');
+  }
+
+  it('refuses a tampered post with an http URL and sends no request', async () => {
+    const { adapter, calls } = recordingAdapter();
+    const { post, asset } = await genuine(adapter);
+    calls.length = 0;
+    const tampered: SourcePost = { ...post, canonicalUrl: 'http://evil.example.test/a.jpg' };
+    const plain: ResolvedAsset = { ...asset, shortLived: undefined };
+
+    expect(await codeOf(adapter.resolveAssets(tampered, { preset: 'SOURCE_BYTES' }))).toBe('TARGET_INVALID');
+    expect(await codeOf(collect(adapter.download(plain, downloadContext(tampered))))).toBe('TARGET_INVALID');
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a shortLived download URL with http and sends no request', async () => {
+    const { adapter, calls } = recordingAdapter();
+    const { post, asset } = await genuine(adapter);
+    calls.length = 0;
+    const tampered: ResolvedAsset = {
+      ...asset,
+      shortLived: { downloadUrl: 'http://evil.example.test/a.jpg', obtainedAt: new Date(), expiresAt: null }
+    };
+
+    expect(await codeOf(collect(adapter.download(tampered, downloadContext(post))))).toBe('TARGET_INVALID');
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a post whose canonical URL does not match its platform id', async () => {
+    const { adapter, calls } = recordingAdapter();
+    const { post, asset } = await genuine(adapter);
+    calls.length = 0;
+    const mismatched: SourcePost = { ...post, canonicalUrl: 'https://other.example.test/b.jpg' };
+
+    expect(await codeOf(adapter.resolveAssets(mismatched, { preset: 'SOURCE_BYTES' }))).toBe('TARGET_INVALID');
+    expect(await codeOf(collect(adapter.download({ ...asset, shortLived: undefined }, downloadContext(mismatched))))).toBe('TARGET_INVALID');
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a tampered target in probe and discover', async () => {
+    const { adapter, calls } = recordingAdapter();
+    const good = adapter.validateTarget('https://cdn.example.test/a.jpg');
+    const http: CanonicalTarget = { ...good, canonicalUrl: 'http://evil.example.test/a.jpg' };
+    const mismatched: CanonicalTarget = { ...good, platformId: 'f'.repeat(32) };
+
+    for (const target of [http, mismatched]) {
+      expect(await codeOf(adapter.probe({ ...jobContext, target }))).toBe('TARGET_INVALID');
+      expect(await codeOf(firstPost(adapter, target))).toBe('TARGET_INVALID');
+    }
+    expect(calls).toEqual([]);
+  });
+});
