@@ -1,7 +1,9 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { api, type Schedule, type Subscription, type SubscriptionRun } from './api.js';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { AdaptersPanel } from './Adapters.js';
+import { api, type Schedule, type SourceValidation, type Subscription, type SubscriptionRun, type SyncState } from './api.js';
 import { ScheduleForm } from './ScheduleForm.js';
 import { describeRule, formatInstant, runStateLabels } from './schedule-format.js';
+import { SourceValidationView } from './SourceCheck.js';
 
 const PLATFORM_HINTS = [
   { value: '', label: 'Keine Angabe' },
@@ -15,9 +17,9 @@ const PLATFORM_HINTS = [
 ];
 
 const targetStateLabels = {
-  unvalidated: 'Noch nicht geprüft (die Prüfung durch einen Adapter folgt)',
-  valid: 'Geprüft',
-  invalid: 'Ungültig'
+  unvalidated: 'Noch nicht geprüft (mit „Adresse prüfen“ prüfen)',
+  valid: 'Adresse erkannt und unterstützt',
+  invalid: 'Adresse wird nicht unterstützt'
 } as const;
 
 function errorMessage(error: unknown): string {
@@ -30,6 +32,18 @@ function SubscriptionForm({ subscription, onSaved, onCancel }: {
   onCancel: () => void;
 }) {
   const [error, setError] = useState('');
+  const [validation, setValidation] = useState<SourceValidation | null>(null);
+  const urlInput = useRef<HTMLInputElement>(null);
+
+  async function check() {
+    try {
+      setValidation(await api.validateSource(urlInput.current?.value ?? ''));
+      setError('');
+    } catch (cause) {
+      setValidation(null);
+      setError(errorMessage(cause));
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,8 +54,9 @@ function SubscriptionForm({ subscription, onSaved, onCancel }: {
       platformHint: String(data.get('platformHint') ?? '') || null
     };
     try {
-      if (subscription) await api.updateSubscription(subscription.id, input);
-      else await api.createSubscription(input);
+      const saved = subscription ? await api.updateSubscription(subscription.id, input) : await api.createSubscription(input);
+      // Records whether an adapter accepts the address; saving does not depend on it.
+      await api.validateSubscription(saved.subscription.id).catch(() => undefined);
       onSaved();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -50,8 +65,10 @@ function SubscriptionForm({ subscription, onSaved, onCancel }: {
 
   return <form onSubmit={submit} aria-label={subscription ? 'Abonnement bearbeiten' : 'Abonnement anlegen'}>
     <label>Name<input name="name" defaultValue={subscription?.name ?? ''} maxLength={200} required /></label>
-    <label>Ziel-URL<input name="targetUrl" defaultValue={subscription?.targetUrl ?? ''} maxLength={2048} required autoComplete="off" /></label>
-    <p>Die URL wird unverändert gespeichert. Ob eine Plattform sie unterstützt, wird erst später geprüft.</p>
+    <label>Ziel-URL<input name="targetUrl" ref={urlInput} defaultValue={subscription?.targetUrl ?? ''} maxLength={2048} required autoComplete="off" /></label>
+    <p>Die URL wird unverändert gespeichert. Mit „Adresse prüfen“ sehen Sie, welche Plattform erkannt wird und was der Adapter kann; es wird dabei nichts heruntergeladen.</p>
+    <button type="button" className="secondary" onClick={() => void check()}>Adresse prüfen</button>
+    {validation && <SourceValidationView result={validation} />}
     <label>Plattform (Hinweis)
       <select name="platformHint" defaultValue={subscription?.platformHint ?? ''}>
         {PLATFORM_HINTS.map((hint) => <option key={hint.value} value={hint.value}>{hint.label}</option>)}
@@ -121,6 +138,7 @@ function ScheduleList({ subscription, reload }: { subscription: Subscription; re
 
 function SubscriptionDetails({ subscription, reload }: { subscription: Subscription; reload: () => Promise<void> }) {
   const [runs, setRuns] = useState<SubscriptionRun[] | null>(null);
+  const [syncState, setSyncState] = useState<SyncState | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -128,10 +146,16 @@ function SubscriptionDetails({ subscription, reload }: { subscription: Subscript
     api.subscriptionRuns(subscription.id)
       .then((result) => { if (active) setRuns(result.runs); })
       .catch((cause) => { if (active) setError(errorMessage(cause)); });
+    api.syncState(subscription.id)
+      .then((result) => { if (active) setSyncState(result.syncState); })
+      .catch(() => undefined);
     return () => { active = false; };
   }, [subscription.id]);
 
   return <>
+    <p>{syncState?.checkedThrough
+      ? `Bis ${formatInstant(syncState.checkedThrough, Intl.DateTimeFormat().resolvedOptions().timeZone)} erfolgreich geprüft.`
+      : 'Noch nicht erfolgreich geprüft.'} Das ist kein Beleg für ein vollständiges Archiv.</p>
     <ScheduleList subscription={subscription} reload={reload} />
     <section aria-label="Letzte Läufe">
       <h4>Letzte Läufe</h4>
@@ -144,6 +168,8 @@ function SubscriptionCard({ subscription, reload }: { subscription: Subscription
   const [mode, setMode] = useState<'view' | 'edit' | 'confirm-delete'>('view');
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [info, setInfo] = useState('');
+  const [validation, setValidation] = useState<SourceValidation | null>(null);
 
   async function run(action: () => Promise<unknown>) {
     try {
@@ -156,6 +182,31 @@ function SubscriptionCard({ subscription, reload }: { subscription: Subscription
   }
   const paused = subscription.status === 'paused';
 
+  async function runNow() {
+    try {
+      const result = await api.runSubscriptionNow(subscription.id);
+      setNotice('');
+      setInfo(result.coalesced
+        ? `Es gibt bereits einen offenen Lauf (Status: ${runStateLabels[result.run.state] ?? result.run.state}); er startet frühestens ${formatInstant(result.run.runAfter, Intl.DateTimeFormat().resolvedOptions().timeZone)}. Es wird kein zweiter angelegt.`
+        : 'Der Lauf wurde eingereiht. Den Fortschritt sehen Sie unter „Verlauf“.');
+      await reload();
+    } catch (cause) {
+      setInfo('');
+      setNotice(errorMessage(cause));
+    }
+  }
+
+  async function check() {
+    try {
+      const result = await api.validateSubscription(subscription.id);
+      setValidation(result.validation);
+      setNotice('');
+      await reload();
+    } catch (cause) {
+      setNotice(errorMessage(cause));
+    }
+  }
+
   return <article aria-label={`Abonnement ${subscription.name}`}>
     <h3>{subscription.name}{paused && ' (pausiert)'}</h3>
     {mode === 'edit'
@@ -164,13 +215,17 @@ function SubscriptionCard({ subscription, reload }: { subscription: Subscription
         <p>Ziel: {subscription.targetUrl}</p>
         <p>Plattform: {PLATFORM_HINTS.find((hint) => hint.value === (subscription.platformHint ?? ''))?.label ?? subscription.platformHint} · Prüfung: {targetStateLabels[subscription.targetState]}</p>
         <p>Status: {paused ? 'Pausiert: Es werden keine neuen Läufe angelegt.' : 'Aktiv'}</p>
+        <button type="button" onClick={() => void runNow()} disabled={paused}>Jetzt ausführen</button>
+        <button type="button" className="secondary" onClick={() => void check()}>Adresse prüfen</button>
         <button type="button" className="secondary" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Details ausblenden' : 'Zeitpläne und Läufe'}</button>
         <button type="button" className="secondary" onClick={() => setMode('edit')}>Bearbeiten</button>
         <button type="button" className="secondary" onClick={() => void run(() => paused ? api.resumeSubscription(subscription.id) : api.pauseSubscription(subscription.id))}>
           {paused ? 'Fortsetzen' : 'Pausieren'}
         </button>
         <button type="button" className="secondary" onClick={() => setMode('confirm-delete')}>Löschen</button>
-        {paused && <p>Beim Fortsetzen werden verpasste Termine aus der Pause nicht nachgeholt.</p>}
+        {paused && <p>Beim Fortsetzen werden verpasste Termine aus der Pause nicht nachgeholt. Ein pausiertes Abonnement kann nicht ausgeführt werden.</p>}
+        {validation && <SourceValidationView result={validation} />}
+        {info && <p role="status">{info}</p>}
       </>}
     {mode === 'confirm-delete' && <div role="alertdialog" aria-label="Abonnement löschen">
       <p>Abonnement „{subscription.name}“ mit allen Zeitplänen und dem Laufverlauf löschen? Heruntergeladene Medien bleiben unberührt.</p>
@@ -182,7 +237,7 @@ function SubscriptionCard({ subscription, reload }: { subscription: Subscription
   </article>;
 }
 
-export function SubscriptionsPage() {
+export function SubscriptionsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [subscriptions, setSubscriptions] = useState<Subscription[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -202,7 +257,8 @@ export function SubscriptionsPage() {
       <h2>Abonnements</h2>
       <button type="button" onClick={() => setCreating(true)}>Abonnement anlegen</button>
     </div>
-    <p>Ein Abonnement beobachtet ein Ziel wiederkehrend. Zeitpläne legen nur Läufe an; das Herunterladen selbst folgt in einem späteren Schritt.</p>
+    <p>Ein Abonnement beobachtet ein Ziel wiederkehrend. Zeitpläne und „Jetzt ausführen“ legen Läufe an; ein Worker lädt den Beitrag herunter, speichert ihn und übergibt ihn an Immich, wenn Sie eine Verbindung eingerichtet haben. Das Ergebnis steht unter „Verlauf“.</p>
+    <AdaptersPanel isAdmin={isAdmin} />
     {error && <p className="form-error" role="alert">{error}</p>}
     {creating && <SubscriptionForm onSaved={() => { setCreating(false); void reload(); }} onCancel={() => setCreating(false)} />}
     {subscriptions === null ? <p>Wird abgerufen …</p>

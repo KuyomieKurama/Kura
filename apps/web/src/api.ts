@@ -54,6 +54,15 @@ export const api = {
   updateSchedule(id: string, input: Partial<ScheduleInput>) { return request<{ schedule: Schedule }>(`/schedules/${id}`, { method: 'PATCH', body: JSON.stringify(input) }); },
   deleteSchedule(id: string) { return request<void>(`/schedules/${id}`, { method: 'DELETE' }); },
   previewSchedule(rule: ScheduleRule, count = 5) { return request<{ entries: PreviewEntry[] }>('/schedules/preview', { method: 'POST', body: JSON.stringify({ rule, count }) }); },
+  adapters() { return request<{ adapters: AdapterInfo[] }>('/adapters'); },
+  validateSource(url: string) { return request<SourceValidation>('/sources/validate', { method: 'POST', body: JSON.stringify({ url }) }); },
+  validateSubscription(id: string) { return request<{ targetState: Subscription['targetState']; validation: SourceValidation }>(`/subscriptions/${id}/validate`, { method: 'POST' }); },
+  runSubscriptionNow(id: string) { return request<{ coalesced: boolean; run: { id: string; state: string; runAfter: string } }>(`/subscriptions/${id}/run-now`, { method: 'POST' }); },
+  syncState(id: string) { return request<{ syncState: SyncState | null }>(`/subscriptions/${id}/sync-state`); },
+  history() { return request<{ runs: HistoryRun[]; posts: HistoryPost[] }>('/history'); },
+  killSwitches() { return request<{ killSwitches: KillSwitch[] }>('/admin/adapter-kill-switches'); },
+  setKillSwitch(input: { adapterId: string; adapterVersion?: string; sourceType?: string; reason: string }) { return request<{ killSwitch: KillSwitch }>('/admin/adapter-kill-switches', { method: 'POST', body: JSON.stringify(input) }); },
+  liftKillSwitch(id: string) { return request<void>(`/admin/adapter-kill-switches/${id}`, { method: 'DELETE' }); },
   runtimePolicy() { return request<RuntimePolicyResponse>('/admin/runtime-policy'); },
   saveRuntimePolicy(expectedVersion: number, policy: RuntimePolicy) { return request<RuntimePolicyResponse>('/admin/runtime-policy', { method: 'PUT', body: JSON.stringify({ expectedVersion, policy }) }); }
 };
@@ -99,4 +108,44 @@ export type ImmichTransfer = {
   status: string;
   localOriginalRetained: boolean;
   evidence: { serverVersion: string | null; byteLength: number | null; album: string | null } | null;
+};
+
+export type AdapterCapabilities = {
+  singlePost: boolean; creatorFeed: boolean; images: boolean; videos: boolean; pagination: boolean; resume: boolean;
+  pageSnapshot: boolean; qualityVariants: boolean; authKind: string; authLabel: string; presets: string[];
+};
+export type Availability = 'available' | 'unavailable' | 'unknown';
+export type SourceValidation =
+  | {
+    supported: true; canonicalUrl: string; platform: string; platformLabel: string; targetKind: string;
+    adapter: { id: string; label: string; availability: Availability; version: string | null };
+    capabilities: AdapterCapabilities; runnable: boolean; notices: string[];
+  }
+  | { supported: false; code: string; message: string; notices: string[] };
+export type AdapterInfo = {
+  id: string; label: string; version: string | null; sourceTypes: { id: string; label: string }[];
+  capabilities: AdapterCapabilities; availability: Availability; reasonCode: string | null; message: string | null;
+  checkedAt: string | null; disabledByAdministrator: boolean;
+};
+export type KillSwitch = { id: string; adapterId: string; adapterVersion: string | null; sourceType: string | null; reason: string; createdAt: string };
+export type SyncState = { lastSeenPostId: string | null; lastSeenRevisionKey: string | null; lastSeenAt: string | null; checkedThrough: string | null };
+export type HistoryRun = {
+  id: string; subscriptionId: string; subscriptionName: string; sourceUrl: string | null; triggerKind: 'schedule' | 'manual';
+  platform: string | null; adapterId: string | null; adapterVersion: string | null; state: string; errorCode: string | null;
+  errorMessage: string | null; postsFound: number; postsSkipped: number; assetsStored: number; assetsFailed: number;
+  bytesStored: number; startedAt: string; finishedAt: string | null;
+};
+export type HistoryAsset = {
+  id: string; index: number; sourceAssetId: string; originalName: string; mediaType: string; state: string; attempts: number;
+  byteSize: number | null; sha256: string | null; errorCode: string | null; errorMessage: string | null; storedAt: string | null;
+  localOriginalRetained: boolean;
+  handover: {
+    state: string; at: string | null; transferId: string | null; transferStatus: string | null;
+    evidence: { serverVersion: string | null; byteLength: number | null; album: string | null; verifiedAt: string } | null;
+  };
+};
+export type HistoryPost = {
+  id: string; subscriptionId: string; subscriptionName: string; platform: string; adapterId: string; creatorId: string;
+  creatorName: string | null; platformPostId: string; title: string | null; sourceUrl: string | null; state: string;
+  discoveryComplete: boolean; discoveredAt: string; completedAt: string | null; assets: HistoryAsset[];
 };
