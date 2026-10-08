@@ -204,9 +204,9 @@ function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined) return;
   try {
     process.kill(-child.pid, signal);
-  } catch (error) {
-    // ESRCH: the group is already gone, which is the goal.
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  } catch {
+    // Best effort and never thrown: this runs inside event handlers. ESRCH means the group is already gone,
+    // which is the goal; anything else (EPERM) cannot be handled better here, and the timeout still applies.
   }
 }
 
