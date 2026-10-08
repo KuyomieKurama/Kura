@@ -6,6 +6,7 @@ import type { Clock } from '@kura/scheduler';
 import { systemClock } from '@kura/scheduler';
 import type { Pool } from 'pg';
 import { loadKillSwitches, type AdapterCatalog } from './catalog.js';
+import { HistoryRepository } from './history.js';
 import { realWait, type Logger, type Wait } from './scheduler-loop.js';
 
 /** Workspaces of a run that died are left behind; a live run is far younger than this. */
@@ -66,6 +67,7 @@ export class DownloadMaintenance implements WorkerLifecycle {
   async start(): Promise<void> {
     if (this.running) return;
     await this.refreshAdapters();
+    await this.closeInterruptedRuns();
     const controller = new AbortController();
     this.controller = controller;
     this.running = this.loop(controller.signal);
@@ -98,7 +100,18 @@ export class DownloadMaintenance implements WorkerLifecycle {
     }
   }
 
+  /** History rows of attempts whose worker died stay open otherwise; see HistoryRepository.closeOrphanedRuns. */
+  async closeInterruptedRuns(): Promise<void> {
+    try {
+      const closed = await new HistoryRepository(this.options.pool, this.options.clock).closeOrphanedRuns();
+      if (closed > 0) this.options.logger.info('closed runs of interrupted workers', { runs: closed });
+    } catch (error) {
+      this.options.logger.error('closing interrupted runs failed', { error: error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error' });
+    }
+  }
+
   async cleanUp(): Promise<void> {
+    await this.closeInterruptedRuns();
     try {
       const writes = await this.options.blobstore.cleanupStaging();
       const workspaces = await removeStaleWorkspaces(this.options.workDir, STALE_WORKSPACE_AGE_MS, this.options.clock);

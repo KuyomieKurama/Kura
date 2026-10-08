@@ -144,6 +144,8 @@ export function sanitizedSourceUrl(url: string): string | null {
   }
 }
 
+const ORPHANED_RUN_MESSAGE = 'Der Worker wurde unterbrochen; der Lauf wird erneut versucht oder ist beendet.';
+
 /**
  * Durable history of downloads (docs/planning/05, section 7). The rows reference nothing that is pruned
  * elsewhere (see migration 0050), so nothing here is deleted when a subscription or a queue run is.
@@ -153,6 +155,8 @@ export class HistoryRepository {
   constructor(private readonly pool: Pool, private readonly clock: Clock = systemClock) {}
 
   async startRun(run: NewRun): Promise<string> {
+    // Earlier attempts of this queued run are over (their lease generation is no longer the live one).
+    await this.closeOrphanedRuns(run.jobRunId);
     const result = await this.pool.query<{ id: string }>(
       `INSERT INTO download_runs (id, user_id, job_run_id, lease_generation, subscription_id, subscription_name,
                                   source_url, trigger_kind, state, started_at)
@@ -165,6 +169,30 @@ export class HistoryRepository {
       ]
     );
     return result.rows[0]!.id;
+  }
+
+  /**
+   * Closes runs of attempts that died: still open (no finished_at) but no longer backed by a live lease of
+   * the same generation. The queue row may already be gone through retention, hence NOT EXISTS. Only UPDATEs;
+   * an attempt that ends normally sets finished_at before it releases its lease, so a live run is never hit.
+   * Pass `jobRunId` to look at one queued run only (used when a successor starts). Returns the closed count.
+   */
+  async closeOrphanedRuns(jobRunId?: string): Promise<number> {
+    const result = await this.pool.query(
+      `UPDATE download_runs d
+          SET state = 'retry_wait',
+              error_code = 'LEASE_LOST',
+              error_message = $2,
+              finished_at = $3
+        WHERE d.finished_at IS NULL
+          AND ($1::uuid IS NULL OR d.job_run_id = $1::uuid)
+          AND NOT EXISTS (
+            SELECT 1 FROM job_runs j
+             WHERE j.id = d.job_run_id AND j.state = 'leased' AND j.attempts = d.lease_generation
+          )`,
+      [jobRunId ?? null, ORPHANED_RUN_MESSAGE, this.clock.now()]
+    );
+    return result.rowCount ?? 0;
   }
 
   async updateRun(runId: string, update: RunUpdate): Promise<void> {

@@ -76,6 +76,7 @@ Alle Läufe mit `DATABASE_URL=postgres://kura_dev:***@127.0.0.1:5432/kura_dev` (
 
 - **Vorher** (Stand nach Merge und Install, vor jeder Änderung; Log `/tmp/m5b-baseline.txt`): `corepack pnpm check` Exit 0, `Test Files  27 passed (27)`, `Tests  512 passed | 1 skipped (513)`.
 - **Nachher** (nach `5a37810`; Log `/tmp/m5b-final.txt`): `corepack pnpm check` Exit 0, `Test Files  34 passed (34)`, `Tests  629 passed | 1 skipped (630)`. Das sind +7 Dateien und +117 Tests, alle in `tests/m5b/`.
+- **Nach Review-Runde 1** (Korrektur offener Verlaufszeilen; Log `/tmp/m5b-round2.txt`): `corepack pnpm check` Exit 0, `Test Files  34 passed (34)`, `Tests  633 passed | 1 skipped (634)` (+4 Tests in `tests/m5b/pipeline-failures.test.ts`). Gegenprobe: ohne den Aufruf in `startRun` schlägt der Test „zombie never wakes up“ fehl.
 - Weboberfläche (nicht Teil von `pnpm check`, wie schon in M4-B): `apps/web` `vitest run`: `Test Files  6 passed (6)`, `Tests  40 passed (40)` (vorher 31; +9 in `Sources.test.tsx`); `tsc --noEmit` und `pnpm --filter @kura/web build` ohne Fehler.
 - `eslint . --max-warnings=0` ohne Ausgabe (vor jedem Commit).
 - **Echter Prozess mit Produktions-Build:** `pnpm --filter @kura/worker deploy --prod` in ein Verzeichnis, dort `node dist/index.js` gegen eine frische, migrierte Datenbank (danach gelöscht), mit einem selbst geschriebenen gallery-dl-Ersatz (Skript, Pfad + SHA-256 konfiguriert), einem eingereihten manuellen Lauf für eine Pixiv-URL. Ergebnis: Log „run finished … result stored“, `download_runs`: 1 Zeile `stored`, `assets_stored` 2, `adapter_version` 1.32.2; `download_assets`: 2 Zeilen `stored`; `job_runs`: `succeeded`; `adapter_status`: gallery-dl `available`, yt-dlp `unavailable` (`BINARY_NOT_CONFIGURED`), direct-url `available`; `blobstore_objects`: 2; Übergabe `no_connection` (kein Immich eingerichtet); danach SIGTERM → „worker stopped“. Das belegt, dass das gebaute Paket mit seinen Abhängigkeiten startet und einen Lauf zu Ende bringt. Es belegt NICHT, dass das echte gallery-dl so antwortet.
@@ -114,7 +115,15 @@ Betriebsfolgen: Der Worker erzeugt weiter die Zeitplan-Läufe (Scheduler) und f�
 
 Rückweg: `git revert` der Commits ab `0334122` (neueste zuerst), oder das Image auf den vorherigen Tag zurückstellen und `kura-worker` entfernen. Die Migrationen legen nur Tabellen an. Bleiben die Tabellen (`download_*`, `subscription_sync_state`, `adapter_*`) nach einem Rückbau zurück, stört das den alten Stand nicht; Daten darin sind Historie und werden von Kura nicht gelöscht.
 
+## Änderungen in Review-Runde 1
+
+1. **Offene Verlaufszeilen nach Absturz** (Befund des Reviewers, bestätigt): Eine `download_runs`-Zeile eines abgestürzten Versuchs blieb `downloading` mit `finished_at` NULL, solange der Zombie nicht selbst aufwachte. Jetzt schließt `HistoryRepository.closeOrphanedRuns()` (nur `UPDATE`, kein Löschen) jede offene Zeile ohne lebende Lease: Zustand `retry_wait`, Code `LEASE_LOST`, deutsche Meldung. „Lebend“ heißt: `job_runs.state = 'leased'` und `job_runs.attempts = download_runs.lease_generation` (die Spalte `attempts` ist das Fencing-Token; der Vorschlag des Reviewers nannte `lease_generation`, die gibt es in `job_runs` nicht). Per `NOT EXISTS`, damit es auch greift, wenn die Queue-Zeile durch Retention schon weg ist. Aufgerufen (a) in `startRun` für frühere Versuche desselben Laufs, (b) beim Start von `DownloadMaintenance` und (c) bei jedem Wartungsdurchlauf (alle `WORKER_ADAPTER_RECHECK_SECONDS`). Ein Lauf endet normal immer mit `finished_at` VOR dem Freigeben der Lease, ein lebender Lauf wird also nicht getroffen. Eine abgelaufene, aber noch nicht zurückgeholte Lease zählt noch als lebend (der Scheduler-Schritt `reclaimExpiredLeases` holt sie zurück).
+   Rückweg: `git revert` des Commits dieser Runde; die Zeilen bleiben dann bei einem Absturz wieder offen. Keine Migration.
+2. Tests (`tests/m5b/pipeline-failures.test.ts`, Block „history of runs whose worker died“): Nachfolger startet, Zombie wacht nie auf; keine Nachfolger-Lease mehr (Versuche aufgebraucht, Queue `failed`) und Sweep; Queue-Zeile bereits gelöscht; lebende Lease bleibt unberührt. Der No-Deletion-Test ist weiter grün.
+
 ## Annahmen
+
+0. **`subscription_sync_state` wird nur geschrieben, nicht gelesen.** `HistoryRepository.getSyncState` und der `target_hash`-Vergleich werden vom Executor nie ausgewertet (nur die API `GET …/sync-state` zeigt den Stand). Jeder Lauf listet alles neu auf und überspringt bereits archivierte Beiträge über `download_posts`. Das reicht für die heutigen Ein-Beitrag-Adapter (Direct-URL) und für die Werkzeug-Adapter bei kleinen Zielen; „inkrementell“ ist damit nur eine aufgezeichnete Marke, kein Abkürzen der Entdeckung. Echte Abkürzung (nur neuere Beiträge als `last_seen_*` anfragen) ist nicht gebaut und gehört vor Einsatz mit großen Profilen nachgezogen.
 
 1. Die Adapter-Verfügbarkeit wird beim Start und danach alle `WORKER_ADAPTER_RECHECK_SECONDS` (Standard 600) neu bestimmt, nicht bei jedem Lauf. Ein ausgetauschtes Binary wird aber vor JEDEM Start vom Runner gehasht (M5-A), die Anzeige kann also nur kurz veraltet sein.
 2. Die API kennt die Verfügbarkeit nur aus `adapter_status`, nicht aus eigener Prüfung. Solange der Worker noch nicht gemeldet hat, steht dort „Noch nicht gemeldet“ und der Lauf ist erlaubt (`runnable: true`).
@@ -139,6 +148,7 @@ Rückweg: `git revert` der Commits ab `0334122` (neueste zuerst), oder das Image
 
 ## Offene Fragen
 
+0. Soll die Entdeckung wirklich inkrementell werden (Sync-Stand lesen, nur Neueres anfragen)? Siehe Annahme 0; derzeit nur Marke.
 1. Soll `deploy/**` wie oben beschrieben vom Orchestrator geändert werden, oder soll der Worker vorerst im API-Prozess mitlaufen? (Ich habe es nicht gebaut; die Karte verlangt einen Worker.)
 2. Wo sollen Anmeldedaten für Quellen (Cookies, Tokens) künftig liegen? Bis dahin sind nur öffentliche Quellen nutzbar. Nicht Teil dieser Karte, nicht gebaut.
 3. Wie wird ffmpeg für yt-dlp bereitgestellt und gepinnt? Unbekannt; ohne ffmpeg schlagen Videos fehl, die zusammengefügt werden müssen.

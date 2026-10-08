@@ -294,6 +294,95 @@ describe('abort, pause, shutdown and lost leases', () => {
   });
 });
 
+describe('history of runs whose worker died', () => {
+  const open: PipelineFixture[] = [];
+  afterEach(async () => {
+    await Promise.all(open.splice(0).map((subject) => subject.cleanup()));
+  });
+  const stalledFixture = async () => {
+    const subject = await createPipelineFixture();
+    open.push(subject);
+    subject.files.serve('/slow.jpg', { body: Buffer.concat([jpeg('slow'), Buffer.alloc(200_000, 7)]), contentType: 'image/jpeg', stallAfterBytes: 1000, stallRequests: [4] });
+    const userId = await subject.newUser();
+    const subscription = await subject.subscribe(userId, subject.files.url('/slow.jpg'));
+    return { subject, userId, subscription };
+  };
+  const untilDownloading = async (subject: PipelineFixture) => {
+    for (let waited = 0; waited < 5000; waited += 20) {
+      if ((await subject.rows("SELECT 1 FROM download_assets WHERE state = 'downloading'")).length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('download never started');
+  };
+  const runs = (subject: PipelineFixture) =>
+    subject.rows('SELECT lease_generation, state, error_code, finished_at IS NOT NULL AS finished FROM download_runs ORDER BY lease_generation');
+
+  it('closes the open run of a dead worker when the successor starts, even if the zombie never wakes up', async () => {
+    const { subject, userId, subscription } = await stalledFixture();
+    const zombieLease = await subject.queueAndClaim(userId, subscription.id);
+    const zombie = subject.executor.execute(zombieLease, new AbortController().signal);
+    await untilDownloading(subject);
+    subject.advance(121);
+    expect(await subject.queue.reclaimExpiredLeases()).toEqual({ requeued: 1, failed: 0 });
+
+    const successor = await subject.queue.claim({ workerId: 'second-worker', leaseSeconds: 120 });
+    expect(await subject.executor.execute(successor!, new AbortController().signal)).toEqual({ result: 'stored' });
+
+    // The zombie is still hanging here: its row has to be closed by someone else.
+    expect(await runs(subject)).toEqual([
+      { lease_generation: 1, state: 'retry_wait', error_code: 'LEASE_LOST', finished: true },
+      { lease_generation: 2, state: 'stored', error_code: null, finished: true }
+    ]);
+    subject.files.release();
+    await zombie;
+  });
+
+  it('closes the run by sweep when no later attempt exists (attempts used up)', async () => {
+    const { subject, userId, subscription } = await stalledFixture();
+    const lease = await subject.queueAndClaim(userId, subscription.id);
+    await subject.pool.query('UPDATE job_runs SET max_attempts = 1 WHERE id = $1', [lease.runId]);
+    const zombie = subject.executor.execute(lease, new AbortController().signal);
+    await untilDownloading(subject);
+    expect((await runs(subject))[0]).toMatchObject({ state: 'downloading', finished: false });
+
+    subject.advance(121);
+    expect(await subject.queue.reclaimExpiredLeases()).toEqual({ requeued: 0, failed: 1 });
+    expect((await subject.rows('SELECT state FROM job_runs'))[0]).toEqual({ state: 'failed' });
+    expect(await subject.history.closeOrphanedRuns()).toBe(1);
+    expect(await runs(subject)).toEqual([{ lease_generation: 1, state: 'retry_wait', error_code: 'LEASE_LOST', finished: true }]);
+    expect((await subject.rows('SELECT error_message FROM download_runs'))[0]!.error_message).toMatch(/unterbrochen/);
+    expect(await subject.history.closeOrphanedRuns()).toBe(0);
+    subject.files.release();
+    await zombie;
+  });
+
+  it('also closes the run when the queue row is already gone (retention)', async () => {
+    const { subject, userId, subscription } = await stalledFixture();
+    const lease = await subject.queueAndClaim(userId, subscription.id);
+    const zombie = subject.executor.execute(lease, new AbortController().signal);
+    await untilDownloading(subject);
+    subject.advance(121);
+    await subject.pool.query('DELETE FROM job_runs WHERE id = $1', [lease.runId]);
+    expect(await subject.history.closeOrphanedRuns()).toBe(1);
+    expect((await runs(subject))[0]).toMatchObject({ state: 'retry_wait', error_code: 'LEASE_LOST', finished: true });
+    subject.files.release();
+    await zombie;
+  });
+
+  it('leaves a run with a live lease alone', async () => {
+    const { subject, userId, subscription } = await stalledFixture();
+    const lease = await subject.queueAndClaim(userId, subscription.id);
+    const live = subject.executor.execute(lease, new AbortController().signal);
+    await untilDownloading(subject);
+    expect(await subject.history.closeOrphanedRuns()).toBe(0);
+    expect(await subject.history.closeOrphanedRuns(lease.runId)).toBe(0);
+    expect((await runs(subject))[0]).toMatchObject({ state: 'downloading', error_code: null, finished: false });
+    subject.files.release();
+    expect(await live).toEqual({ result: 'stored' });
+    expect((await runs(subject))[0]).toMatchObject({ state: 'stored', finished: true });
+  });
+});
+
 describe('the trusted import', () => {
   const open: PipelineFixture[] = [];
   afterEach(async () => {
