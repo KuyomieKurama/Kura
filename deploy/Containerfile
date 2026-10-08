@@ -4,13 +4,22 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig
 COPY apps ./apps
 COPY packages ./packages
 COPY migrations ./migrations
-RUN corepack enable && pnpm install --frozen-lockfile && pnpm -r build && pnpm --filter @kura/api deploy --prod /production
+RUN corepack enable && pnpm install --frozen-lockfile && pnpm -r build \
+ && pnpm --filter @kura/api deploy --prod /production \
+ && pnpm --filter @kura/worker deploy --prod /production-worker
 
 FROM docker.io/library/node:22-trixie-slim
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
-RUN groupadd --system kura && useradd --system --gid kura --home-dir /app kura
+RUN groupadd --system kura && useradd --system --gid kura --home-dir /app kura \
+ && mkdir -p /var/lib/kura/staging /var/lib/kura/blobstore \
+ && chown -R kura:kura /var/lib/kura
+# One image, two processes: the API (default CMD) and the worker (`node apps/worker/dist/index.js`).
+# Paths below /var/lib/kura are writable for the kura user; kura-deploy.sh mounts a volume on the blobstore
+# directory when the filesystem backend is configured.
+ENV KURA_WORK_DIR=/var/lib/kura/staging KURA_STORAGE_ROOT=/var/lib/kura/blobstore
 COPY --from=build --chown=kura:kura /production ./apps/api
+COPY --from=build --chown=kura:kura /production-worker ./apps/worker
 COPY --from=build --chown=kura:kura /app/apps/web/dist ./apps/web/dist
 COPY --from=build --chown=kura:kura /app/migrations ./migrations
 USER kura

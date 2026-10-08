@@ -1,5 +1,11 @@
 #!/bin/sh
 # Build and (re)start the Kura test stand on this VM. Usage: kura-deploy.sh [git-ref]
+#
+# Containers (all on the Podman network kura-net, all from the same env file):
+#   kura-postgres  PostgreSQL, volume kura-pgdata
+#   kura-app       the API and web UI, published as 8080:8080
+#   kura-worker    scheduler loop and download executor, no published port
+# The script is idempotent: run it again and the two Kura containers are replaced by the new image.
 set -eu
 REF="${1:-m1-core}"
 REPO="$HOME/work/Kura"
@@ -10,6 +16,12 @@ git fetch -q origin
 git checkout -q "$REF"
 git reset -q --hard "origin/$REF"
 COMMIT="$(git rev-parse --short HEAD)"
+
+# Value of a KEY=value line of the env file (last one wins), empty if the key is not set.
+# The env file is not sourced here: podman reads it as plain KEY=value lines, not as shell.
+env_value() {
+  sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1
+}
 
 podman network exists kura-net || podman network create kura-net >/dev/null
 podman volume exists kura-pgdata || podman volume create kura-pgdata >/dev/null
@@ -25,19 +37,93 @@ fi
 
 podman build -q -t "localhost/kura:$COMMIT" -t localhost/kura:latest -f deploy/Containerfile .
 
+# Storage. With KURA_STORAGE_BACKEND=database (recommended) nothing is mounted: the API and the worker share
+# the objects through PostgreSQL. Anything else means the filesystem backend (the API default): then a named
+# volume is mounted on KURA_STORAGE_ROOT in both containers (see docs/vm-setup.md, "Storage").
+STORAGE_BACKEND="$(env_value KURA_STORAGE_BACKEND)"
+STORAGE_ROOT="$(env_value KURA_STORAGE_ROOT)"
+STORAGE_ROOT="${STORAGE_ROOT:-/var/lib/kura/blobstore}"
+# Host directory with the external tools (yt-dlp, gallery-dl, ...), mounted read-only into the worker only.
+TOOLS_HOST_DIR="$(env_value KURA_TOOLS_HOST_DIR)"
+
+# Mount options as plain strings (POSIX sh has no arrays), so paths must not contain spaces.
+STORAGE_MOUNT_ARGS=""
+if [ "$STORAGE_BACKEND" != "database" ]; then
+  case "$STORAGE_ROOT" in
+    /*" "*) echo "KURA_STORAGE_ROOT must not contain spaces" >&2; exit 1 ;;
+    /*) ;;
+    *) echo "KURA_STORAGE_ROOT must be an absolute path inside the container (got: $STORAGE_ROOT)" >&2; exit 1 ;;
+  esac
+  podman volume exists kura-blobdata || podman volume create kura-blobdata >/dev/null
+  STORAGE_MOUNT_ARGS="-v kura-blobdata:$STORAGE_ROOT"
+fi
+
+TOOLS_MOUNT_ARGS=""
+if [ -n "$TOOLS_HOST_DIR" ]; then
+  case "$TOOLS_HOST_DIR" in
+    *" "*) echo "KURA_TOOLS_HOST_DIR must not contain spaces" >&2; exit 1 ;;
+  esac
+  if [ ! -d "$TOOLS_HOST_DIR" ]; then
+    echo "KURA_TOOLS_HOST_DIR is set but $TOOLS_HOST_DIR is not a directory" >&2
+    exit 1
+  fi
+  TOOLS_MOUNT_ARGS="-v $TOOLS_HOST_DIR:/opt/kura-tools:ro"
+fi
+
+# --- API ---------------------------------------------------------------------------------------------------
 podman rm -f kura-app >/dev/null 2>&1 || true
+# shellcheck disable=SC2086  # the mount options are deliberately split into words
 podman run -d --name kura-app --network kura-net --restart=always \
   --env-file "$ENV_FILE" -p 8080:8080 \
   -e HOST=0.0.0.0 -e PORT=8080 \
+  $STORAGE_MOUNT_ARGS \
   "localhost/kura:$COMMIT" >/dev/null
 
+api_healthy=""
 for i in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
-    echo "kura $COMMIT is up: http://$(hostname -i 2>/dev/null | awk '{print $1}'):8080"
-    exit 0
+    api_healthy=yes
+    break
   fi
   sleep 2
 done
-echo "kura $COMMIT did not become healthy" >&2
-podman logs --tail 40 kura-app >&2 || true
-exit 1
+if [ -z "$api_healthy" ]; then
+  echo "kura $COMMIT did not become healthy" >&2
+  podman logs --tail 40 kura-app >&2 || true
+  exit 1
+fi
+
+# --- Worker ------------------------------------------------------------------------------------------------
+# Started after the API is healthy: the API applies the database migrations on its start, the worker needs them.
+# --no-healthcheck: the image HEALTHCHECK asks port 8080, which the worker does not serve.
+podman rm -f kura-worker >/dev/null 2>&1 || true
+# shellcheck disable=SC2086
+podman run -d --name kura-worker --network kura-net --restart=always --no-healthcheck \
+  --env-file "$ENV_FILE" \
+  $STORAGE_MOUNT_ARGS $TOOLS_MOUNT_ARGS \
+  "localhost/kura:$COMMIT" node apps/worker/dist/index.js >/dev/null
+
+# Liveness without a port: the container must be running and must have logged "worker started" (the start
+# connects to PostgreSQL and starts the scheduler and download loops), and still be running a few seconds later.
+worker_state() {
+  podman inspect -f '{{.State.Status}}' kura-worker 2>/dev/null || echo missing
+}
+worker_started=""
+for i in $(seq 1 30); do
+  if [ "$(worker_state)" = "running" ] && podman logs kura-worker 2>&1 | grep -q '"message":"worker started"'; then
+    worker_started=yes
+    break
+  fi
+  sleep 2
+done
+if [ -n "$worker_started" ]; then
+  sleep 3
+  [ "$(worker_state)" = "running" ] || worker_started=""
+fi
+if [ -z "$worker_started" ]; then
+  echo "kura-worker $COMMIT did not start (state: $(worker_state))" >&2
+  podman logs --tail 40 kura-worker >&2 || true
+  exit 1
+fi
+
+echo "kura $COMMIT is up: http://$(hostname -i 2>/dev/null | awk '{print $1}'):8080 (api and worker running)"
