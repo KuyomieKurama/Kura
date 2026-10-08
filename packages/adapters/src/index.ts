@@ -6,3 +6,8 @@ export * from './media.js';
 export * from './staging.js';
 export * from './registry.js';
 export * from './direct-url-adapter.js';
+export * from './target-url.js';
+export * from './cli-support.js';
+export * from './yt-dlp-adapter.js';
+export * from './gallery-dl-adapter.js';
+export * from './delivery.js';

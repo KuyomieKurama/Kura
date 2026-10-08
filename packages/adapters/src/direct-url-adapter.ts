@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createGuardedFetch, ImmichTargetBlockedError, type EndpointApprovals } from '@kura/immich-client';
 import { AdapterError } from './errors.js';
+import { assertPlainHttps, parseHttpsTarget } from './target-url.js';
 import { bytesMatchMediaType, extensionForMediaType, isAllowedMediaType, parseContentType, SNIFF_BYTES } from './media.js';
 import type {
   AdapterCapabilities,
@@ -35,7 +36,6 @@ export interface DirectUrlAdapterOptions {
   readonly idleTimeoutMs?: number;
 }
 
-const MAX_URL_LENGTH = 2_048;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 interface Fetched {
@@ -84,18 +84,7 @@ export class DirectUrlAdapter implements SourceAdapter {
   }
 
   validateTarget(url: string): CanonicalTarget {
-    // eslint-disable-next-line no-control-regex
-    if (typeof url !== 'string' || url.length === 0 || url.length > MAX_URL_LENGTH || /[\u0000-\u0020\u007f\\]/.test(url)) {
-      throw new AdapterError('TARGET_INVALID', 'URL is empty, too long or contains whitespace, control characters or backslashes');
-    }
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new AdapterError('TARGET_INVALID', 'URL cannot be parsed');
-    }
-    assertPlainHttps(parsed);
-    parsed.hash = '';
+    const parsed = parseHttpsTarget(url);
     return {
       adapterId: DIRECT_URL_ADAPTER_ID,
       sourceType: 'direct_media',
@@ -238,12 +227,6 @@ export class DirectUrlAdapter implements SourceAdapter {
       clearTimeout(timer);
     }
   }
-}
-
-function assertPlainHttps(url: URL): void {
-  if (url.protocol !== 'https:') throw new AdapterError('TARGET_INVALID', 'Only https URLs are supported');
-  if (url.username || url.password) throw new AdapterError('TARGET_INVALID', 'URLs with credentials are not supported');
-  if (!url.hostname) throw new AdapterError('TARGET_INVALID', 'URL has no host');
 }
 
 function nextRedirectTarget(currentUrl: string, location: string | null): string {
