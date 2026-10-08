@@ -99,9 +99,18 @@ importers:
 
   apps/worker:
     dependencies:
+      '@kura/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
+      '@kura/blobstore':
+        specifier: workspace:*
+        version: link:../../packages/blobstore
       '@kura/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@kura/immich-client':
+        specifier: workspace:*
+        version: link:../../packages/immich-client
       '@kura/scheduler':
         specifier: workspace:*
         version: link:../../packages/scheduler

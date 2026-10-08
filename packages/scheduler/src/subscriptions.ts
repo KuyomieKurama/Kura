@@ -215,6 +215,25 @@ export class SubscriptionRepository {
     return toSubscription(result.rows[0]);
   }
 
+  /**
+   * Records the result of an adapter check (M5-B). It applies only while the stored target is still the one
+   * that was checked, because the user may have edited the URL in the meantime. Returns false in that case
+   * and for unknown or foreign subscriptions.
+   */
+  async setTargetState(
+    userId: string,
+    subscriptionId: string,
+    state: 'valid' | 'invalid',
+    checkedSourceRef: string
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE subscriptions SET target_state = $3
+        WHERE id = $1 AND user_id = $2 AND source_ref = $4`,
+      [subscriptionId, userId, state, checkedSourceRef]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** New runs stop; queued runs stay queued but are not claimed; a running job is not touched. Idempotent. */
   async pauseSubscription(userId: string, subscriptionId: string): Promise<SubscriptionRecord> {
     const now = this.clock.now();

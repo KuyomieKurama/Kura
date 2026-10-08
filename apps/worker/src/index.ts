@@ -1,8 +1,8 @@
-import { loadWorkerConfig } from './config.js';
+import { loadDownloadConfig, loadWorkerConfig } from './config.js';
 import { consoleLogger } from './scheduler-loop.js';
 import { Worker } from './worker.js';
 
-const worker = new Worker(loadWorkerConfig(), consoleLogger);
+const worker = new Worker({ ...loadWorkerConfig(), downloads: loadDownloadConfig() }, consoleLogger);
 await worker.start();
 consoleLogger.info('worker started');
 
