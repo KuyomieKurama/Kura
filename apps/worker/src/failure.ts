@@ -45,6 +45,11 @@ const retry = (code: string, message: string): Disposition => ({ runState: 'retr
 
 const toolUnavailable = fail('TOOL_UNAVAILABLE', 'Das benötigte Werkzeug ist auf dem Server nicht installiert oder nicht freigegeben.');
 
+const egressNotConfirmed = fail(
+  'EGRESS_NOT_CONFIRMED',
+  'Externe Werkzeuge gesperrt: Egress-Schutz nicht bestätigt. Der Administrator muss die Netzwerksperre für den Worker einrichten und bestätigen.'
+);
+
 const byAdapterCode: Record<AdapterErrorCode, Disposition> = {
   TARGET_INVALID: fail('TARGET_INVALID', 'Die Adresse ist ungültig oder nicht erlaubt.'),
   TARGET_UNSUPPORTED: fail('TARGET_UNSUPPORTED', 'Diese Adresse wird von keinem Adapter unterstützt.'),
@@ -55,6 +60,7 @@ const byAdapterCode: Record<AdapterErrorCode, Disposition> = {
   BINARY_NOT_CONFIGURED: toolUnavailable,
   BINARY_HASH_MISMATCH: toolUnavailable,
   BINARY_VERSION_REJECTED: toolUnavailable,
+  EGRESS_NOT_CONFIRMED: egressNotConfirmed,
   PROCESS_SPAWN_FAILED: retry('PROCESS_SPAWN_FAILED', 'Das Werkzeug konnte nicht gestartet werden.'),
   PROCESS_FAILED: retry('PROCESS_FAILED', 'Das Werkzeug ist fehlgeschlagen. Der Lauf wird wiederholt.'),
   PROCESS_TIMEOUT: retry('PROCESS_TIMEOUT', 'Das Werkzeug hat zu lange gebraucht. Der Lauf wird wiederholt.'),

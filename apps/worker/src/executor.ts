@@ -23,7 +23,7 @@ import {
   type SubscriptionRepository
 } from '@kura/scheduler';
 import type { Pool } from 'pg';
-import { loadKillSwitches, type AdapterCatalog } from './catalog.js';
+import { EGRESS_NOT_CONFIRMED, loadKillSwitches, type AdapterCatalog } from './catalog.js';
 import { importStagedFile } from './blob-import.js';
 import { classifyFailure, sourceGoneDisposition, type Disposition } from './failure.js';
 import type { ImmichHandover } from './handover.js';
@@ -219,6 +219,9 @@ export class JobExecutor {
         if (wanted) {
           // The address is fine; this server just cannot run the tool for it.
           await subscriptions.setTargetState(lease.userId, lease.subscriptionId, 'valid', sourceUrl);
+          // A tool that is blocked by the missing egress confirmation says so, instead of "not installed".
+          const blocked = catalog.availability.some((entry) => entry.adapterId === wanted && entry.reasonCode === EGRESS_NOT_CONFIRMED);
+          if (blocked) throw new AdapterError(EGRESS_NOT_CONFIRMED, `${wanted} is blocked: no external egress barrier was confirmed`);
           throw new AdapterError('BINARY_NOT_CONFIGURED', `${wanted} is not available on this server`);
         }
       }

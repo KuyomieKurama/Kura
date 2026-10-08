@@ -96,6 +96,7 @@ function limitOf(raw: unknown): number {
 
 function unavailableMessage(adapterId: string, reasonCode: string | null): string {
   const name = ADAPTER_LABELS[adapterId] ?? adapterId;
+  if (reasonCode === 'EGRESS_NOT_CONFIRMED') return `Externe Werkzeuge gesperrt: Egress-Schutz nicht bestätigt. ${name} wird nicht gestartet, bis der Administrator den Netzwerkschutz für den Worker eingerichtet und bestätigt hat.`;
   if (reasonCode === 'BINARY_HASH_MISMATCH') return `${name} ist installiert, aber die Datei stimmt nicht mit der freigegebenen Prüfsumme überein. Sie wird nicht gestartet.`;
   if (reasonCode === 'BINARY_VERSION_REJECTED') return `${name} ist zu alt oder meldet eine unbekannte Version und wird nicht gestartet.`;
   return `${name} ist auf dem Server nicht installiert oder nicht freigegeben. Aufträge für diese Quelle schlagen mit einer klaren Meldung fehl.`;

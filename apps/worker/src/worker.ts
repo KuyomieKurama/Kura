@@ -60,6 +60,7 @@ export class Worker implements WorkerLifecycle {
     const blobstore = new DatabaseBlobStore(this.pool, { quotaBytes: downloads.quotaBytes });
     const catalog = new AdapterCatalog({
       tools: downloads.tools,
+      externalToolsEgressConfirmed: downloads.externalToolsEgressConfirmed,
       workDir: downloads.workDir,
       maxAssetBytes: downloads.maxAssetBytes,
       directUrl: dependencies.directUrl ?? { approvals: approveNothing },

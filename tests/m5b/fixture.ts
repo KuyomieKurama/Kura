@@ -32,6 +32,8 @@ export interface FixtureOptions {
   quotaBytes?: number;
   clock?: Clock;
   tools?: { ytDlp?: ControllableTool; galleryDl?: ControllableTool };
+  /** Default true here, so the CLI tool tests run; production default is false (KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED). */
+  externalToolsEgressConfirmed?: boolean;
   /** false = production behaviour: the guard refuses the loopback test server. */
   directApproved?: boolean;
   immichMode?: UploadMode;
@@ -75,6 +77,7 @@ export async function createPipelineFixture(options: FixtureOptions = {}) {
       galleryDl: options.tools?.galleryDl ? options.tools.galleryDl.binary : undefined,
       toolPath: undefined
     },
+    externalToolsEgressConfirmed: options.externalToolsEgressConfirmed ?? true,
     workDir,
     maxAssetBytes: options.maxAssetBytes ?? 10 * 1024 * 1024,
     directUrl,

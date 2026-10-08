@@ -21,6 +21,12 @@ export interface DownloadConfig {
   maxAssetBytes: number;
   /** Key for the stored Immich API keys. Without it no Immich handover is attempted. */
   secretKey?: Buffer;
+  /**
+   * The operator confirmed (KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED=true) that the network of the worker container is
+   * restricted outside of Kura. yt-dlp and gallery-dl have no allowlist of their own (D-008), so without this
+   * confirmation they are never started (R-09). Not needed for the direct URL adapter.
+   */
+  externalToolsEgressConfirmed: boolean;
   tools: {
     ytDlp?: ToolBinaryConfig;
     galleryDl?: ToolBinaryConfig;
@@ -102,6 +108,7 @@ export function loadDownloadConfig(environment: NodeJS.ProcessEnv = process.env)
     quotaBytes: integerInRange('KURA_STORAGE_QUOTA_BYTES', environment.KURA_STORAGE_QUOTA_BYTES, 10 * 1024 ** 3, 1, Number.MAX_SAFE_INTEGER),
     maxAssetBytes: integerInRange('WORKER_MAX_ASSET_BYTES', environment.WORKER_MAX_ASSET_BYTES, 2 * 1024 ** 3, 1, Number.MAX_SAFE_INTEGER),
     secretKey: secretKey(environment.KURA_SECRET_KEY),
+    externalToolsEgressConfirmed: toggle('KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED', environment.KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED, false),
     tools: {
       ytDlp: tool('yt-dlp', 'KURA_YTDLP_PATH', 'KURA_YTDLP_SHA256', environment),
       galleryDl: tool('gallery-dl', 'KURA_GALLERYDL_PATH', 'KURA_GALLERYDL_SHA256', environment),

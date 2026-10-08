@@ -36,8 +36,17 @@ export interface DirectUrlSettings {
 
 export const approveNothing: EndpointApprovals = { isApproved: async () => false };
 
+/** AdapterError code and availability reason of a CLI tool that is blocked because no egress barrier was confirmed. */
+export const EGRESS_NOT_CONFIRMED = 'EGRESS_NOT_CONFIRMED';
+
 interface CatalogOptions {
   tools: DownloadConfig['tools'];
+  /**
+   * yt-dlp and gallery-dl bring no network allowlist (D-008), so the guard of the in-process fetches does not cover
+   * them. They are only built, checked and started when the operator confirmed an external egress barrier
+   * (docs/planning/04, "Externe Prozessausführung"; risk R-09). Absent = false = closed.
+   */
+  externalToolsEgressConfirmed?: boolean;
   workDir: string;
   maxAssetBytes: number;
   directUrl: DirectUrlSettings;
@@ -74,6 +83,7 @@ export class AdapterCatalog {
   private registryInUse = new AdapterRegistry();
   private availabilityInUse: AdapterAvailability[] = [];
   private killSwitches: readonly KillSwitch[] = [];
+  private egressBlockLogged = false;
 
   constructor(private readonly options: CatalogOptions) {}
 
@@ -142,6 +152,14 @@ export class AdapterCatalog {
     create: (binary: ToolBinaryConfig) => Promise<SourceAdapter>
   ): Promise<AdapterAvailability> {
     if (!binary) return { adapterId, adapterVersion: null, available: false, reasonCode: 'BINARY_NOT_CONFIGURED' };
+    // Fail closed, before anything touches the binary: no hash check, no `--version`, no process of any kind.
+    if (this.options.externalToolsEgressConfirmed !== true) {
+      if (!this.egressBlockLogged) {
+        this.egressBlockLogged = true;
+        this.options.logger.info('external tools blocked: egress protection not confirmed (KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED)');
+      }
+      return { adapterId, adapterVersion: null, available: false, reasonCode: EGRESS_NOT_CONFIRMED };
+    }
     try {
       const adapter = await create(binary);
       registry.register(adapter);
