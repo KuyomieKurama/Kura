@@ -17,6 +17,7 @@ import type { Pool } from 'pg';
 import { decodeStrictBase64 } from './base64.js';
 import type { ApiConfig } from './config.js';
 import { PostgresEndpointApprovals } from './immich-endpoint-approvals.js';
+import { adminOnly } from './route-helpers.js';
 
 const MAX_TEST_FILE_BYTES = 4 * 1024 * 1024;
 
@@ -101,15 +102,7 @@ export function registerImmichRoutes(input: {
   };
   const transfers = new TransferRepository(pool);
 
-  const requireAdmin = async (request: FastifyRequest, reply: FastifyReply): Promise<ImmichSession | undefined> => {
-    const session = await requireSession(request, reply);
-    if (!session) return undefined;
-    if (session.role !== 'admin') {
-      reply.code(403).send(responseError('FORBIDDEN', 'Administratorrechte erforderlich.'));
-      return undefined;
-    }
-    return session;
-  };
+  const requireAdmin = adminOnly(requireSession);
 
   app.get('/api/v1/admin/immich/endpoint-approvals', async (request, reply) => {
     const session = await requireAdmin(request, reply);

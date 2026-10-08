@@ -11,6 +11,8 @@ import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransactio
 import type { ApiConfig } from './config.js';
 import { registerImmichRoutes } from './immich-routes.js';
 import { loggerOptions } from './logging.js';
+import { registerRuntimePolicyRoutes } from './runtime-policy-routes.js';
+import { registerScheduleRoutes } from './schedule-routes.js';
 
 const scrypt = promisify(scryptCallback) as (password: string | Buffer, salt: string | Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
 const SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
@@ -179,6 +181,10 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     resolveHost: dependencies.resolveImmichHost,
     audit: (actor, action, target, request, outcome) => audit(pool, actor, action, target, clientAddress(request), outcome)
   });
+  const auditRoute = (actor: string | null, action: string, target: string | null, request: FastifyRequest, outcome?: string) =>
+    audit(pool, actor, action, target, clientAddress(request), outcome);
+  registerScheduleRoutes({ app, pool, clock, requireSession, audit: auditRoute });
+  registerRuntimePolicyRoutes({ app, pool, requireSession, audit: auditRoute });
   if (webDirectory && existsSync(webDirectory)) { void app.register(fastifyStatic, { root: webDirectory, index: ['index.html'], cacheControl: false, setHeaders: (reply, filePath) => reply.header('Cache-Control', filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable') }); app.setNotFoundHandler((request, reply) => request.url.startsWith('/api/') || request.url === '/healthz' ? reply.code(404).send({ statusCode: 404, ...error('NOT_FOUND', 'Nicht gefunden.') }) : reply.type('text/html').sendFile('index.html')); }
   app.addHook('onClose', async () => { await pool.end(); }); return app;
 }
