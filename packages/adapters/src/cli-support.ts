@@ -17,6 +17,11 @@ export interface CliToolOptions {
   readonly metadataTimeoutMs?: number;
   /** Default 2 h. */
   readonly downloadTimeoutMs?: number;
+  /**
+   * Set only by forTargetValidationOnly(): the adapter may validate targets but must never start the
+   * tool or create a workspace.
+   */
+  readonly validationOnly?: boolean;
 }
 
 const DEFAULT_METADATA_TIMEOUT_MS = 120_000;
@@ -52,6 +57,13 @@ export class CliTool {
     return this.options.workRoot;
   }
 
+  /** Throws BINARY_NOT_CONFIGURED for the validation-only variant, before any process or directory exists. */
+  private assertUsable(): void {
+    if (this.options.validationOnly) {
+      throw new AdapterError('BINARY_NOT_CONFIGURED', 'The external tool is not installed or not approved on this server');
+    }
+  }
+
   /** Runs `--version` and returns the first output line (untrusted, caller validates the format). */
   async readVersionLine(): Promise<string> {
     const result = await this.runInTemporaryWorkspace(['--version'], {
@@ -62,7 +74,8 @@ export class CliTool {
   }
 
   /** Runs a metadata command; stdout is returned for defensive parsing. */
-  runMetadata(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
+  async runMetadata(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
+    this.assertUsable();
     return this.runInTemporaryWorkspace(args, {
       timeoutMs: this.options.metadataTimeoutMs ?? DEFAULT_METADATA_TIMEOUT_MS,
       maxStdoutBytes: MAX_METADATA_STDOUT_BYTES,
@@ -85,6 +98,7 @@ export class CliTool {
     buildArgs: (scratchDir: string) => string[],
     signal?: AbortSignal
   ): Promise<StagedFile> {
+    this.assertUsable();
     const scratchDir = await workspace.createScratchDir();
     try {
       const result = await runExternalProcess({
@@ -115,6 +129,7 @@ export class CliTool {
    * early or anything fails.
    */
   async *streamThroughStaging(run: (workspace: RunWorkspace) => Promise<StagedFile>): AsyncIterable<Uint8Array> {
+    this.assertUsable();
     const workspace = await createRunWorkspace(this.options.workRoot);
     try {
       const staged = await run(workspace);
@@ -125,6 +140,7 @@ export class CliTool {
   }
 
   private async runInTemporaryWorkspace(args: readonly string[], limits: ProcessLimits, signal?: AbortSignal): Promise<ProcessResult> {
+    this.assertUsable();
     const workspace = await createRunWorkspace(this.options.workRoot);
     try {
       return await runExternalProcess({

@@ -37,6 +37,9 @@ import type {
 
 export const GALLERY_DL_ADAPTER_ID = 'gallery-dl';
 
+/** Version label of an instance that cannot run the tool (see forTargetValidationOnly). */
+const VALIDATION_ONLY_VERSION = 'not-installed';
+
 export interface GalleryDlAdapterOptions extends CliToolOptions {
   /**
    * Optional version floor. There is no security floor for gallery-dl in the
@@ -100,6 +103,14 @@ export class GalleryDlAdapter implements SourceAdapter {
       throw new AdapterError('BINARY_VERSION_REJECTED', `gallery-dl ${version} is older than the required ${options.minimumVersion}`);
     }
     return new GalleryDlAdapter(options, version);
+  }
+
+  /** See YtDlpAdapter.forTargetValidationOnly: recognises targets, never runs the tool. */
+  static forTargetValidationOnly(): GalleryDlAdapter {
+    return new GalleryDlAdapter(
+      { binary: { path: '/nonexistent/gallery-dl', sha256: '0'.repeat(64) }, workRoot: '/nonexistent', validationOnly: true },
+      VALIDATION_ONLY_VERSION
+    );
   }
 
   capabilities(): AdapterCapabilities {

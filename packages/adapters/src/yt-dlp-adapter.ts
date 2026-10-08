@@ -35,6 +35,9 @@ import type {
 
 export const YT_DLP_ADAPTER_ID = 'yt-dlp';
 
+/** Version label of an instance that cannot run the tool (see forTargetValidationOnly). */
+const VALIDATION_ONLY_VERSION = 'not-installed';
+
 /**
  * Security floor from D-007: the 2026.07.04 release fixed the advisories
  * about --exec, --netrc-cmd, --write-link and aria2c. Older builds are
@@ -103,6 +106,17 @@ export class YtDlpAdapter implements SourceAdapter {
       throw new AdapterError('BINARY_VERSION_REJECTED', `yt-dlp ${version} is older than the required ${floor.join('.')}`);
     }
     return new YtDlpAdapter(options, version);
+  }
+
+  /**
+   * An instance that validates targets and lists capabilities but can never run the tool. For processes
+   * that must recognise a platform without having the tool (API) and to explain "tool not installed" (worker).
+   */
+  static forTargetValidationOnly(): YtDlpAdapter {
+    return new YtDlpAdapter(
+      { binary: { path: '/nonexistent/yt-dlp', sha256: '0'.repeat(64) }, workRoot: '/nonexistent', validationOnly: true },
+      VALIDATION_ONLY_VERSION
+    );
   }
 
   capabilities(): AdapterCapabilities {

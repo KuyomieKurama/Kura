@@ -11,3 +11,4 @@ export * from './cli-support.js';
 export * from './yt-dlp-adapter.js';
 export * from './gallery-dl-adapter.js';
 export * from './delivery.js';
+export * from './source-selection.js';
