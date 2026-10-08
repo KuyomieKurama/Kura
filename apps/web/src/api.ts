@@ -1,4 +1,4 @@
-export type ApiError = Error & { status?: number; code?: string };
+export type ApiError = Error & { status?: number; code?: string; problems?: string[] };
 export type AuthState = { configured: boolean; authenticated: boolean; role: 'admin' | 'user' | null; csrfToken: string | null; passwordChangeRequired: boolean; oidcEnabled?: boolean };
 export type User = { id: string; display_name: string; username: string; role: 'admin' | 'user'; status: 'active' | 'blocked'; created_at: string };
 
@@ -8,7 +8,8 @@ let onUnauthenticated: (() => void) | undefined;
 function failure(response: Response, body: unknown): ApiError {
   const message = typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'object' && body.error !== null && 'message' in body.error && typeof body.error.message === 'string' ? body.error.message : undefined;
   const code = typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'object' && body.error !== null && 'code' in body.error && typeof body.error.code === 'string' ? body.error.code : undefined;
-  return Object.assign(new Error(message ?? 'Request failed'), { status: response.status, code });
+  const problems = typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'object' && body.error !== null && 'problems' in body.error && Array.isArray(body.error.problems) ? body.error.problems.filter((item: unknown): item is string => typeof item === 'string') : undefined;
+  return Object.assign(new Error(message ?? 'Request failed'), { status: response.status, code, problems });
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -41,8 +42,56 @@ export const api = {
   immichEndpointApprovals() { return request<{ approvals: ImmichEndpointApproval[] }>('/admin/immich/endpoint-approvals'); },
   approveImmichEndpoint(input: { host: string; port: number }) { return request<{ approval: { host: string; port: number } }>('/admin/immich/endpoint-approvals', { method: 'POST', body: JSON.stringify(input) }); },
   revokeImmichEndpoint(input: { host: string; port: number }) { return request<void>(`/admin/immich/endpoint-approvals/${encodeURIComponent(input.host)}/${input.port}`, { method: 'DELETE' }); },
-  immichTransfer(id: string) { return request<{ transfer: ImmichTransfer }>(`/immich/transfers/${id}`); }
+  immichTransfer(id: string) { return request<{ transfer: ImmichTransfer }>(`/immich/transfers/${id}`); },
+  subscriptions() { return request<{ subscriptions: Subscription[] }>('/subscriptions'); },
+  createSubscription(input: SubscriptionInput) { return request<{ subscription: Subscription }>('/subscriptions', { method: 'POST', body: JSON.stringify(input) }); },
+  updateSubscription(id: string, input: Partial<SubscriptionInput>) { return request<{ subscription: Subscription }>(`/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(input) }); },
+  deleteSubscription(id: string) { return request<void>(`/subscriptions/${id}`, { method: 'DELETE' }); },
+  pauseSubscription(id: string) { return request<{ subscription: Subscription }>(`/subscriptions/${id}/pause`, { method: 'POST' }); },
+  resumeSubscription(id: string) { return request<{ subscription: Subscription }>(`/subscriptions/${id}/resume`, { method: 'POST' }); },
+  subscriptionRuns(id: string) { return request<{ runs: SubscriptionRun[] }>(`/subscriptions/${id}/runs`); },
+  createSchedule(input: ScheduleInput & { subscriptionId: string }) { return request<{ schedule: Schedule }>('/schedules', { method: 'POST', body: JSON.stringify(input) }); },
+  updateSchedule(id: string, input: Partial<ScheduleInput>) { return request<{ schedule: Schedule }>(`/schedules/${id}`, { method: 'PATCH', body: JSON.stringify(input) }); },
+  deleteSchedule(id: string) { return request<void>(`/schedules/${id}`, { method: 'DELETE' }); },
+  previewSchedule(rule: ScheduleRule, count = 5) { return request<{ entries: PreviewEntry[] }>('/schedules/preview', { method: 'POST', body: JSON.stringify({ rule, count }) }); },
+  runtimePolicy() { return request<RuntimePolicyResponse>('/admin/runtime-policy'); },
+  saveRuntimePolicy(expectedVersion: number, policy: RuntimePolicy) { return request<RuntimePolicyResponse>('/admin/runtime-policy', { method: 'PUT', body: JSON.stringify({ expectedVersion, policy }) }); }
 };
+
+export type ScheduleRule =
+  | { kind: 'cron'; expression: string; timeZone: string; gapPolicy: 'skip' | 'run_after_gap' }
+  | { kind: 'interval'; everySeconds: number; anchorUtc?: string; timeZone: string }
+  | { kind: 'once'; atUtc: string; timeZone: string };
+export type ScheduleInput = { rule: ScheduleRule; jitterMaxSeconds?: number; enabled?: boolean };
+export type Schedule = { id: string; subscriptionId: string; version: number; rule: ScheduleRule; jitterMaxSeconds: number; enabled: boolean; nextDueAt: string | null };
+export type Subscription = {
+  id: string;
+  name: string;
+  targetUrl: string | null;
+  platformHint: string | null;
+  targetState: 'unvalidated' | 'valid' | 'invalid';
+  status: 'active' | 'paused';
+  schedules?: Schedule[];
+};
+export type SubscriptionInput = { name: string; targetUrl: string; platformHint?: string | null };
+export type SubscriptionRun = { id: string; triggerKind: 'schedule' | 'manual'; state: string; scheduledFor: string; attempts: number; maxAttempts: number; lastError: string | null; finishedAt: string | null };
+export type PreviewEntry = { scheduledForUtc: string | null; localPlanTime: string | null; timeZone: string; utcOffset: string | null; status: 'regular' | 'overlap_first' | 'gap_shifted' | 'gap_skipped' | 'coalesced' };
+export type ConcurrencyEntry = { maxConcurrent: number | null };
+export type RuntimePolicy = {
+  downloads: {
+    maxConcurrentGlobal: number | null;
+    maxConcurrentPerUser: number | null;
+    maxConcurrentPerSourceAccount: number | null;
+    maxDownloadsPerDayPerUser: number | null;
+    maxBytesPerDayPerUser: number | null;
+    bandwidthBytesPerSecond: number | null;
+    perAdapter: Record<string, ConcurrencyEntry>;
+    perUser: Record<string, ConcurrencyEntry>;
+  };
+  workers: { downloadSlots: number; transferSlots: number; lifecycleReservedSlots: number };
+  retention: { finishedRunDays: number };
+};
+export type RuntimePolicyResponse = { version: number; policy: RuntimePolicy; updatedAt: string | null; enforced: string[] };
 
 export type ImmichEndpointApproval = { host: string; port: number; approvedAt: string };
 export type ImmichTransfer = {
