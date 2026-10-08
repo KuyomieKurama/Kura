@@ -1,20 +1,17 @@
-import type { WorkerLifecycle } from '@kura/contracts';
+import { loadWorkerConfig } from './config.js';
+import { consoleLogger } from './scheduler-loop.js';
+import { Worker } from './worker.js';
 
-export class Worker implements WorkerLifecycle {
-  async start(): Promise<void> {
-    // M1-A intentionally defines only the lifecycle boundary.
-  }
-
-  async stop(): Promise<void> {
-    // M1-A intentionally defines only the lifecycle boundary.
-  }
-}
-
-const worker = new Worker();
+const worker = new Worker(loadWorkerConfig(), consoleLogger);
 await worker.start();
+consoleLogger.info('worker started');
 
+let stopping = false;
 async function shutdown(): Promise<void> {
+  if (stopping) return;
+  stopping = true;
   await worker.stop();
+  consoleLogger.info('worker stopped');
 }
 
 process.once('SIGINT', shutdown);
