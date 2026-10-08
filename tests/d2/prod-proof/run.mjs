@@ -12,7 +12,7 @@
 // Prints the evidence; exits 1 when an expectation fails. Not part of `pnpm check`.
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { chmod, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -148,9 +148,17 @@ try {
 
   const filePort = await listen(files);
   const immichPort = await listen(immich);
+  // A stand-in for yt-dlp that writes a line to a file whenever it is started (finding 2: it must never be).
+  const toolLog = join(layout, 'fake-yt-dlp.invocations');
+  const toolPath = join(layout, 'fake-yt-dlp');
+  const toolScript = `#!/bin/sh\necho "$@" >> ${toolLog}\necho 2026.07.04\n`;
+  await writeFile(toolPath, toolScript);
+  await chmod(toolPath, 0o755);
   const common = {
     DATABASE_URL: databaseUrl, KURA_STORAGE_BACKEND: 'database', KURA_SECRET_KEY: secretKey,
-    KURA_WORK_DIR: join(layout, 'staging'), WORKER_POLL_SECONDS: '1', WORKER_TICK_SECONDS: '2'
+    KURA_WORK_DIR: join(layout, 'staging'), WORKER_POLL_SECONDS: '1', WORKER_TICK_SECONDS: '2',
+    // Path and hash are configured, KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED is NOT set.
+    KURA_YTDLP_PATH: toolPath, KURA_YTDLP_SHA256: sha256(Buffer.from(toolScript))
   };
 
   step('API from the production tree (node apps/api/dist/index.js, PORT=18080)');
@@ -181,6 +189,12 @@ try {
   const adapters = await sql(databaseUrl, 'SELECT adapter_id, availability, reason_code FROM adapter_status ORDER BY adapter_id');
   console.log(`adapter_status written by the worker: ${JSON.stringify(adapters)}`);
   expect('worker published adapter availability (loop is running)', adapters.length >= 3);
+  const ytDlpStatus = adapters.find((row) => row.adapter_id === 'yt-dlp');
+  expect('yt-dlp with path and hash but without egress confirmation is blocked', ytDlpStatus?.availability === 'unavailable' && ytDlpStatus.reason_code === 'EGRESS_NOT_CONFIRMED', JSON.stringify(ytDlpStatus));
+  const overview = await api('GET', '/api/v1/adapters');
+  const ytDlpOverview = overview.body.adapters.find((entry) => entry.id === 'yt-dlp');
+  console.log(`GET /api/v1/adapters yt-dlp.message: ${ytDlpOverview?.message}`);
+  expect('adapter overview of the API shows the reason', ytDlpOverview?.message?.startsWith('Externe Werkzeuge gesperrt: Egress-Schutz nicht bestätigt') === true);
   const runNow = await api('POST', `/api/v1/subscriptions/${refused.id}/run-now`);
   expect('run-now accepted', runNow.status === 202, `HTTP ${runNow.status}`);
   const refusedRun = await until('refused run recorded', async () => (await sql(databaseUrl, "SELECT state, error_code, error_message FROM download_runs WHERE subscription_id = $1 AND state NOT IN ('queued','discovering','downloading','verifying')", [refused.id]))[0]);
@@ -215,6 +229,8 @@ try {
   expect('the API shows the run in the history (worker and API share the database)', history.status === 200 && history.body.runs.some((run) => run.state === 'stored'), `${history.body?.runs?.length} run(s)`);
   show(worker2, () => true, 14);
   const exit2 = await stop(worker2);
+  const invoked = await readFile(toolLog, 'utf8').catch(() => '');
+  expect('the yt-dlp stand-in was never started by either worker', invoked === '', invoked ? `invocations: ${invoked}` : 'invocation file does not exist');
   expect('worker 2 stops on SIGTERM and logs "worker stopped"', worker2.lines.some((line) => line.includes('"worker stopped"')), `exit ${JSON.stringify(exit2)}`);
   show(apiProcess, (line) => line.includes('Server listening'), 1);
 } catch (error) {
