@@ -43,10 +43,10 @@ export const api = {
   approveImmichEndpoint(input: { host: string; port: number }) { return request<{ approval: { host: string; port: number } }>('/admin/immich/endpoint-approvals', { method: 'POST', body: JSON.stringify(input) }); },
   revokeImmichEndpoint(input: { host: string; port: number }) { return request<void>(`/admin/immich/endpoint-approvals/${encodeURIComponent(input.host)}/${input.port}`, { method: 'DELETE' }); },
   immichTransfer(id: string) { return request<{ transfer: ImmichTransfer }>(`/immich/transfers/${id}`); },
-  instagramCookies() { return request<InstagramCookieStatus>('/credentials/instagram'); },
-  /** The cookies.txt travels as plain text; the server answers with counts only. */
-  saveInstagramCookies(text: string) { return request<{ present: true; cookieCount: number; droppedCount: number; earliestExpiry: string | null }>('/credentials/instagram', { method: 'PUT', body: text, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }); },
-  deleteInstagramCookies() { return request<void>('/credentials/instagram', { method: 'DELETE' }); },
+  credentials() { return request<CredentialOverview>('/credentials'); },
+  /** The cookies.txt or the token travels as plain text; the server answers with counts only. */
+  saveCredential(platform: CredentialPlatform, text: string) { return request<{ present: true; cookieCount: number; droppedCount: number; earliestExpiry: string | null }>(`/credentials/${platform}`, { method: 'PUT', body: text, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }); },
+  deleteCredential(platform: CredentialPlatform) { return request<void>(`/credentials/${platform}`, { method: 'DELETE' }); },
   subscriptions() { return request<{ subscriptions: Subscription[] }>('/subscriptions'); },
   createSubscription(input: SubscriptionInput) { return request<{ subscription: Subscription }>('/subscriptions', { method: 'POST', body: JSON.stringify(input) }); },
   updateSubscription(id: string, input: Partial<SubscriptionInput>) { return request<{ subscription: Subscription }>(`/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(input) }); },
@@ -106,12 +106,15 @@ export type RuntimePolicy = {
 };
 export type RuntimePolicyResponse = { version: number; policy: RuntimePolicy; updatedAt: string | null; enforced: string[] };
 
-export type InstagramCookieStatus =
-  | { present: false; secretKeyConfigured: boolean }
+export type CredentialPlatform = 'instagram' | 'patreon' | 'pixiv' | 'youtube';
+/** The stored login of one platform. Never carries content: only counts, dates and the result of the last use. */
+export type CredentialStatus =
+  | { platform: CredentialPlatform; kind: 'cookies' | 'token'; present: false }
   | {
-    present: true; secretKeyConfigured: boolean; cookieCount: number; earliestExpiry: string | null; expired: boolean;
-    updatedAt: string; lastUsedAt: string | null; lastResult: 'ok' | 'auth_required' | 'unknown';
+    platform: CredentialPlatform; kind: 'cookies' | 'token'; present: true; cookieCount: number; earliestExpiry: string | null;
+    expired: boolean; updatedAt: string; lastUsedAt: string | null; lastResult: 'ok' | 'auth_required' | 'unknown';
   };
+export type CredentialOverview = { secretKeyConfigured: boolean; credentials: CredentialStatus[] };
 
 export type ImmichEndpointApproval = { host: string; port: number; approvedAt: string };
 export type ImmichTransfer = {
@@ -131,8 +134,8 @@ export type SourceValidation =
     supported: true; canonicalUrl: string; platform: string; platformLabel: string; targetKind: string;
     adapter: { id: string; label: string; availability: Availability; version: string | null };
     capabilities: AdapterCapabilities; runnable: boolean; notices: string[];
-    /** Instagram targets only: whether this user stored cookies, and whether the target needs a login in practice. */
-    credentials?: { platform: 'instagram'; stored: boolean; loginNeeded: boolean };
+    /** Platforms with a stored login: whether this user stored one, and whether the target needs a login in practice. */
+    credentials?: { platform: CredentialPlatform; stored: boolean; loginNeeded: boolean };
   }
   | { supported: false; code: string; message: string; notices: string[] };
 export type AdapterInfo = {

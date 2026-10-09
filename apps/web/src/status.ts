@@ -71,6 +71,7 @@ const appearance: Record<string, Appearance> = {
   // Stored platform cookies ("stored" looks like the other stored states)
   auth_required: { tone: 'warn', icon: LockKey },
   expired: { tone: 'warn', icon: Hourglass },
+  token_stored: { tone: 'ok', icon: CheckCircle },
   // Users
   active: { tone: 'ok', icon: CheckCircle },
   blocked: { tone: 'danger', icon: Prohibit }
@@ -87,7 +88,7 @@ const labelTables: Record<StatusDomain, Record<string, string>> = {
   user: { active: labels.active, blocked: labels.blocked },
   target: targetStateLabels,
   availability: availabilityLabels,
-  credential: { stored: 'Cookies hinterlegt', auth_required: 'Anmeldung abgelaufen', expired: 'Cookies abgelaufen' }
+  credential: { stored: 'Cookies hinterlegt', token_stored: 'Token hinterlegt', auth_required: 'Anmeldung abgelaufen', expired: 'Cookies abgelaufen' }
 };
 
 export function describeStatus(domain: StatusDomain, status: string): Appearance & { label: string } {

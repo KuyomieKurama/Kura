@@ -51,7 +51,7 @@ export function SourceValidationView({ result }: { result: SourceValidation }) {
       </p>
       {result.credentials?.loginNeeded && (
         <p>
-          <Chip tone="warn" icon={Key} title="Lade unter Konto deine Instagram-Cookies hoch.">Anmeldung nötig</Chip>
+          <Chip tone="warn" icon={Key} title="Hinterlege unter Konto, Zugänge, deine Anmeldung für diese Plattform.">Anmeldung nötig</Chip>
         </p>
       )}
       <div className="check-capabilities">

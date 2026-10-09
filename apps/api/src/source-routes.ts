@@ -4,8 +4,10 @@ import {
   AdapterError,
   capabilitiesForSourceType,
   createTargetRecognizer,
+  isCredentialPlatform,
   selectSource,
   type AdapterCapabilities,
+  type CredentialPlatform,
   type KillSwitch,
   type SourceType
 } from '@kura/adapters';
@@ -53,10 +55,50 @@ const AUTH_LABELS: Record<AdapterCapabilities['auth_kind'], string> = {
  */
 const REJECTION_MESSAGES: Partial<Record<string, string>> = {
   TARGET_INVALID: 'Die Adresse ist ungültig. Erlaubt sind nur https-Adressen ohne Zugangsdaten.',
-  TARGET_UNSUPPORTED: 'Diese Adresse wird von keinem Adapter unterstützt. Zurzeit gehen einzelne Beiträge von YouTube, Pixiv und Patreon, bei Instagram Profile, einzelne Beiträge (Fotos, Karussells) und einzelne Reels sowie direkte Medien-URLs (Bilder und Videos).',
+  TARGET_UNSUPPORTED: 'Diese Adresse wird von keinem Adapter unterstützt. Zurzeit gehen einzelne Videos von YouTube, Profile, einzelne Beiträge (Fotos, Karussells) und Reels von Instagram, Creator und einzelne Beiträge von Patreon, Künstler und einzelne Werke von Pixiv sowie direkte Medien-URLs (Bilder und Videos).',
   TARGET_BROKEN: 'Für diese Art von Adresse ist die Unterstützung zurzeit bekanntermaßen defekt.',
   ADAPTER_DISABLED: 'Der zuständige Adapter wurde vom Administrator abgeschaltet.'
 };
+
+/** Noun for "the newest posts of this ...". */
+const FEED_OWNER_NOUNS: Partial<Record<SourceType, string>> = { instagram: 'Profils', patreon: 'Creators', pixiv: 'Künstlers' };
+
+/**
+ * Whether the target needs a stored login in practice: Instagram and Patreon feeds do (a feed without a login is
+ * paused at the first run), Pixiv always does (its API wants an OAuth token for every request, extractor/pixiv.py),
+ * YouTube never (the cookies are optional).
+ */
+function loginNeededFor(platform: CredentialPlatform, kind: 'post' | 'creator_feed', stored: boolean): boolean {
+  if (stored) return false;
+  if (platform === 'pixiv') return true;
+  if (platform === 'instagram' || platform === 'patreon') return kind === 'creator_feed';
+  return false;
+}
+
+const RISK_SENTENCE = 'Viele oder schnelle Abrufe können zu Sperren deines Kontos führen.';
+
+/** The hints shown with an address check, per platform. */
+function loginNotices(platform: CredentialPlatform, kind: 'post' | 'creator_feed', stored: boolean): string[] {
+  const feed = kind === 'creator_feed';
+  switch (platform) {
+    case 'instagram':
+      if (stored) return [`Für den Abruf wird deine hinterlegte Instagram-Sitzung benutzt. ${RISK_SENTENCE}`];
+      return [feed
+        ? 'Instagram-Profile lassen sich in der Praxis nur mit angemeldeter Sitzung (Cookies) abrufen. Lade unter Konto deine Instagram-Cookies hoch; ohne sie wird das Abonnement beim ersten Abruf pausiert.'
+        : 'Instagram verlangt oft auch für einzelne Beiträge und Reels eine angemeldete Sitzung (Cookies). Lade unter Konto deine Instagram-Cookies hoch, wenn der Abruf ohne Anmeldung fehlschlägt.'];
+    case 'patreon':
+      if (stored) return [`Für den Abruf wird dein hinterlegtes Patreon-Konto benutzt. Geladen wird nur, was dieses Konto sehen darf. ${RISK_SENTENCE}`];
+      return [feed
+        ? 'Patreon-Creator lassen sich in der Praxis nur mit angemeldeter Sitzung (Cookies) abrufen. Lade unter Konto, Zugänge, deine Patreon-Cookies hoch; ohne sie wird das Abonnement beim ersten Abruf pausiert.'
+        : 'Öffentliche Patreon-Beiträge gehen oft ohne Anmeldung. Für Beiträge, die nur Mitglieder sehen, lade unter Konto, Zugänge, deine Patreon-Cookies hoch.'];
+    case 'pixiv':
+      if (stored) return ['Für den Abruf wird dein hinterlegtes Pixiv-Token benutzt. Geladen wird nur, was dieses Konto sehen darf.'];
+      return ['Pixiv verlangt für jeden Abruf eine Anmeldung. Hinterlege unter Konto, Zugänge, dein Pixiv-Token (mit "gallery-dl oauth:pixiv" erzeugt); ohne es wird das Abonnement beim ersten Abruf pausiert.'];
+    case 'youtube':
+      if (stored) return ['Deine hinterlegten YouTube-Cookies werden für diesen Abruf benutzt. Sie helfen bei Videos mit Altersbeschränkung oder nur für Mitglieder.'];
+      return ['Öffentliche YouTube-Videos gehen ohne Anmeldung. Für Videos mit Altersbeschränkung oder nur für Mitglieder lade unter Konto, Zugänge, deine YouTube-Cookies hoch.'];
+  }
+}
 
 type Availability = 'available' | 'unavailable' | 'unknown';
 
@@ -192,8 +234,9 @@ export function registerSourceRoutes(input: {
     return row ? { availability: row.availability, row } : { availability: 'unknown' };
   }
 
-  async function hasInstagramCookies(userId: string): Promise<boolean> {
-    const found = await pool.query("SELECT 1 FROM platform_credentials WHERE user_id = $1 AND platform = 'instagram'", [userId]);
+  /** Whether this user stored a login for the platform. Only the fact is looked up, never the content. */
+  async function hasStoredLogin(userId: string, platform: CredentialPlatform): Promise<boolean> {
+    const found = await pool.query('SELECT 1 FROM platform_credentials WHERE user_id = $1 AND platform = $2', [userId, platform]);
     return (found.rowCount ?? 0) > 0;
   }
 
@@ -211,21 +254,20 @@ export function registerSourceRoutes(input: {
       if (availability === 'unknown') notices.push('Der Worker hat noch nicht gemeldet, ob das benötigte Werkzeug verfügbar ist.');
       const forTarget = capabilitiesForSourceType(capabilities, target.sourceType);
       if (target.kind === 'creator_feed') {
-        notices.push('Es werden die neuesten Beiträge dieses Profils geladen, je Lauf nur eine begrenzte Anzahl. Ältere Beiträge werden nicht nachgeladen.');
+        notices.push(`Es werden die neuesten Beiträge dieses ${FEED_OWNER_NOUNS[target.sourceType] ?? 'Profils'} geladen, je Lauf nur eine begrenzte Anzahl. Ältere Beiträge werden nicht nachgeladen.`);
       } else {
         notices.push('Es wird genau dieser eine Beitrag geladen, kein ganzer Kanal und keine Playlist.');
       }
       if (forTarget.auth_kind === 'none' && target.sourceType !== 'direct_media') notices.push('Anmeldedaten für die Quelle können noch nicht hinterlegt werden; Quellen, die eine Anmeldung verlangen, schlagen fehl.');
-      // Cookies are stored per user (IG-B). Only the fact that they exist is looked up, never their content.
-      const cookiesStored = forTarget.auth_kind === 'cookies' && target.sourceType === 'instagram' ? await hasInstagramCookies(userId) : undefined;
-      if (forTarget.auth_kind === 'cookies') {
-        if (cookiesStored) {
-          notices.push('Für den Abruf wird deine hinterlegte Instagram-Sitzung benutzt. Viele oder schnelle Abrufe können zu Sperren deines Kontos führen.');
-        } else {
-          notices.push(target.kind === 'creator_feed'
-            ? 'Instagram-Profile lassen sich in der Praxis nur mit angemeldeter Sitzung (Cookies) abrufen. Lade unter Konto deine Instagram-Cookies hoch; ohne sie wird das Abonnement beim ersten Abruf pausiert.'
-            : 'Instagram verlangt oft auch für einzelne Beiträge und Reels eine angemeldete Sitzung (Cookies). Lade unter Konto deine Instagram-Cookies hoch, wenn der Abruf ohne Anmeldung fehlschlägt.');
-        }
+      // Logins are stored per user (IG-B, P1). Only the fact that one exists is looked up, never its content.
+      const platform = target.sourceType;
+      const loginKind = forTarget.auth_kind === 'cookies' || forTarget.auth_kind === 'token' ? forTarget.auth_kind : undefined;
+      const login = loginKind && isCredentialPlatform(platform)
+        ? { platform, stored: await hasStoredLogin(userId, platform), loginNeeded: false }
+        : undefined;
+      if (login) {
+        login.loginNeeded = loginNeededFor(login.platform, target.kind, login.stored);
+        notices.push(...loginNotices(login.platform, target.kind, login.stored));
       }
       return {
         supported: true as const,
@@ -241,10 +283,8 @@ export function registerSourceRoutes(input: {
         },
         capabilities: presentCapabilitiesFor(capabilities, target.sourceType),
         runnable: availability !== 'unavailable',
-        // Present for Instagram only: whether this user has stored cookies, and whether the target needs them in practice.
-        ...(cookiesStored === undefined ? {} : {
-          credentials: { platform: 'instagram' as const, stored: cookiesStored, loginNeeded: target.kind === 'creator_feed' && !cookiesStored }
-        }),
+        // Present for platforms with a stored login: whether this user has one, and whether the target needs one in practice.
+        ...(login ? { credentials: login } : {}),
         notices
       };
     } catch (error) {
