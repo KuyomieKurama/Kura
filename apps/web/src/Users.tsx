@@ -61,7 +61,7 @@ export function UsersPage({ users, currentUserId, reload }: {
     { key: 'username', header: labels.userUsernameColumn, render: (user) => user.username, mono: true },
     { key: 'role', header: labels.userRoleColumn, render: (user) => (user.role === 'admin' ? labels.adminRole : labels.userRole) },
     { key: 'status', header: labels.userStatusColumn, render: (user) => <StatusChip domain="user" status={user.status} /> },
-    { key: 'created', header: labels.userCreatedColumn, render: (user) => new Date(user.created_at).toLocaleDateString('de-DE'), numeric: true },
+    { key: 'created', header: labels.userCreatedColumn, render: (user) => new Date(user.created_at).toLocaleDateString('de-DE'), date: true },
     {
       key: 'actions',
       header: labels.userActionsColumn,

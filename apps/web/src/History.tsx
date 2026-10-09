@@ -26,7 +26,7 @@ function summarize(run: HistoryRun): string {
 }
 
 const runColumns: Column<HistoryRun>[] = [
-  { key: 'start', header: 'Beginn', render: (run) => formatInstant(run.startedAt, zone()), numeric: true },
+  { key: 'start', header: 'Beginn', render: (run) => formatInstant(run.startedAt, zone()), date: true },
   {
     key: 'source',
     header: 'Quelle',

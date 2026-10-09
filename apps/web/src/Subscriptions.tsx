@@ -109,7 +109,7 @@ function SubscriptionForm({ subscription, onSaved, onCancel }: {
 function RunsTable({ runs }: { runs: SubscriptionRun[] }) {
   if (runs.length === 0) return <p>Noch keine Läufe.</p>;
   const columns: Column<SubscriptionRun>[] = [
-    { key: 'scheduled', header: 'Geplant für', render: (run) => `${formatInstant(run.scheduledFor, 'UTC')} UTC`, numeric: true },
+    { key: 'scheduled', header: 'Geplant für', render: (run) => `${formatInstant(run.scheduledFor, 'UTC')} UTC`, date: true },
     { key: 'trigger', header: 'Auslöser', render: (run) => (run.triggerKind === 'manual' ? 'Manuell' : 'Zeitplan') },
     { key: 'state', header: 'Status', render: (run) => <StatusChip domain="run" status={run.state} /> },
     { key: 'attempts', header: 'Versuche', render: (run) => `${run.attempts} von ${run.maxAttempts}`, numeric: true },

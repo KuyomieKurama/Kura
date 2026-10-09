@@ -54,7 +54,7 @@ function ImmichEndpointApprovals() {
 
   const columns: Column<ImmichEndpointApproval>[] = [
     { key: 'endpoint', header: 'Endpunkt', render: (approval) => `${approval.host}:${approval.port}`, mono: true },
-    { key: 'approved', header: 'Freigegeben am', render: (approval) => new Date(approval.approvedAt).toLocaleString('de-DE'), numeric: true },
+    { key: 'approved', header: 'Freigegeben am', render: (approval) => new Date(approval.approvedAt).toLocaleString('de-DE'), date: true },
     {
       key: 'actions',
       header: labels.userActionsColumn,

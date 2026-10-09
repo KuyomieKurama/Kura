@@ -271,6 +271,7 @@ td:has(.cell-note) {
 }
 
 .evidence > summary {
+  justify-content: flex-start;
   color: var(--accent);
   font-size: var(--text-meta);
 }

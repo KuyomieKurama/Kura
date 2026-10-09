@@ -101,6 +101,9 @@ Pre-flight laut Auftrag:
 10. Mobil: Zeilenaktionen im Abonnement rechtsbündig und ausgefranst: linksbündig unter 1024 px.
 11. Mobil: Evidence-Summary unter 40 px hoch: Mindesthöhe 40 px.
 12. Screenshots: Ganzseiten-Aufnahmen zeigten Sticky-Leiste und Skip-Link mitten im Bild (Scroll-Artefakt): Skript scrollt vor jeder Aufnahme nach oben.
+13. Review-Runde 1 (Orchestrator), Seitenleiste: Hintergrund endete bei 900 px, darunter Seitenfarbe. Die Shell ist jetzt ein Grid (232 px und Rest); ein `::before` malt die Seitenleistenfläche über die volle Seitenhöhe, die Leiste selbst ist `sticky` mit `100dvh`. Geprüft in `history-light-1440.png` (Seitenhöhe 1103 px, Leiste reicht bis unten).
+14. Review-Runde 1, `details/summary`: "Unterstützte Quellen und Adapter" und "Immich-Nachweis" zeigten das Browser-Dreieck. Neue Komponente `ui/DisclosureSummary.tsx` mit demselben Caret wie die anderen Aufklapper (dreht sich bei `open`, 150 ms, `prefers-reduced-motion` greift global). Geprüft in `subscriptions-adapters-light-1440.png`.
+15. Review-Runde 1, Spaltenköpfe: Datumsspalten (Beginn, Freigegeben am, Geplant für, Angelegt) waren als `numeric` rechtsbündig markiert. Neue Spaltenoption `date` (linksbündig, tabular-nums, nowrap), Kopf und Werte teilen dieselbe Klasse. Dazu: Kopf "Aktionen" jetzt rechtsbündig wie die Aktionszellen. Tests: `ui/DataTable.test.tsx` (2 neu, Web-Tests jetzt 49 in 9 Dateien).
 
 ### Screenshot-Index (`/work/wt/ui/shots-out/`, nicht committet)
 

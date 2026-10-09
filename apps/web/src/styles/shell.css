@@ -56,16 +56,35 @@
   width: 60%;
 }
 
-/* Sidebar (desktop) */
-.sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  width: var(--sidebar-width);
+/*
+ * Desktop: two grid columns. The ::before element paints the sidebar background over the full height of the
+ * page, so it never ends at the viewport edge on long pages. The sidebar itself stays in view (sticky).
+ */
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+
+.shell::before {
+  grid-column: 1;
+  grid-row: 1;
   border-right: 1px solid var(--line);
   background: var(--surface);
+  content: '';
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  width: var(--sidebar-width);
 }
 
 .sidebar-top {
@@ -170,8 +189,9 @@
 
 /* Main area */
 .main {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
-  margin-left: var(--sidebar-width);
 }
 
 .main:focus {
@@ -237,13 +257,19 @@
 
 /* Below 1024px the sidebar becomes a top bar; the navigation is a disclosure. */
 @media (max-width: 1023px) {
+  .shell {
+    display: block;
+  }
+
+  .shell::before {
+    display: none;
+  }
+
   .sidebar {
-    position: sticky;
-    inset: auto;
-    top: 0;
+    height: auto;
     width: auto;
-    border-right: 0;
     border-bottom: 1px solid var(--line);
+    background: var(--surface);
   }
 
   .sidebar-top {

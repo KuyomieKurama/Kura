@@ -6,6 +6,8 @@ export type Column<Row> = {
   render: (row: Row) => ReactNode;
   /** Right-aligned, tabular figures. */
   numeric?: boolean;
+  /** Dates and times: left-aligned like text, tabular figures so rows line up. */
+  date?: boolean;
   /** Ids, hashes and counts in the mono face. */
   mono?: boolean;
   /** Row actions: right-aligned, no label in the stacked layout. */
@@ -13,7 +15,7 @@ export type Column<Row> = {
 };
 
 function cellClass<Row>(column: Column<Row>): string | undefined {
-  const classes = [column.numeric && 'num', column.mono && 'cell-mono', column.actions && 'actions'].filter(Boolean);
+  const classes = [column.numeric && 'num', column.date && 'date', column.mono && 'cell-mono', column.actions && 'actions'].filter(Boolean);
   return classes.length > 0 ? classes.join(' ') : undefined;
 }
 

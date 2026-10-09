@@ -8,6 +8,7 @@ import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { Chip } from './ui/Chip.js';
 import { DataTable, type Column } from './ui/DataTable.js';
+import { DisclosureSummary } from './ui/DisclosureSummary.js';
 import { Field } from './ui/Field.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 import { StatusChip } from './ui/StatusChip.js';
@@ -142,7 +143,7 @@ export function AdaptersPanel({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <details className="disclosure" onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}>
-      <summary>Unterstützte Quellen und Adapter</summary>
+      <DisclosureSummary>Unterstützte Quellen und Adapter</DisclosureSummary>
       <div className="disclosure-body">
         {message && <Banner tone="danger">{message}</Banner>}
         {open && adapters === null && !message && <SkeletonRows count={2} />}

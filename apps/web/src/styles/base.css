@@ -352,6 +352,13 @@ td.num {
   white-space: nowrap;
 }
 
+th.date,
+td.date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+th.actions,
 td.actions {
   text-align: right;
   white-space: nowrap;
@@ -367,9 +374,31 @@ td.cell-mono {
   font-variant-numeric: tabular-nums;
 }
 
-/* Native disclosure */
+/* Native disclosure: the browser triangle is replaced by the caret used by every other disclosure. */
 summary {
   cursor: pointer;
+}
+
+.disclosure-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-caret {
+  display: inline-flex;
+  flex: none;
+  transition: transform 150ms ease;
+}
+
+details[open] > .disclosure-summary .summary-caret {
+  transform: rotate(180deg);
 }
 
 @media (prefers-reduced-motion: reduce) {

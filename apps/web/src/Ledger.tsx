@@ -8,6 +8,7 @@ import { assetSegmentTone } from './status.js';
 import { Button } from './ui/Button.js';
 import { Collapse } from './ui/Collapse.js';
 import { DataTable, type Column } from './ui/DataTable.js';
+import { DisclosureSummary } from './ui/DisclosureSummary.js';
 import { Glyph } from './ui/Glyph.js';
 import { StatusChip } from './ui/StatusChip.js';
 
@@ -82,7 +83,7 @@ function Evidence({ asset }: { asset: HistoryAsset }) {
 
   return (
     <details className="evidence">
-      <summary>Immich-Nachweis</summary>
+      <DisclosureSummary>Immich-Nachweis</DisclosureSummary>
       <div className="evidence-body">
         <p>Übertragung <code>{handover.transferId}</code></p>
         {handover.evidence
