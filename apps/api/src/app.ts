@@ -10,7 +10,7 @@ import type { Pool, PoolClient } from 'pg';
 import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransaction, type OidcProviderConfig } from '@kura/identity';
 import type { ApiConfig } from './config.js';
 import { registerImmichRoutes } from './immich-routes.js';
-import { registerInstagramCredentialRoutes } from './instagram-routes.js';
+import { registerCredentialRoutes } from './credential-routes.js';
 import { loggerOptions } from './logging.js';
 import { registerRuntimePolicyRoutes } from './runtime-policy-routes.js';
 import { registerScheduleRoutes } from './schedule-routes.js';
@@ -189,7 +189,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   const auditRoute = (actor: string | null, action: string, target: string | null, request: FastifyRequest, outcome?: string) =>
     audit(pool, actor, action, target, clientAddress(request), outcome);
   registerScheduleRoutes({ app, pool, clock, requireSession, audit: auditRoute });
-  registerInstagramCredentialRoutes({ app, pool, config, clock, requireSession, audit: auditRoute });
+  registerCredentialRoutes({ app, pool, config, clock, requireSession, audit: auditRoute });
   registerRuntimePolicyRoutes({ app, pool, requireSession, audit: auditRoute });
   registerSourceRoutes({ app, pool, clock, requireSession, audit: auditRoute });
   if (webDirectory && existsSync(webDirectory)) { void app.register(fastifyStatic, { root: webDirectory, index: ['index.html'], cacheControl: false, setHeaders: (reply, filePath) => reply.header('Cache-Control', filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable') }); app.setNotFoundHandler((request, reply) => request.url.startsWith('/api/') || request.url === '/healthz' ? reply.code(404).send({ statusCode: 404, ...error('NOT_FOUND', 'Nicht gefunden.') }) : reply.type('text/html').sendFile('index.html')); }

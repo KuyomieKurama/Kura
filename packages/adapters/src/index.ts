@@ -11,5 +11,6 @@ export * from './cli-support.js';
 export * from './yt-dlp-adapter.js';
 export * from './gallery-dl-adapter.js';
 export { INSTAGRAM_RESERVED_PATHS } from './instagram-target.js';
+export * from './credential-platforms.js';
 export * from './delivery.js';
 export * from './source-selection.js';
