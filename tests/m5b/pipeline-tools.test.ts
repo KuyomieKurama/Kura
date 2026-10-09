@@ -151,7 +151,8 @@ describe('download pipeline with the CLI adapters (fake yt-dlp and gallery-dl, n
   });
 
   it.each([
-    ['https://www.youtube.com/playlist?list=PL12345', 'TARGET_UNSUPPORTED'],
+    ['https://www.youtube.com/feed/subscriptions', 'TARGET_UNSUPPORTED'],
+    ['https://www.youtube.com/playlist?list=PL12345', 'TARGET_INVALID'],
     ['https://www.instagram.com/stories/someprofile/', 'TARGET_UNSUPPORTED'],
     ['http://media.example.test/pic.jpg', 'TARGET_INVALID']
   ])('marks %s as invalid with %s', async (url, code) => {
