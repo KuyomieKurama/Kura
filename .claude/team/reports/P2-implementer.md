@@ -2,7 +2,7 @@
 
 - Aufgabe: `t_b1b560a5` P2 YouTube-Playlists und Kanäle, Pornhub (yt-dlp). Anforderung REQ-DL-005, req_hash `66b20a66d9133e08`.
 - Status: braucht Review (Umsetzung vollständig, echter Abruf nicht geprüft).
-- Artefakte: Branch `lane/instagram`, Worktree `/work/wt/ig`, 11 Commits nach `1c4d159` (Stand P1), Baum sauber, nichts gepusht. Dieser Bericht.
+- Artefakte: Branch `lane/instagram`, Worktree `/work/wt/ig`, 12 Commits nach `1c4d159` (Stand P1), Baum sauber, nichts gepusht. Dieser Bericht.
 - Zusammenfassung: siehe „Was geändert wurde".
 - Prüfung: `corepack pnpm check` grün: vorher 50 Dateien / 996 bestanden / 1 übersprungen, nachher 55 Dateien / 1208 bestanden / 1 übersprungen (typecheck, lint, Tests mit PostgreSQL, Build). Darin die Web-Tests (12 Dateien, 69 Tests, davon 4 neu in `Platforms.test.tsx`). `pnpm audit --audit-level=high`: keine Funde ab „high" (1 low, 1 moderate, unverändert gegenüber P1, keine neue Abhängigkeit).
 
@@ -23,7 +23,7 @@
 6. Web: Adapterübersicht listet Adressarten je Plattform; ein laufender Livestream erscheint als „Noch nicht verfügbar" (warnend, mit Grund), nicht als Fehler (`Ledger.tsx`, `history-labels.ts`, `Adapters.tsx`, `components.css`).
 7. Doku: `docs/vm-setup.md`, Abschnitt „YouTube and Pornhub (yt-dlp)".
 
-Rückgängig: `git revert` der 10 Commits (`git log 1c4d159..HEAD`). Keine Migration, keine Datenänderung. Bereits gespeicherte Einträge mit `ASSET_NOT_YET_AVAILABLE` bleiben als `failed` in der Datenbank und sind für ältere Versionen nur ein unbekannter Code-Text.
+Rückgängig: `git revert` der 12 Commits (`git log 1c4d159..HEAD`). Keine Migration, keine Datenänderung. Bereits gespeicherte Einträge mit `ASSET_NOT_YET_AVAILABLE` bleiben als `failed` in der Datenbank und sind für ältere Versionen nur ein unbekannter Code-Text.
 
 Kompatibilität: Der Typ `unavailable.code` wurde um `ASSET_NOT_YET_AVAILABLE` erweitert. Der `PLATFORM_SETTINGS` von gallery-dl ist jetzt `Partial<Record<SourceType, …>>`.
 
