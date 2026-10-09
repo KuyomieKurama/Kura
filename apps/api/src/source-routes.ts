@@ -192,8 +192,13 @@ export function registerSourceRoutes(input: {
     return row ? { availability: row.availability, row } : { availability: 'unknown' };
   }
 
+  async function hasInstagramCookies(userId: string): Promise<boolean> {
+    const found = await pool.query("SELECT 1 FROM platform_credentials WHERE user_id = $1 AND platform = 'instagram'", [userId]);
+    return (found.rowCount ?? 0) > 0;
+  }
+
   /** The validation result of one address, in the shape the UI shows. */
-  async function validate(url: string) {
+  async function validate(url: string, userId: string) {
     const recognizer = createTargetRecognizer();
     const switches = await loadKillSwitchRows(pool);
     recognizer.setKillSwitches(switches.map(toKillSwitch));
@@ -211,11 +216,16 @@ export function registerSourceRoutes(input: {
         notices.push('Es wird genau dieser eine Beitrag geladen, kein ganzer Kanal und keine Playlist.');
       }
       if (forTarget.auth_kind === 'none' && target.sourceType !== 'direct_media') notices.push('Anmeldedaten für die Quelle können noch nicht hinterlegt werden; Quellen, die eine Anmeldung verlangen, schlagen fehl.');
+      // Cookies are stored per user (IG-B). Only the fact that they exist is looked up, never their content.
+      const cookiesStored = forTarget.auth_kind === 'cookies' && target.sourceType === 'instagram' ? await hasInstagramCookies(userId) : undefined;
       if (forTarget.auth_kind === 'cookies') {
-        // Slice IG-B adds the place to store the cookies; until then the notice must not promise it.
-        notices.push(target.kind === 'creator_feed'
-          ? 'Instagram-Profile lassen sich in der Praxis nur mit angemeldeter Sitzung (Cookies) abrufen. Cookies können in dieser Version noch nicht hinterlegt werden; bis dahin schlägt der Abruf fehl und das Abonnement wird pausiert.'
-          : 'Instagram verlangt oft auch für einzelne Beiträge und Reels eine angemeldete Sitzung (Cookies). Cookies können in dieser Version noch nicht hinterlegt werden; ohne Anmeldung schlägt der Abruf dann fehl.');
+        if (cookiesStored) {
+          notices.push('Für den Abruf wird deine hinterlegte Instagram-Sitzung benutzt. Viele oder schnelle Abrufe können zu Sperren deines Kontos führen.');
+        } else {
+          notices.push(target.kind === 'creator_feed'
+            ? 'Instagram-Profile lassen sich in der Praxis nur mit angemeldeter Sitzung (Cookies) abrufen. Lade unter Konto deine Instagram-Cookies hoch; ohne sie wird das Abonnement beim ersten Abruf pausiert.'
+            : 'Instagram verlangt oft auch für einzelne Beiträge und Reels eine angemeldete Sitzung (Cookies). Lade unter Konto deine Instagram-Cookies hoch, wenn der Abruf ohne Anmeldung fehlschlägt.');
+        }
       }
       return {
         supported: true as const,
@@ -231,6 +241,10 @@ export function registerSourceRoutes(input: {
         },
         capabilities: presentCapabilitiesFor(capabilities, target.sourceType),
         runnable: availability !== 'unavailable',
+        // Present for Instagram only: whether this user has stored cookies, and whether the target needs them in practice.
+        ...(cookiesStored === undefined ? {} : {
+          credentials: { platform: 'instagram' as const, stored: cookiesStored, loginNeeded: target.kind === 'creator_feed' && !cookiesStored }
+        }),
         notices
       };
     } catch (error) {
@@ -267,20 +281,20 @@ export function registerSourceRoutes(input: {
     };
   }));
 
-  app.post('/api/v1/sources/validate', guarded(async (request) => {
+  app.post('/api/v1/sources/validate', guarded(async (request, _reply, session) => {
     const body = asObject(request.body);
     if (typeof body.url !== 'string') throw new ValidationError('Die Adresse fehlt.');
     const url = body.url.trim();
     if (url.length === 0) throw new ValidationError('Die Adresse fehlt.');
     if (url.length > MAX_URL_LENGTH) throw new ValidationError(`Die Adresse darf höchstens ${MAX_URL_LENGTH} Zeichen lang sein.`);
     if (hasControlCharacter(url)) throw new ValidationError('Die Adresse enthält ungültige Zeichen.');
-    return validate(url);
+    return validate(url, session.userId);
   }));
 
   app.post('/api/v1/subscriptions/:id/validate', guarded(async (request, _reply, session) => {
     const subscription = await subscriptions.getSubscription(session.userId, checkedId((request.params as { id: string }).id));
     if (!subscription.sourceRef) throw new ValidationError('Das Abonnement hat keine Ziel-URL.');
-    const result = await validate(subscription.sourceRef);
+    const result = await validate(subscription.sourceRef, session.userId);
     // An address that only lacks a tool or a kill-switch release is a fine address; only a rejection is "invalid".
     const state = result.supported ? 'valid' : result.code === 'ADAPTER_DISABLED' ? null : 'invalid';
     if (state) await subscriptions.setTargetState(session.userId, subscription.id, state, subscription.sourceRef);

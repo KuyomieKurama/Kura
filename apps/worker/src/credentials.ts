@@ -13,6 +13,15 @@ export const INSTAGRAM_COOKIES_EXPIRED_MESSAGE = 'Instagram-Anmeldung abgelaufen
 export const INSTAGRAM_COOKIES_MISSING_MESSAGE = 'Instagram verlangt eine Anmeldung: bitte lade unter Konto, Instagram, deine Cookies hoch und setze das Abonnement danach fort. Das Abonnement wurde pausiert.';
 export const INSTAGRAM_COOKIES_UNREADABLE_MESSAGE = 'Die gespeicherten Instagram-Cookies können nicht gelesen werden (Schlüssel fehlt oder wurde geändert): bitte Cookies neu hochladen. Das Abonnement wurde pausiert.';
 
+/**
+ * The adapter words two Instagram login problems precisely: a private profile and a security check (checkpoint).
+ * Those sentences say more than "expired" or "missing" and are kept. tests/instagram/credentials-worker.test.ts
+ * pins this against the adapter's wording.
+ */
+export function isSpecificInstagramAuthMessage(message: string): boolean {
+  return /\bprivat\b|Sicherheitsprüfung/.test(message);
+}
+
 export type CookieLoad =
   | { status: 'none' }
   | { status: 'unreadable' }

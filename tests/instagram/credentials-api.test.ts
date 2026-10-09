@@ -272,6 +272,43 @@ describe('Instagram cookies per user (API on real PostgreSQL)', () => {
     });
   });
 
+  describe('address check (Anmeldung nötig)', () => {
+    const validate = (api: CredentialFixture, login: Awaited<ReturnType<CredentialFixture['addUser']>>, url: string) =>
+      api.app.inject({
+        method: 'POST', url: '/api/v1/sources/validate', payload: { url },
+        headers: { cookie: login.cookie, 'x-kura-csrf': login.csrf, origin: 'http://localhost', host: 'localhost' }
+      }).then((response) => response.json() as Record<string, any>); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    it('flags an Instagram profile as needing a login until this user has stored cookies', async () => {
+      const api = await start();
+      const alice = await api.addUser('alice');
+      const bob = await api.addUser('bob');
+      const profile = 'https://www.instagram.com/own_test/';
+
+      const before = await validate(api, alice, profile);
+      expect(before.credentials).toEqual({ platform: 'instagram', stored: false, loginNeeded: true });
+      expect(before.notices.join(' ')).toMatch(/Lade unter Konto deine Instagram-Cookies hoch/);
+      expect(before.notices.join(' ')).not.toMatch(/noch nicht hinterlegt/);
+
+      await api.putText(alice, validCookieFile());
+      const after = await validate(api, alice, profile);
+      expect(after.credentials).toEqual({ platform: 'instagram', stored: true, loginNeeded: false });
+      expect(after.notices.join(' ')).toMatch(/hinterlegte Instagram-Sitzung/);
+      expect(JSON.stringify(after)).not.toContain(FAKE_SESSION_VALUE);
+
+      expect((await validate(api, bob, profile)).credentials).toEqual({ platform: 'instagram', stored: false, loginNeeded: true });
+    });
+
+    it('does not claim a login for single posts and says nothing about credentials for other platforms', async () => {
+      const api = await start();
+      const alice = await api.addUser('alice');
+      const post = await validate(api, alice, 'https://www.instagram.com/p/DPhoto00001/');
+      expect(post.credentials).toEqual({ platform: 'instagram', stored: false, loginNeeded: false });
+      const direct = await validate(api, alice, 'https://example.com/picture.jpg');
+      expect(direct.credentials).toBeUndefined();
+    });
+  });
+
   describe('audit and logs', () => {
     it('records save and delete without content, and no log line contains cookie content', async () => {
       const api = await start();

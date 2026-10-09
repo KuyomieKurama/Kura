@@ -203,6 +203,31 @@ describe('stored Instagram cookies in the worker (fake gallery-dl, real PostgreS
     expect((await subject.subscriptions.getSubscription(userId, subscription.id)).status).toBe('paused');
   });
 
+  it('keeps the precise sentence for a private profile (no cookies) and for a checkpoint (with cookies)', async () => {
+    const { subject, inner, runOnce } = await start({
+      listings: { [PROFILE_TOOL_URL]: [] },
+      listingStderr: "[instagram][warning] own_test_account's posts are private\n"
+    });
+    const userId = await subject.newUser();
+    const subscription = await subject.subscribe(userId, PROFILE);
+    await runOnce(userId, subscription.id);
+
+    await inner.control({ listings: { [PROFILE_TOOL_URL]: errorEntry('AbortExtraction', 'HTTP redirect to challenge page (https://www.instagram.com/challenge/)') } });
+    await storeCookies(subject, userId);
+    await subject.subscriptions.resumeSubscription(userId, subscription.id);
+    subject.advance(3600);
+    await runOnce(userId, subscription.id);
+
+    const messages = (await subject.rows<{ error_message: string }>('SELECT error_message FROM download_runs ORDER BY started_at, id')).map((row) => row.error_message);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatch(/Profil ist privat/);
+    expect(messages[1]).toMatch(/Sicherheitsprüfung/);
+    for (const message of messages) {
+      expect(message).not.toBe(INSTAGRAM_COOKIES_EXPIRED_MESSAGE);
+      expect(message).not.toBe(INSTAGRAM_COOKIES_MISSING_MESSAGE);
+    }
+  });
+
   it('does the same for a single post that needs a login', async () => {
     const { subject, runOnce } = await start({
       listings: { [POST]: errorEntry('HttpError', "'401 Unauthorized' for 'https://www.instagram.com/api/v1/media/1/info/'") }

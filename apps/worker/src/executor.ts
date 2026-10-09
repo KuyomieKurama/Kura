@@ -31,6 +31,7 @@ import {
   INSTAGRAM_COOKIES_MISSING_MESSAGE,
   INSTAGRAM_COOKIES_UNREADABLE_MESSAGE,
   InstagramCredentials,
+  isSpecificInstagramAuthMessage,
   writeCookiesFile
 } from './credentials.js';
 import { classifyFailure, sourceGoneDisposition, stopsWholeRun, type Disposition } from './failure.js';
@@ -299,8 +300,8 @@ export class JobExecutor {
 
   /**
    * Records how stored cookies fared and words the Instagram login problem for the user: with cookies they are
-   * expired, without cookies they are missing. The adapter's own sentences (private profile, checkpoint) are
-   * replaced by these two; the code and the retry rules stay as classified.
+   * expired, without cookies they are missing. The adapter's precise sentences (private profile, checkpoint) are
+   * kept; the code and the retry rules stay as classified.
    */
   private async settleInstagramAccess(
     lease: JobLease,
@@ -318,6 +319,7 @@ export class JobExecutor {
         await this.instagramCredentials.recordResult(lease.userId, 'auth_required');
       } else if (disposition.code === 'AUTH_REQUIRED') {
         if (access.cookiesUsed) await this.instagramCredentials.recordResult(lease.userId, 'auth_required');
+        if (isSpecificInstagramAuthMessage(disposition.message)) return problem;
         const message = access.cookiesUsed ? INSTAGRAM_COOKIES_EXPIRED_MESSAGE : INSTAGRAM_COOKIES_MISSING_MESSAGE;
         return { ...problem, disposition: { ...disposition, message } };
       }
