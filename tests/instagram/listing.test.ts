@@ -171,7 +171,7 @@ describe('profile discovery', () => {
     const [listing] = await toolCalls(tool);
     expect(listing).toEqual([
       '--config-ignore', '--dump-json',
-      '--sleep-request', '8-15', '--retries', '0', '-o', 'extractor.instagram.videos=merged',
+      '--sleep-request', '8-15', '--sleep-extractor', '8-15', '--retries', '0', '-o', 'extractor.instagram.videos=merged',
       '--post-range', `1-${INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN}`,
       '--', PROFILE_TOOL_URL
     ]);

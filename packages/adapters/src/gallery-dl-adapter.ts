@@ -78,6 +78,9 @@ const MAX_FILES_PER_POST = 1_000;
  *
  *  --sleep-request 8-15   seconds between two HTTP requests of the extraction (a range is drawn at random).
  *                         gallery-dl's own default for Instagram is 6-12; Kura is slower on purpose.
+ *  --sleep-extractor 8-15 seconds before each process starts its extraction. Every file, every post and every
+ *                         listing is a process of its own, and a fresh process sends its first request at once
+ *                         (the request timer is per process), so without this the processes would not be spaced.
  *  --sleep 2-5            seconds before each file download.
  *  --retries 0            no automatic retry inside gallery-dl: after a 429 it would sleep and ask again and
  *                         hit the metadata timeout; Kura's queue owns the back-off (waiting_rate_limit).
@@ -460,6 +463,7 @@ function sourceOptions(target: CanonicalTarget, credentials: RunCredentials | un
   if (target.sourceType !== 'instagram') return [];
   const options = [
     '--sleep-request', INSTAGRAM_REQUEST_SLEEP,
+    '--sleep-extractor', INSTAGRAM_REQUEST_SLEEP,
     '--retries', '0',
     '-o', 'extractor.instagram.videos=merged'
   ];
