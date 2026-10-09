@@ -60,13 +60,13 @@ function optionValue(args: string[], option: string): string | undefined {
 }
 
 describe('Instagram capabilities', () => {
-  it('declares single posts, feeds, pagination, images and videos with cookies as the login for Instagram only', async () => {
+  it('declares single posts, feeds, pagination, images and videos with cookies as the login for Instagram, a token for Pixiv', async () => {
     const { adapter } = await setup();
     const { capabilitiesForSourceType } = await import('../../packages/adapters/src/index.js');
     expect(capabilitiesForSourceType(adapter.capabilities(), 'instagram')).toMatchObject({
       single_post: true, creator_feed: true, pagination: true, images: true, videos: true, auth_kind: 'cookies', resume: false
     });
-    expect(capabilitiesForSourceType(adapter.capabilities(), 'pixiv')).toMatchObject({ creator_feed: false, auth_kind: 'none' });
+    expect(capabilitiesForSourceType(adapter.capabilities(), 'pixiv')).toMatchObject({ creator_feed: true, auth_kind: 'token' });
   });
 });
 

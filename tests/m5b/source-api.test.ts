@@ -31,7 +31,7 @@ describe('source validation, adapters, run-now, history and kill switches (API o
 
   describe('POST /api/v1/sources/validate', () => {
     it.each([
-      ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { platform: 'youtube', platformLabel: 'YouTube', adapter: { id: 'yt-dlp' }, capabilities: { videos: true, images: false, creatorFeed: false, authKind: 'none' } }],
+      ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { platform: 'youtube', platformLabel: 'YouTube', adapter: { id: 'yt-dlp' }, capabilities: { videos: true, images: false, creatorFeed: false, authKind: 'cookies' } }],
       ['https://www.pixiv.net/en/artworks/98765?x=1', { platform: 'pixiv', canonicalUrl: 'https://www.pixiv.net/artworks/98765', adapter: { id: 'gallery-dl' }, capabilities: { images: true, videos: false } }],
       ['https://www.instagram.com/p/Cabc12345/', { platform: 'instagram', adapter: { id: 'gallery-dl' }, capabilities: { creatorFeed: true, videos: true, images: true, authKind: 'cookies', authLabel: 'Cookies' } }],
       ['https://www.patreon.com/posts/own-post-123456', { platform: 'patreon', adapter: { id: 'gallery-dl' } }],

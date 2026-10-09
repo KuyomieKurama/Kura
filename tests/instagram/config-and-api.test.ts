@@ -60,10 +60,10 @@ describe('address check for Instagram (API on real PostgreSQL)', () => {
     expect(post.notices.join(' ')).toMatch(/genau dieser eine Beitrag/);
   });
 
-  it('keeps Pixiv a single-post source with no login, although the adapter as a whole can do more', async () => {
+  it('shows the capabilities of the target: a single Pixiv work still has no feed, and the login is a token', async () => {
     const validate = await start();
     const result = await validate('https://www.pixiv.net/artworks/98765');
-    expect(result).toMatchObject({ supported: true, capabilities: { creatorFeed: false, pagination: false, videos: false, authKind: 'none' } });
+    expect(result).toMatchObject({ supported: true, capabilities: { creatorFeed: true, pagination: true, videos: false, authKind: 'token' } });
   });
 
   it.each([

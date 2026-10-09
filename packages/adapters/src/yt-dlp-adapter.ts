@@ -4,6 +4,7 @@ import {
   asRecord,
   assertToolSucceeded,
   buildToolArguments,
+  checkedCredentialPath,
   cleanText,
   CliTool,
   compareVersions,
@@ -25,7 +26,9 @@ import type {
   DownloadContext,
   ProbeContext,
   QualityPolicy,
+  ResolveContext,
   ResolvedAsset,
+  RunCredentials,
   SourceAdapter,
   SourcePost,
   SourceSummary,
@@ -58,6 +61,16 @@ export interface YtDlpAdapterOptions extends CliToolOptions {
  */
 const COMMON_OPTIONS = ['--ignore-config', '--no-update', '--no-cache-dir', '--no-playlist', '--no-warnings'] as const;
 const OUTPUT_TEMPLATE = 'asset.%(ext)s';
+
+/**
+ * YouTube only: the user's cookies.txt, if the worker handed one over (`--cookies FILE`, yt-dlp options.py). Other
+ * targets never get it. yt-dlp writes its cookie jar back into that file at the end; it is the run's own copy and is
+ * deleted afterwards.
+ */
+function cookieOptions(target: CanonicalTarget, credentials: RunCredentials | undefined): string[] {
+  if (target.sourceType !== 'youtube' || credentials?.cookiesFilePath === undefined) return [];
+  return ['--cookies', checkedCredentialPath(credentials.cookiesFilePath)];
+}
 const FORMAT_BEST_AVAILABLE = 'bestvideo*+bestaudio/best';
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be']);
@@ -133,8 +146,10 @@ export class YtDlpAdapter implements SourceAdapter {
       videos: true,
       page_snapshot: false,
       quality_variants: false,
-      auth_kind: 'none', // no credential channel in this slice; sources that need a login will fail
-      presets: ['BEST_AVAILABLE']
+      auth_kind: 'none', // Instagram goes through gallery-dl (it wins the selection); this adapter has no login for it
+      presets: ['BEST_AVAILABLE'],
+      // YouTube: optional cookies.txt of the user (age-restricted or members-only videos), handed over with --cookies.
+      bySourceType: { youtube: { auth_kind: 'cookies' } }
     };
   }
 
@@ -152,7 +167,7 @@ export class YtDlpAdapter implements SourceAdapter {
   }
 
   async probe(context: ProbeContext): Promise<SourceSummary> {
-    const info = await this.fetchInfo(context.target, context.signal);
+    const info = await this.fetchInfo(context.target, context.signal, context.credentials);
     return {
       target: context.target,
       available: true,
@@ -163,7 +178,7 @@ export class YtDlpAdapter implements SourceAdapter {
   }
 
   async *discover(context: DiscoveryContext): AsyncIterable<SourcePost> {
-    const info = await this.fetchInfo(context.target, context.signal);
+    const info = await this.fetchInfo(context.target, context.signal, context.credentials);
     yield {
       adapterId: YT_DLP_ADAPTER_ID,
       sourceType: context.target.sourceType,
@@ -177,10 +192,10 @@ export class YtDlpAdapter implements SourceAdapter {
     };
   }
 
-  async resolveAssets(post: SourcePost, policy: QualityPolicy): Promise<AssetManifest> {
+  async resolveAssets(post: SourcePost, policy: QualityPolicy, context?: ResolveContext): Promise<AssetManifest> {
     assertPresetSupported(policy);
     const target = this.targetOfPost(post);
-    const info = await this.fetchInfo(target);
+    const info = await this.fetchInfo(target, context?.signal, context?.credentials);
     const mediaType = info.extension ? mediaTypeForExtension(info.extension) : undefined;
 
     const errors = mediaType ? [] : [{ code: 'ASSET_UNSUPPORTED', message: 'The reported container is not an allowed media type' }];
@@ -221,6 +236,7 @@ export class YtDlpAdapter implements SourceAdapter {
     const maxBytes = context.limits.maxBytes;
     return this.tool.stageOneFile(context.workspace, asset.assetIndex, maxBytes, () => buildToolArguments([
       ...COMMON_OPTIONS,
+      ...cookieOptions(target, context.credentials),
       '--no-progress',
       '--no-mtime',
       '--max-filesize', String(maxBytes),
@@ -229,8 +245,8 @@ export class YtDlpAdapter implements SourceAdapter {
     ], [target.canonicalUrl]), context.signal);
   }
 
-  private async fetchInfo(target: CanonicalTarget, signal?: AbortSignal): Promise<VideoInfo> {
-    const result = await this.tool.runMetadata(buildToolArguments([...COMMON_OPTIONS, '--dump-single-json'], [target.canonicalUrl]), signal);
+  private async fetchInfo(target: CanonicalTarget, signal?: AbortSignal, credentials?: RunCredentials): Promise<VideoInfo> {
+    const result = await this.tool.runMetadata(buildToolArguments([...COMMON_OPTIONS, ...cookieOptions(target, credentials), '--dump-single-json'], [target.canonicalUrl]), signal);
     assertToolSucceeded(result, 'reading metadata');
     return readVideoInfo(parseUntrustedJson(result.untrustedStdout), target);
   }

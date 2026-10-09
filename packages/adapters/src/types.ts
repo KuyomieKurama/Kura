@@ -64,9 +64,17 @@ export interface CanonicalTarget {
 export interface RunCredentials {
   /**
    * Absolute path of a Netscape-format cookies file that the worker created for this run (mode 0600, inside the
-   * private run directory) and removes afterwards. Used for Instagram targets.
+   * private run directory) and removes afterwards. Used for Instagram and Patreon targets (gallery-dl `-C`) and
+   * for YouTube targets (yt-dlp `--cookies`).
    */
   readonly cookiesFilePath?: string;
+  /**
+   * Absolute path of a gallery-dl configuration file that the worker created for this run (mode 0600, inside the
+   * private run directory) and removes afterwards. It carries the Pixiv refresh token, which gallery-dl reads only
+   * from its configuration (extractor.pixiv.refresh-token) and which must not appear on a command line.
+   * Used for Pixiv targets (gallery-dl `-c`).
+   */
+  readonly configFilePath?: string;
 }
 
 export interface JobContext {
@@ -138,6 +146,12 @@ export interface ManifestAsset {
   readonly quality: QualityParameters;
   readonly declaredBytes: number | null;
   readonly completeness: Completeness;
+  /**
+   * Set when the asset is known to be impossible to fetch (an embedded video of another site, a file type that is
+   * not allowed, a post the account may not view). It is listed and recorded as failed with this fixed German
+   * sentence and the code, instead of being downloaded or silently left out. Never contains tool output.
+   */
+  readonly unavailable?: { readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE'; readonly message: string };
 }
 
 /** Volatile access data. Lives only in the job context and must never be persisted or logged. */

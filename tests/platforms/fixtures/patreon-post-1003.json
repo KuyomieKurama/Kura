@@ -1,0 +1,40 @@
+[
+  [
+    2,
+    {
+      "attachments": [],
+      "attachments_media": [],
+      "campaign": {
+        "name": "Own Test Creator",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "category": "patreon",
+      "content": "",
+      "creator": {
+        "created": "2020-01-01T00:00:00.000+00:00",
+        "date": "2020-01-01 00:00:00",
+        "full_name": "Own Test Creator",
+        "id": "55",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "current_user_can_view": false,
+      "date": "2026-03-01 10:00:00",
+      "embed": null,
+      "id": 1003,
+      "image": null,
+      "images": [],
+      "patreon_url": "/posts/1003",
+      "post_file": {
+        "name": "locked.jpg",
+        "url": "https://c10.patreonusercontent.com/4/patreon-media/p/post/1003/00000000000000000000000000000003/locked.jpg?token-time=1"
+      },
+      "post_type": "image_file",
+      "published_at": "2026-03-01T10:00:00.000+00:00",
+      "subcategory": "post",
+      "tags": [],
+      "teaser_text": null,
+      "title": "Members only",
+      "url": "https://www.patreon.com/posts/1003"
+    }
+  ]
+]

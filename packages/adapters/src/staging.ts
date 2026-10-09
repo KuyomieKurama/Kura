@@ -118,6 +118,38 @@ export async function stageByteStream(
   return { assetIndex, relativePath, absolutePath, byteLength, sha256: hash.digest('hex'), mediaType };
 }
 
+/**
+ * Writes a file that Kura itself generated (not tool output), for example the frame timing of a Pixiv ugoira.
+ * The media type and extension are fixed by the caller and are not subject to the allowlist for tool output,
+ * which exists to distrust files from outside; the content is written by Kura and bounded by `maxBytes`.
+ */
+export async function stageGeneratedFile(
+  content: Uint8Array,
+  workspace: RunWorkspace,
+  assetIndex: number,
+  file: { readonly extension: 'json'; readonly mediaType: 'application/json' },
+  maxBytes: number
+): Promise<StagedFile> {
+  if (content.length === 0 || content.length > maxBytes) throw new AdapterError('SIZE_LIMIT', 'Generated file is empty or larger than the limit');
+  const relativePath = stagedRelativePath(assetIndex, file.extension);
+  const absolutePath = join(workspace.rootDir, relativePath);
+  await assertAbsent(absolutePath);
+  const handle = await open(absolutePath, 'wx', 0o600);
+  try {
+    await handle.writeFile(content);
+  } finally {
+    await handle.close();
+  }
+  return {
+    assetIndex,
+    relativePath,
+    absolutePath,
+    byteLength: content.length,
+    sha256: createHash('sha256').update(content).digest('hex'),
+    mediaType: file.mediaType
+  };
+}
+
 async function assertAbsent(path: string): Promise<void> {
   try {
     await lstat(path);

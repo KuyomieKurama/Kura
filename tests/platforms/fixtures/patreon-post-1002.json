@@ -1,0 +1,43 @@
+[
+  [
+    2,
+    {
+      "attachments": [],
+      "attachments_media": [],
+      "campaign": {
+        "name": "Own Test Creator",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "category": "patreon",
+      "content": "",
+      "creator": {
+        "created": "2020-01-01T00:00:00.000+00:00",
+        "date": "2020-01-01 00:00:00",
+        "full_name": "Own Test Creator",
+        "id": "55",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "current_user_can_view": true,
+      "date": "2026-03-02 10:00:00",
+      "embed": {
+        "description": "",
+        "provider": "YouTube",
+        "provider_url": "https://www.youtube.com",
+        "subject": "Own video",
+        "url": "https://www.youtube.com/watch?v=OWNVIDEO001"
+      },
+      "id": 1002,
+      "image": null,
+      "images": [],
+      "patreon_url": "/posts/1002",
+      "post_file": null,
+      "post_type": "video_embed",
+      "published_at": "2026-03-02T10:00:00.000+00:00",
+      "subcategory": "post",
+      "tags": [],
+      "teaser_text": null,
+      "title": "A video hosted elsewhere",
+      "url": "https://www.patreon.com/posts/1002"
+    }
+  ]
+]

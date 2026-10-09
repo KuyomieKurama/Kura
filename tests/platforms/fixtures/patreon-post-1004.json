@@ -1,0 +1,88 @@
+[
+  [
+    2,
+    {
+      "attachments": [],
+      "attachments_media": [],
+      "campaign": {
+        "name": "Own Test Creator",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "category": "patreon",
+      "content": "",
+      "creator": {
+        "created": "2020-01-01T00:00:00.000+00:00",
+        "date": "2020-01-01 00:00:00",
+        "full_name": "Own Test Creator",
+        "id": "55",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "current_user_can_view": true,
+      "date": "2026-02-28 10:00:00",
+      "embed": null,
+      "id": 1004,
+      "image": null,
+      "images": [],
+      "patreon_url": "/posts/1004",
+      "post_file": {
+        "name": null,
+        "url": "https://stream.mux.com/OWNPLAYBACKID.m3u8?token=x"
+      },
+      "post_type": "video_external_file",
+      "published_at": "2026-02-28T10:00:00.000+00:00",
+      "subcategory": "post",
+      "tags": [],
+      "teaser_text": null,
+      "title": "A hosted video",
+      "url": "https://www.patreon.com/posts/1004"
+    }
+  ],
+  [
+    3,
+    "ytdl:https://stream.mux.com/OWNPLAYBACKID.m3u8?token=x",
+    {
+      "attachments": [],
+      "attachments_media": [],
+      "campaign": {
+        "name": "Own Test Creator",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "category": "patreon",
+      "content": "",
+      "creator": {
+        "created": "2020-01-01T00:00:00.000+00:00",
+        "date": "2020-01-01 00:00:00",
+        "full_name": "Own Test Creator",
+        "id": "55",
+        "url": "https://www.patreon.com/owntestcreator"
+      },
+      "current_user_can_view": true,
+      "date": "2026-02-28 10:00:00",
+      "embed": null,
+      "extension": "mp4",
+      "file": {
+        "name": null,
+        "url": "https://stream.mux.com/OWNPLAYBACKID.m3u8?token=x"
+      },
+      "filename": "OWNPLAYBACKID",
+      "hash": "",
+      "id": 1004,
+      "image": null,
+      "images": [],
+      "num": 1,
+      "patreon_url": "/posts/1004",
+      "post_file": {
+        "name": null,
+        "url": "https://stream.mux.com/OWNPLAYBACKID.m3u8?token=x"
+      },
+      "post_type": "video_external_file",
+      "published_at": "2026-02-28T10:00:00.000+00:00",
+      "subcategory": "post",
+      "tags": [],
+      "teaser_text": null,
+      "title": "A hosted video",
+      "type": "postfile",
+      "url": "https://www.patreon.com/posts/1004"
+    }
+  ]
+]

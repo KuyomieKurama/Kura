@@ -1,0 +1,9 @@
+[
+  [
+    -1,
+    {
+      "error": "AuthenticationError",
+      "message": "Invalid refresh token"
+    }
+  ]
+]

@@ -49,7 +49,7 @@ async function resolve(adapter: GalleryDlAdapter, url = PIXIV_URL): Promise<{ po
 }
 
 describe('GalleryDlAdapter basics', () => {
-  it('declares what it can do per platform: Instagram feeds, videos and cookies; Pixiv and Patreon stay single posts', async () => {
+  it('declares what it can do per platform: feeds on all three, cookies for Instagram and Patreon, a token for Pixiv', async () => {
     const { adapter } = await setup();
     expect(adapter.capabilities()).toMatchObject({
       adapterId: 'gallery-dl', adapterVersion: '1.32.2', sourceTypes: ['pixiv', 'instagram', 'patreon'], single_post: true,
@@ -58,9 +58,9 @@ describe('GalleryDlAdapter basics', () => {
     });
     const forType = (sourceType: SourceType) => capabilitiesForSourceType(adapter.capabilities(), sourceType);
     expect(forType('instagram')).toMatchObject({ single_post: true, creator_feed: true, pagination: true, images: true, videos: true, auth_kind: 'cookies' });
-    for (const sourceType of ['pixiv', 'patreon'] as const) {
-      expect(forType(sourceType)).toMatchObject({ single_post: true, creator_feed: false, pagination: false, images: true, videos: false, auth_kind: 'none' });
-    }
+    expect(forType('patreon')).toMatchObject({ single_post: true, creator_feed: true, pagination: true, images: true, videos: true, auth_kind: 'cookies' });
+    // Ugoira are stored as zip archives, so Pixiv declares no videos (P1).
+    expect(forType('pixiv')).toMatchObject({ single_post: true, creator_feed: true, pagination: true, images: true, videos: false, auth_kind: 'token' });
   });
 
   it('refuses a mismatching hash, an unparsable version and a version below an administrator floor', async () => {
@@ -97,8 +97,8 @@ describe('GalleryDlAdapter basics', () => {
   });
 
   it.each([
-    ['a Pixiv user page', 'https://www.pixiv.net/users/12345'],
-    ['a Patreon creator page', 'https://www.patreon.com/owntest'],
+    ['a Pixiv bookmarks page', 'https://www.pixiv.net/users/12345/bookmarks/artworks'],
+    ['the Patreon home feed', 'https://www.patreon.com/home'],
     ['a look-alike host', 'https://www.pixiv.net.evil.example.test/artworks/98765'],
     ['an unlisted site', 'https://example.test/artworks/98765']
   ])('rejects %s as unsupported', async (_name, input) => {
@@ -239,8 +239,12 @@ describe('GalleryDlAdapter downloads', () => {
     expect(staged).toMatchObject({ assetIndex: 1, relativePath: 'media/item-0001.jpg', mediaType: 'image/jpeg', byteLength: JPEG_BYTES.length });
 
     const download = (await tool.calls()).at(-1)!;
+    // Pixiv pacing (P1): the delays are Kura's own choice and are documented in docs/vm-setup.md.
     expect(download).toEqual([
-      '--config-ignore', '-D', expect.stringContaining(workspace.rootDir), '-f', 'asset.{extension}', '--range', '2',
+      '--config-ignore',
+      '--sleep-request', '2-4', '--sleep-extractor', '2-4', '--retries', '0',
+      '-o', 'extractor.pixiv.sanity=false', '-o', 'extractor.pixiv.ugoira=true', '--sleep', '1-3',
+      '-D', expect.stringContaining(workspace.rootDir), '-f', 'asset.{extension}', '--range', '2',
       '--filesize-max', String(10 * 1024 * 1024), '--', PIXIV_URL
     ]);
   });

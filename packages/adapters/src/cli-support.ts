@@ -49,6 +49,21 @@ export function buildToolArguments(fixedOptions: readonly string[], urls: readon
   return [...fixedOptions, '--', ...urls];
 }
 
+const MAX_CREDENTIAL_PATH_CHARS = 4_096;
+
+/**
+ * The path of a credentials file that the worker created (cookies.txt or a configuration file) becomes the value of
+ * an option such as -C, -c or --cookies. It must be absolute (so it can never look like an option) and free of
+ * control characters. Kura never opens the file; what is inside never reaches an argument.
+ */
+export function checkedCredentialPath(path: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (!path.startsWith('/') || path.length > MAX_CREDENTIAL_PATH_CHARS || /[\u0000-\u001f\u007f]/.test(path)) {
+    throw new AdapterError('PROCESS_SPAWN_FAILED', 'The credentials file path must be absolute and free of control characters');
+  }
+  return path;
+}
+
 /** Shared mechanics of the CLI adapters: version probe, metadata runs, staged downloads. */
 export class CliTool {
   constructor(private readonly options: CliToolOptions) {}

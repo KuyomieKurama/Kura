@@ -1,0 +1,9 @@
+[
+  [
+    -1,
+    {
+      "error": "NotFoundError",
+      "message": "Requested creator could not be found"
+    }
+  ]
+]

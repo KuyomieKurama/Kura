@@ -1,0 +1,9 @@
+[
+  [
+    -1,
+    {
+      "error": "AuthenticationError",
+      "message": "'refresh-token' required.\nRun `gallery-dl oauth:pixiv` to get one."
+    }
+  ]
+]

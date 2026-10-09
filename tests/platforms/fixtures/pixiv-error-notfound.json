@@ -1,0 +1,9 @@
+[
+  [
+    -1,
+    {
+      "error": "NotFoundError",
+      "message": "Requested resource (gallery/image) could not be found"
+    }
+  ]
+]

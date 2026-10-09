@@ -36,7 +36,7 @@ describe('selectSource', () => {
   it('never hands a URL on a known platform to the direct URL adapter', () => {
     expect(codeOf(() => selectSource(recognizer, 'https://www.youtube.com/playlist?list=PL12345'))).toBe('TARGET_UNSUPPORTED');
     expect(codeOf(() => selectSource(recognizer, 'https://www.pornhub.com/view_video.php?viewkey=abc'))).toBe('TARGET_UNSUPPORTED');
-    expect(codeOf(() => selectSource(recognizer, 'https://www.patreon.com/someone'))).toBe('TARGET_UNSUPPORTED');
+    expect(codeOf(() => selectSource(recognizer, 'https://www.patreon.com/home'))).toBe('TARGET_UNSUPPORTED');
   });
 
   it('sends an Instagram profile to gallery-dl as a feed, never to yt-dlp', () => {

@@ -79,7 +79,8 @@ describe('no deletion path (R-05, R-12)', () => {
     expect(files.length).toBeGreaterThanOrEqual(2);
     for (const name of files) {
       const sql = (await readFile(join(root, 'migrations', name), 'utf8')).replace(/--.*$/gm, '');
-      expect(sql, name).not.toMatch(/\bDELETE\s+FROM\b|\bDROP\b|\bTRUNCATE\b/i);
+      // Replacing a CHECK constraint (P1, 0053) needs DROP CONSTRAINT; it removes a rule, never data.
+      expect(sql, name).not.toMatch(/\bDELETE\s+FROM\b|\bDROP\b(?!\s+CONSTRAINT\b)|\bTRUNCATE\b/i);
     }
   });
 });

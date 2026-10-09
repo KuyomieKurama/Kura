@@ -2,26 +2,27 @@ import { createHash } from 'node:crypto';
 import { AdapterError } from './errors.js';
 import {
   buildToolArguments,
-  cleanText,
+  checkedCredentialPath,
   CliTool,
   compareVersions,
-  identifierText,
   labelFromName,
   parseVersion,
-  positiveInteger,
   type CliToolOptions
 } from './cli-support.js';
+import { failureFromProcess, type FailureContext } from './gallery-dl-output.js';
 import {
-  failureFromProcess,
-  failureFromToolError,
-  failureOfEmptyProfileListing,
-  parseDumpJson,
-  type FailureContext,
-  type ParsedOutput,
-  type ParsedPost
-} from './gallery-dl-output.js';
-import { canonicalInstagramUrl, INSTAGRAM_SHORTCODE, instagramToolUrl, parseInstagramPath, type InstagramTarget } from './instagram-target.js';
+  MAX_FILES_PER_POST,
+  readFeedListing,
+  readPostListing,
+  type FeedListing,
+  type PostListing,
+  type UgoiraFrame
+} from './gallery-dl-listing.js';
+import { canonicalInstagramUrl, instagramToolUrl, parseInstagramPath, type InstagramTarget } from './instagram-target.js';
 import { mediaTypeForExtension } from './media.js';
+import { canonicalPatreonUrl, parsePatreonPath } from './patreon-target.js';
+import { canonicalPixivUrl, parsePixivPath, pixivScopeFilter, pixivToolUrl, type PixivTarget } from './pixiv-target.js';
+import { stageGeneratedFile } from './staging.js';
 import { parseHttpsTarget } from './target-url.js';
 import type { ProcessResult } from './process-runner.js';
 import type {
@@ -30,6 +31,7 @@ import type {
   CanonicalTarget,
   DiscoveryContext,
   DownloadContext,
+  ManifestAsset,
   ManifestError,
   ProbeContext,
   QualityPolicy,
@@ -58,101 +60,115 @@ export interface GalleryDlAdapterOptions extends CliToolOptions {
   readonly minimumVersion?: string;
   /**
    * Upper bound of posts read from an Instagram profile in one run (1-500). The newest posts come first, so
-   * the bound also limits the first run of a subscription. Default: INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN.
+   * the bound also limits the first run of a subscription. Default: FEED_DEFAULT_MAX_POSTS_PER_RUN.
    */
   readonly instagramMaxPostsPerRun?: number;
+  /** The same bound for a Patreon creator (1-500). */
+  readonly patreonMaxPostsPerRun?: number;
+  /** The same bound for a Pixiv artist (1-500). */
+  readonly pixivMaxPostsPerRun?: number;
 }
 
-/** Posts read from an Instagram profile per run when the administrator sets nothing else. */
-export const INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN = 50;
-export const INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT = 500;
+/** Posts read from a creator feed per run when the administrator sets nothing else. */
+export const FEED_DEFAULT_MAX_POSTS_PER_RUN = 50;
+export const FEED_MAX_POSTS_PER_RUN_LIMIT = 500;
+export const INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN = FEED_DEFAULT_MAX_POSTS_PER_RUN;
+export const INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT = FEED_MAX_POSTS_PER_RUN_LIMIT;
 
 /** Never read configuration files, so nothing from the host user's home can add options or credentials. */
 const COMMON_OPTIONS = ['--config-ignore'] as const;
 const FILENAME_TEMPLATE = 'asset.{extension}';
-const MAX_FILES_PER_POST = 1_000;
 
 /*
- * Instagram options. Every option name below was checked against `gallery-dl --help` and the extractor source of
- * gallery-dl 1.32.16 (see the report IG-A-implementer.md for the list with sources).
+ * Options per platform. Every option name below was checked against `gallery-dl --help`, the extractor source and
+ * docs/configuration.rst of gallery-dl 1.32.16 (reports IG-A and P1 list each one with its source).
  *
- *  --sleep-request 8-15   seconds between two HTTP requests of the extraction (a range is drawn at random).
- *                         gallery-dl's own default for Instagram is 6-12; Kura is slower on purpose.
- *  --sleep-extractor 8-15 seconds before each process starts its extraction. Every file, every post and every
+ *  --sleep-request A-B    seconds between two HTTP requests of one extraction (a range is drawn at random).
+ *  --sleep-extractor A-B  seconds before each process starts its extraction. Every file, every post and every
  *                         listing is a process of its own, and a fresh process sends its first request at once
  *                         (the request timer is per process), so without this the processes would not be spaced.
- *  --sleep 2-5            seconds before each file download.
+ *  --sleep A-B            seconds before each file download.
  *  --retries 0            no automatic retry inside gallery-dl: after a 429 it would sleep and ask again and
  *                         hit the metadata timeout; Kura's queue owns the back-off (waiting_rate_limit).
  *  -o extractor.instagram.videos=merged
  *                         download the ready-made video file instead of assembling DASH parts. The default
  *                         ("dash") imports a yt-dlp module inside gallery-dl, which would bypass the version
  *                         floor and hash check Kura applies to yt-dlp (D-007).
- *  -C <file>, -o extractor.instagram.cookies-update=false
+ *  -o extractor.pixiv.sanity=false
+ *                         no extra web (ajax) requests for works that the API hides by "sanity level". They need
+ *                         a PHPSESSID cookie, which Kura does not have; such works are listed as not retrievable.
+ *  -o extractor.pixiv.ugoira=true
+ *                         the ugoira as the original zip of frames (the default; the frame timing is stored by
+ *                         Kura next to it). "original" (single frames) and any converting post-processor are off.
+ *  -C <file>, -o extractor.<site>.cookies-update=false
  *                         cookies of the logged-in session, and do not write the session back into that file.
- *  --post-range 1-N       stop the profile listing after N posts.
+ *  -c <file>              the configuration file that holds the Pixiv refresh token (extractor.pixiv.refresh-token)
+ *                         and the location of the cache file, so that the token never appears in an argument.
+ *  --post-range 1-N       stop the feed listing after N posts.
+ *  --post-filter EXPR     Pixiv "illustrations" / "manga": a fixed expression (see pixivScopeFilter).
+ *
+ * The delays are Kura's own choice, not gallery-dl defaults (which are 6-12 s for Instagram and none for Patreon
+ * and Pixiv); they are documented in docs/vm-setup.md.
  */
-const INSTAGRAM_REQUEST_SLEEP = '8-15';
-const INSTAGRAM_DOWNLOAD_SLEEP = '2-5';
-/** Reading a profile is slow by design (pacing between requests, one request per reel in the reels tab). */
-const INSTAGRAM_PROFILE_LISTING_TIMEOUT_MS = 30 * 60_000;
-const INSTAGRAM_MAX_COOKIES_PATH_CHARS = 4_096;
+interface PlatformSettings {
+  readonly requestSleep: string;
+  readonly extractorSleep: string;
+  readonly downloadSleep: string;
+  readonly fixedOptions: readonly string[];
+}
+
+const PLATFORM_SETTINGS: Readonly<Record<'instagram' | 'patreon' | 'pixiv', PlatformSettings>> = {
+  instagram: {
+    requestSleep: '8-15',
+    extractorSleep: '8-15',
+    downloadSleep: '2-5',
+    fixedOptions: ['-o', 'extractor.instagram.videos=merged']
+  },
+  patreon: {
+    requestSleep: '3-6',
+    extractorSleep: '3-6',
+    downloadSleep: '2-5',
+    fixedOptions: []
+  },
+  pixiv: {
+    requestSleep: '2-4',
+    extractorSleep: '2-4',
+    downloadSleep: '1-3',
+    fixedOptions: ['-o', 'extractor.pixiv.sanity=false', '-o', 'extractor.pixiv.ugoira=true']
+  }
+};
+
+/** Reading a feed is slow by design (pacing between requests, extra requests per post). */
+const FEED_LISTING_TIMEOUT_MS = 30 * 60_000;
 
 const PIXIV_HOSTS = new Set(['pixiv.net', 'www.pixiv.net']);
 const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com']);
 const PATREON_HOSTS = new Set(['patreon.com', 'www.patreon.com']);
-const NUMERIC_ID = /^\d{1,12}$/;
-const MEDIA_ID = /^\d{1,25}$/;
-const PATREON_SLUG = /^(?:[A-Za-z0-9_-]{0,120}-)?(\d{1,12})$/;
 
-interface ListedFile {
-  /** 0-based position in the tool's file list; the tool's --range is 1-based. */
-  readonly index: number;
-  readonly sourceAssetId: string;
-  readonly extension: string | null;
-  readonly name: string | null;
-  readonly width: number | null;
-  readonly height: number | null;
-}
+/** The asset of a Pixiv ugoira that carries the frame timing (generated by Kura, not downloaded). */
+const UGOIRA_TIMING_ASSET_ID = 'ugoira-timing';
+const UGOIRA_TIMING_VARIANT = 'ugoira-timing';
+const GENERATED_FILE_MAX_BYTES = 1024 * 1024;
 
-interface PostListing {
-  /** The platform's id of the post as the tool printed it (Instagram: shortcode), or null if absent. */
-  readonly postId: string | null;
-  /** Instagram only: `reel` when the tool called the post a reel. */
-  readonly postType: 'p' | 'reel';
-  readonly creatorId: string;
-  readonly creatorName: string | null;
-  readonly title: string | null;
-  readonly date: string | null;
-  readonly files: readonly ListedFile[];
-  /** Set when the listing cannot be taken as the full file list of the post. */
-  readonly incomplete: { readonly code: string; readonly message: string } | null;
-}
-
-interface ProfileListing {
-  /** Newest first, without duplicates. */
-  readonly posts: readonly PostListing[];
-  /** The tool stopped with an error after these posts (for example throttled on page 2). */
-  readonly stoppedBy: AdapterError | null;
-}
+type FeedSourceType = 'instagram' | 'patreon' | 'pixiv';
 
 /**
- * gallery-dl as a CLI adapter: single posts (Pixiv, Patreon, Instagram) and Instagram profiles.
+ * gallery-dl as a CLI adapter: single posts and creator feeds of Instagram, Patreon and Pixiv.
  * The listing (`--dump-json`) is untrusted; downloads address files only by their numeric position
  * (`--range N`) in a listing of the validated URL, so no URL or name from the tool's output is ever passed
- * back as an argument. A profile is only ever listed; each of its posts is then handled like a single post.
+ * back as an argument. A feed is only ever listed; each of its posts is then handled like a single post.
  */
 export class GalleryDlAdapter implements SourceAdapter {
   private readonly tool: CliTool;
-  private readonly instagramMaxPosts: number;
+  private readonly maxPostsPerFeed: Readonly<Record<FeedSourceType, number>>;
 
   private constructor(options: GalleryDlAdapterOptions, private readonly version: string) {
     this.tool = new CliTool(options);
-    const maxPosts = options.instagramMaxPostsPerRun ?? INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN;
-    if (!Number.isInteger(maxPosts) || maxPosts < 1 || maxPosts > INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT) {
-      throw new AdapterError('BINARY_NOT_CONFIGURED', `instagramMaxPostsPerRun must be an integer between 1 and ${INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT}`);
-    }
-    this.instagramMaxPosts = maxPosts;
+    this.maxPostsPerFeed = {
+      instagram: checkedMaxPosts('instagramMaxPostsPerRun', options.instagramMaxPostsPerRun),
+      patreon: checkedMaxPosts('patreonMaxPostsPerRun', options.patreonMaxPostsPerRun),
+      pixiv: checkedMaxPosts('pixivMaxPostsPerRun', options.pixivMaxPostsPerRun)
+    };
   }
 
   static async create(options: GalleryDlAdapterOptions): Promise<GalleryDlAdapter> {
@@ -176,10 +192,11 @@ export class GalleryDlAdapter implements SourceAdapter {
   }
 
   /**
-   * The flat values are the union over all source types; `bySourceType` narrows them for Pixiv and Patreon,
-   * which stay single-post sources. Instagram: single posts and reels work without a login in principle (often
-   * Instagram answers with a login wall anyway), profiles need a logged-in session in practice, so `auth_kind`
-   * is `cookies` for Instagram.
+   * The flat values are the union over all source types; `bySourceType` states what each platform really offers.
+   * Instagram: single posts and reels work without a login in principle (often Instagram answers with a login wall
+   * anyway), profiles need a logged-in session in practice, so `auth_kind` is `cookies`. Patreon: the posts of a
+   * creator that the account may view, `cookies`. Pixiv: the works of an artist, `token` (OAuth refresh token);
+   * ugoira are stored as zip, so `videos` is false.
    */
   capabilities(): AdapterCapabilities {
     return {
@@ -197,9 +214,8 @@ export class GalleryDlAdapter implements SourceAdapter {
       auth_kind: 'cookies',
       presets: ['BEST_AVAILABLE', 'SOURCE_BYTES'],
       bySourceType: {
-        // Pixiv and Patreon: single posts only; videos stay with yt-dlp (plan 04, section 2); no credential channel.
-        pixiv: { creator_feed: false, pagination: false, videos: false, auth_kind: 'none' },
-        patreon: { creator_feed: false, pagination: false, videos: false, auth_kind: 'none' }
+        pixiv: { creator_feed: true, pagination: true, videos: false, auth_kind: 'token' },
+        patreon: { creator_feed: true, pagination: true, videos: true, auth_kind: 'cookies' }
       }
     };
   }
@@ -219,12 +235,14 @@ export class GalleryDlAdapter implements SourceAdapter {
     const target = this.recheck(context.target);
     if (target.kind === 'creator_feed') {
       // One post is enough to learn who the creator is, and a login problem shows up here after a few requests.
-      const profile = await this.listProfile(target, 1, context.signal, context.credentials);
-      const first = profile.posts[0];
+      const feed = await this.listFeed(target, 1, context.signal, context.credentials);
+      const first = feed.posts[0];
       return {
         target: context.target,
-        available: profile.posts.length > 0,
-        title: first?.creatorName ? `Instagram: ${first.creatorName}` : null,
+        // Instagram throws for an empty listing (an expired session looks like that); the other platforms list a
+        // creator without posts as an empty one, which is a fine target.
+        available: true,
+        title: first?.creatorName ? `${PLATFORM_LABELS[target.sourceType]}: ${first.creatorName}` : null,
         creatorId: first?.creatorId ?? null,
         creatorName: first?.creatorName ?? null
       };
@@ -232,7 +250,8 @@ export class GalleryDlAdapter implements SourceAdapter {
     const listing = await this.listPost(target, context.signal, context.credentials);
     return {
       target: context.target,
-      available: listing.files.length > 0,
+      // Patreon and Pixiv print the post itself even when nothing can be fetched from it (locked, embed only).
+      available: listing.files.length > 0 || (listing.hasPostEntry && target.sourceType !== 'instagram'),
       title: listing.title,
       creatorId: listing.creatorId,
       creatorName: listing.creatorName
@@ -242,11 +261,11 @@ export class GalleryDlAdapter implements SourceAdapter {
   async *discover(context: DiscoveryContext): AsyncIterable<SourcePost> {
     const target = this.recheck(context.target);
     if (target.kind === 'creator_feed') {
-      const profile = await this.listProfile(target, this.instagramMaxPosts, context.signal, context.credentials);
-      for (const listing of profile.posts) yield this.instagramPostFrom(listing);
+      const feed = await this.listFeed(target, this.maxPostsPerFeed[feedTypeOf(target)], context.signal, context.credentials);
+      for (const listing of feed.posts) yield this.feedPostFrom(target.sourceType, listing);
       // Posts that were listed before the tool stopped are delivered first; the run then ends with the error
-      // (login, throttling) instead of looking like a complete, quiet profile.
-      if (profile.stoppedBy) throw profile.stoppedBy;
+      // (login, throttling) instead of looking like a complete, quiet feed.
+      if (feed.stoppedBy) throw feed.stoppedBy;
       return;
     }
     const listing = await this.listPost(target, context.signal, context.credentials);
@@ -260,26 +279,72 @@ export class GalleryDlAdapter implements SourceAdapter {
 
     const errors: ManifestError[] = [];
     const assets: ResolvedAsset[] = [];
+    const patreon = target.sourceType === 'patreon';
     for (const file of listing.files) {
       const mediaType = file.extension ? mediaTypeForExtension(file.extension) : undefined;
-      if (!mediaType || !file.extension) {
-        errors.push({ code: 'ASSET_UNSUPPORTED', message: `File ${file.index + 1} has a type that is not allowed` });
-        continue;
+      if (patreon && file.viaYtdl) {
+        assets.push(unavailableAsset(file.index, file.sourceAssetId, 'Videostream (HLS)', 'application/octet-stream', policy, {
+          code: 'ASSET_UNSUPPORTED',
+          message: 'Nicht unterstützt: Videostream (HLS) von Patreon. gallery-dl würde dafür ein eigenes yt-dlp-Modul laden, das Kura nicht prüfen kann.'
+        }));
+      } else if (!mediaType || !file.extension) {
+        if (patreon) {
+          const label = file.extension ? `.${file.extension}` : 'unbekannt';
+          assets.push(unavailableAsset(file.index, file.sourceAssetId, `Datei (${label})`, 'application/octet-stream', policy, {
+            code: 'ASSET_UNSUPPORTED',
+            message: `Nicht unterstützt: Dateityp ${label}. Erlaubt sind Bilder, Videos, Audio, PDF und ZIP.`
+          }));
+        } else {
+          errors.push({ code: 'ASSET_UNSUPPORTED', message: `File ${file.index + 1} has a type that is not allowed` });
+        }
+      } else {
+        assets.push({
+          sourceAssetId: file.sourceAssetId,
+          assetIndex: file.index,
+          originalName: `${labelFromName(file.name, `file-${file.index + 1}`)}.${file.extension}`,
+          mediaType,
+          role: 'original',
+          variant: 'original',
+          quality: { preset: policy.preset, width: file.width, height: file.height, container: file.extension },
+          declaredBytes: null,
+          completeness: 'complete'
+        });
       }
-      assets.push({
-        sourceAssetId: file.sourceAssetId,
-        assetIndex: file.index,
-        originalName: `${labelFromName(file.name, `file-${file.index + 1}`)}.${file.extension}`,
-        mediaType,
-        role: 'original',
-        variant: 'original',
-        quality: { preset: policy.preset, width: file.width, height: file.height, container: file.extension },
-        declaredBytes: null,
-        completeness: 'complete'
-      });
     }
+
+    let nextIndex = listing.files.length;
+    for (const [number, embed] of listing.embeds.entries()) {
+      const where = embed.provider ?? 'einer anderen Seite';
+      assets.push(unavailableAsset(nextIndex, `embed-${number}`, `Eingebettetes Video (${embed.provider ?? 'andere Seite'})`, 'application/octet-stream', policy, {
+        code: 'ASSET_UNSUPPORTED',
+        message: `Nicht unterstützt: Video oder Medium von ${where}, das in den Beitrag eingebettet ist. Dafür gibt es keinen Adapter; der Beitrag auf Patreon enthält es weiterhin.`
+      }));
+      nextIndex += 1;
+    }
+    if (listing.locked) {
+      assets.push(unavailableAsset(nextIndex, 'locked', 'Beitrag nicht zugänglich', 'application/octet-stream', policy, {
+        code: 'ASSET_NOT_ACCESSIBLE',
+        message: 'Der Beitrag ist für das hinterlegte Patreon-Konto nicht zugänglich (zum Beispiel nur für Mitglieder einer höheren Stufe). Er wird erneut geprüft, sobald sich der Beitrag ändert.'
+      }));
+      nextIndex += 1;
+    }
+    if (target.sourceType === 'pixiv' && listing.hasPostEntry && listing.files.length === 0) {
+      assets.push(unavailableAsset(nextIndex, 'not-retrievable', 'Werk nicht abrufbar', 'application/octet-stream', policy, {
+        code: 'ASSET_NOT_ACCESSIBLE',
+        message: 'Das Werk liefert für das hinterlegte Pixiv-Konto keine Datei (eingeschränkt, nur für "My pixiv", gelöscht oder von Pixiv ausgeblendet).'
+      }));
+      nextIndex += 1;
+    }
+    if (listing.workType === 'ugoira' && listing.files.length > 0) {
+      if (listing.ugoiraFrames) {
+        assets.push(ugoiraTimingAsset(nextIndex, listing.postId ?? post.platformPostId, policy));
+      } else {
+        errors.push({ code: 'UGOIRA_TIMING_MISSING', message: 'The tool printed no usable frame timing for the ugoira' });
+      }
+    }
+
     if (listing.incomplete) errors.push(listing.incomplete);
-    if (listing.files.length === 0) errors.push({ code: 'NO_FILES', message: 'The tool listed no files for this post' });
+    if (assets.length === 0) errors.push({ code: 'NO_FILES', message: 'The tool listed no files for this post' });
 
     return {
       schemaVersion: 1,
@@ -302,10 +367,14 @@ export class GalleryDlAdapter implements SourceAdapter {
 
   async stage(asset: ResolvedAsset, context: StageContext): Promise<StagedFile> {
     assertPresetSupported(context.policy);
-    if (!Number.isInteger(asset.assetIndex) || asset.assetIndex < 0 || asset.assetIndex >= MAX_FILES_PER_POST) {
+    if (!Number.isInteger(asset.assetIndex) || asset.assetIndex < 0 || asset.assetIndex >= MAX_FILES_PER_POST + 16) {
       throw new AdapterError('TARGET_INVALID', 'Asset index is outside the supported range');
     }
+    if (asset.unavailable) throw new AdapterError('STAGING_REJECTED', 'The asset is marked as not retrievable and is never downloaded');
     const target = this.targetOfPost(context.post);
+    if (asset.sourceAssetId === UGOIRA_TIMING_ASSET_ID) return this.stageUgoiraTiming(asset, context, target);
+    if (asset.assetIndex >= MAX_FILES_PER_POST) throw new AdapterError('TARGET_INVALID', 'Asset index is outside the supported range');
+
     const maxBytes = context.limits.maxBytes;
     const failureContext = failureContextOf(target, context.credentials);
     return this.tool.stageOneFile(context.workspace, asset.assetIndex, maxBytes, (scratch) => buildToolArguments([
@@ -318,12 +387,31 @@ export class GalleryDlAdapter implements SourceAdapter {
     ], [toolUrlOf(target)]), context.signal, (result) => failureFromProcess(result, failureContext, 'downloading'));
   }
 
+  /**
+   * The frame timing of a Pixiv ugoira, next to the archive of frames (plan 04: "Originalgruppe mit Timingdaten").
+   * The timing is part of the work's metadata, not a file, so the post is listed once more and the frames are
+   * written as a small JSON file by Kura. Nothing is converted.
+   */
+  private async stageUgoiraTiming(asset: ResolvedAsset, context: StageContext, target: CanonicalTarget): Promise<StagedFile> {
+    if (target.sourceType !== 'pixiv') throw new AdapterError('TARGET_INVALID', 'Only Pixiv works have a frame timing');
+    const listing = await this.listPost(target, context.signal, context.credentials);
+    if (!listing.ugoiraFrames) throw new AdapterError('OUTPUT_INVALID', 'gallery-dl printed no usable frame timing for the ugoira');
+    const content = JSON.stringify({
+      schema: 'kura-ugoira-timing-1',
+      source: 'pixiv',
+      workId: target.platformId,
+      // The zip next to this file holds these frames; "delay" is the display time of a frame in milliseconds.
+      frames: listing.ugoiraFrames.map((frame: UgoiraFrame) => ({ file: frame.file, delay: frame.delay }))
+    }, null, 2);
+    return stageGeneratedFile(Buffer.from(`${content}\n`, 'utf8'), context.workspace, asset.assetIndex, { extension: 'json', mediaType: 'application/json' }, GENERATED_FILE_MAX_BYTES);
+  }
+
   // --- listing ------------------------------------------------------------------------------
 
   /** All files of one post. Several `[2, ...]` entries (a tool that splits a post) are read as one file list. */
   private async listPost(target: CanonicalTarget, signal?: AbortSignal, credentials?: RunCredentials): Promise<PostListing> {
     const failureContext = failureContextOf(target, credentials);
-    const result = await this.tool.runMetadata(buildToolArguments([
+    const result = await this.runMetadata(buildToolArguments([
       ...COMMON_OPTIONS,
       '--dump-json',
       ...sourceOptions(target, credentials, 'list')
@@ -331,16 +419,33 @@ export class GalleryDlAdapter implements SourceAdapter {
     return readPostListing(result, target, failureContext);
   }
 
-  /** The newest `maxPosts` posts of a profile (or of its reels tab), newest first. */
-  private async listProfile(target: CanonicalTarget, maxPosts: number, signal?: AbortSignal, credentials?: RunCredentials): Promise<ProfileListing> {
+  /** The newest `maxPosts` posts of a feed (Instagram profile or reels tab, Patreon creator, Pixiv artist), newest first. */
+  private async listFeed(target: CanonicalTarget, maxPosts: number, signal?: AbortSignal, credentials?: RunCredentials): Promise<FeedListing> {
     const failureContext = failureContextOf(target, credentials);
-    const result = await this.tool.runMetadata(buildToolArguments([
+    const result = await this.runMetadata(buildToolArguments([
       ...COMMON_OPTIONS,
       '--dump-json',
       ...sourceOptions(target, credentials, 'list'),
+      ...feedFilterOptions(target),
       '--post-range', `1-${maxPosts}`
-    ], [toolUrlOf(target)]), signal, INSTAGRAM_PROFILE_LISTING_TIMEOUT_MS);
-    return readProfileListing(result, failureContext, maxPosts);
+    ], [toolUrlOf(target)]), signal, FEED_LISTING_TIMEOUT_MS);
+    return readFeedListing(result, failureContext, maxPosts);
+  }
+
+  /**
+   * Runs a metadata process. A process that gallery-dl itself made wait for a rate limit (Pixiv sleeps five minutes
+   * after "rate limit", extractor/pixiv.py `_call`) is killed by the timeout; its log says why, and that is a
+   * rate limit for Kura, not a defect.
+   */
+  private async runMetadata(args: string[], signal?: AbortSignal, timeoutMs?: number): Promise<ProcessResult> {
+    try {
+      return await this.tool.runMetadata(args, signal, timeoutMs);
+    } catch (error) {
+      if (error instanceof AdapterError && error.code === 'PROCESS_TIMEOUT' && /Waiting for .{1,40} \(rate limit\)/.test(error.untrustedDiagnostics ?? '')) {
+        throw new AdapterError('RATE_LIMITED', 'The source reported a rate limit and the tool was waiting for it', error.untrustedDiagnostics);
+      }
+      throw error;
+    }
   }
 
   // --- posts --------------------------------------------------------------------------------
@@ -349,14 +454,15 @@ export class GalleryDlAdapter implements SourceAdapter {
     return this.buildPost({ sourceType: target.sourceType, platformPostId: target.platformId, canonicalUrl: target.canonicalUrl }, listing);
   }
 
-  /** A post found in a profile: it is addressed by its own /p/ or /reel/ URL from here on. */
-  private instagramPostFrom(listing: PostListing): SourcePost {
-    const shortcode = listing.postId!;
-    return this.buildPost({
-      sourceType: 'instagram',
-      platformPostId: shortcode,
-      canonicalUrl: canonicalInstagramUrl({ kind: 'post', shortcode, postType: listing.postType })
-    }, listing);
+  /** A post found in a feed: it is addressed by its own post URL from here on. */
+  private feedPostFrom(sourceType: SourceType, listing: PostListing): SourcePost {
+    const id = listing.postId!;
+    const canonicalUrl = sourceType === 'instagram'
+      ? canonicalInstagramUrl({ kind: 'post', shortcode: id, postType: listing.postType })
+      : sourceType === 'patreon'
+        ? canonicalPatreonUrl({ kind: 'post', slugAndId: id, postId: id })
+        : canonicalPixivUrl({ kind: 'artwork', artworkId: id });
+    return this.buildPost({ sourceType, platformPostId: id, canonicalUrl }, listing);
   }
 
   private buildPost(identity: { sourceType: SourceType; platformPostId: string; canonicalUrl: string }, listing: PostListing): SourcePost {
@@ -369,7 +475,7 @@ export class GalleryDlAdapter implements SourceAdapter {
       publishedAt: listing.date,
       // No revision field is known for these sites; the key changes when the date or the file list changes.
       revisionKey: `l-${createHash('sha256')
-        .update(`${identity.platformPostId}|${listing.date ?? ''}|${listing.files.map((file) => file.extension ?? '?').join(',')}`)
+        .update(`${identity.platformPostId}|${listing.date ?? ''}|${listing.files.map((file) => file.extension ?? '?').join(',')}|${listing.locked ? 'locked' : ''}`)
         .digest('hex').slice(0, 24)}`,
       canonicalUrl: identity.canonicalUrl
     };
@@ -397,14 +503,13 @@ export class GalleryDlAdapter implements SourceAdapter {
   // --- target grammar -----------------------------------------------------------------------
 
   private pixivTarget(segments: string[]): CanonicalTarget {
-    // /artworks/ID or /<language>/artworks/ID
-    const rest = segments[0] === 'artworks' ? segments : segments.length === 3 && /^[a-z]{2}(-[a-z]{2})?$/.test(segments[0]!) ? segments.slice(1) : undefined;
-    if (!rest || rest[0] !== 'artworks' || rest.length !== 2) {
-      throw new AdapterError('TARGET_UNSUPPORTED', 'Only single Pixiv artworks are supported');
-    }
-    const id = rest[1]!;
-    if (!NUMERIC_ID.test(id)) throw new AdapterError('TARGET_INVALID', 'Pixiv artwork id has an unexpected format');
-    return this.targetOf('pixiv', 'post', `https://www.pixiv.net/artworks/${id}`, id);
+    const parsed: PixivTarget = parsePixivPath(segments);
+    return this.targetOf(
+      'pixiv',
+      parsed.kind === 'user' ? 'creator_feed' : 'post',
+      canonicalPixivUrl(parsed),
+      parsed.kind === 'user' ? parsed.userId : parsed.artworkId
+    );
   }
 
   private instagramTarget(segments: string[]): CanonicalTarget {
@@ -418,17 +523,30 @@ export class GalleryDlAdapter implements SourceAdapter {
   }
 
   private patreonTarget(segments: string[]): CanonicalTarget {
-    if (segments[0] !== 'posts' || segments.length !== 2) {
-      throw new AdapterError('TARGET_UNSUPPORTED', 'Only single Patreon posts are supported');
-    }
-    const match = PATREON_SLUG.exec(segments[1]!);
-    if (!match) throw new AdapterError('TARGET_INVALID', 'Patreon post slug has an unexpected format');
-    return this.targetOf('patreon', 'post', `https://www.patreon.com/posts/${segments[1]}`, match[1]!);
+    const parsed = parsePatreonPath(segments);
+    return this.targetOf(
+      'patreon',
+      parsed.kind === 'creator' ? 'creator_feed' : 'post',
+      canonicalPatreonUrl(parsed),
+      parsed.kind === 'creator' ? parsed.slug : parsed.postId
+    );
   }
 
   private targetOf(sourceType: SourceType, kind: TargetKind, canonicalUrl: string, platformId: string): CanonicalTarget {
     return { adapterId: GALLERY_DL_ADAPTER_ID, sourceType, kind, canonicalUrl, platformId };
   }
+}
+
+const PLATFORM_LABELS: Readonly<Record<SourceType, string>> = {
+  direct_media: 'Direkte Medien-URL', youtube: 'YouTube', instagram: 'Instagram', patreon: 'Patreon', pixiv: 'Pixiv', pornhub: 'Pornhub'
+};
+
+function checkedMaxPosts(name: string, value: number | undefined): number {
+  const maxPosts = value ?? FEED_DEFAULT_MAX_POSTS_PER_RUN;
+  if (!Number.isInteger(maxPosts) || maxPosts < 1 || maxPosts > FEED_MAX_POSTS_PER_RUN_LIMIT) {
+    throw new AdapterError('BINARY_NOT_CONFIGURED', `${name} must be an integer between 1 and ${FEED_MAX_POSTS_PER_RUN_LIMIT}`);
+  }
+  return maxPosts;
 }
 
 function assertPresetSupported(policy: QualityPolicy): void {
@@ -437,187 +555,113 @@ function assertPresetSupported(policy: QualityPolicy): void {
   }
 }
 
+function feedTypeOf(target: CanonicalTarget): FeedSourceType {
+  if (target.sourceType === 'instagram' || target.sourceType === 'patreon' || target.sourceType === 'pixiv') return target.sourceType;
+  throw new AdapterError('TARGET_INVALID', 'This source type has no feed');
+}
+
+// --- assets ------------------------------------------------------------------------------------
+
+function unavailableAsset(
+  assetIndex: number,
+  sourceAssetId: string,
+  originalName: string,
+  mediaType: string,
+  policy: QualityPolicy,
+  unavailable: NonNullable<ManifestAsset['unavailable']>
+): ResolvedAsset {
+  return {
+    sourceAssetId,
+    assetIndex,
+    originalName,
+    mediaType,
+    role: 'original',
+    variant: 'original',
+    quality: { preset: policy.preset, width: null, height: null, container: null },
+    declaredBytes: null,
+    completeness: 'incomplete',
+    unavailable
+  };
+}
+
+function ugoiraTimingAsset(assetIndex: number, workId: string, policy: QualityPolicy): ResolvedAsset {
+  return {
+    sourceAssetId: UGOIRA_TIMING_ASSET_ID,
+    assetIndex,
+    originalName: `${workId}_ugoira_timing.json`,
+    mediaType: 'application/json',
+    role: 'variant',
+    variant: UGOIRA_TIMING_VARIANT,
+    quality: { preset: policy.preset, width: null, height: null, container: 'json' },
+    declaredBytes: null,
+    completeness: 'complete'
+  };
+}
+
 // --- arguments -------------------------------------------------------------------------------
 
-/** The URL given to the tool. An Instagram profile gets its explicit /posts/ page (see instagramToolUrl). */
+/**
+ * The URL given to the tool. An Instagram profile gets its explicit /posts/ page (see instagramToolUrl), a Pixiv
+ * artist always the /artworks page (the other pages are the same extractor, see pixiv-target.ts).
+ */
 function toolUrlOf(target: CanonicalTarget): string {
-  if (target.sourceType !== 'instagram') return target.canonicalUrl;
-  const parsed = parseInstagramPath(new URL(target.canonicalUrl).pathname.split('/').filter(Boolean));
-  return instagramToolUrl(parsed);
+  const segments = new URL(target.canonicalUrl).pathname.split('/').filter(Boolean);
+  if (target.sourceType === 'instagram') return instagramToolUrl(parseInstagramPath(segments));
+  if (target.sourceType === 'pixiv') return pixivToolUrl(parsePixivPath(segments));
+  return target.canonicalUrl;
 }
 
 function failureContextOf(target: CanonicalTarget, credentials: RunCredentials | undefined): FailureContext {
   return {
     sourceType: target.sourceType,
     scope: target.kind === 'creator_feed' ? 'profile' : 'post',
-    hasCookies: target.sourceType === 'instagram' && credentials?.cookiesFilePath !== undefined
+    hasLogin: loginOptionOf(target.sourceType, credentials) !== undefined
   };
+}
+
+/** The credential path that matters for this platform, if the worker handed one over. */
+function loginOptionOf(sourceType: SourceType, credentials: RunCredentials | undefined): { kind: 'cookies' | 'config'; path: string } | undefined {
+  if (!credentials) return undefined;
+  if ((sourceType === 'instagram' || sourceType === 'patreon') && credentials.cookiesFilePath !== undefined) {
+    return { kind: 'cookies', path: credentials.cookiesFilePath };
+  }
+  if (sourceType === 'pixiv' && credentials.configFilePath !== undefined) return { kind: 'config', path: credentials.configFilePath };
+  return undefined;
 }
 
 /**
  * Options that depend on the platform. Only fixed strings and numbers computed by Kura end up here; the one
- * variable value is the cookies file path the worker provides, checked for shape and passed as the value of -C.
- * The file itself is never opened by Kura.
+ * variable value is the path of the cookies or configuration file the worker provides, checked for shape and
+ * passed as the value of -C or -c. The file itself is never opened by Kura, and what is inside (cookies, the
+ * Pixiv token) never reaches an argument.
  */
 function sourceOptions(target: CanonicalTarget, credentials: RunCredentials | undefined, phase: 'list' | 'download'): string[] {
-  if (target.sourceType !== 'instagram') return [];
+  const sourceType = target.sourceType;
+  if (sourceType !== 'instagram' && sourceType !== 'patreon' && sourceType !== 'pixiv') return [];
+  const settings = PLATFORM_SETTINGS[sourceType];
   const options = [
-    '--sleep-request', INSTAGRAM_REQUEST_SLEEP,
-    '--sleep-extractor', INSTAGRAM_REQUEST_SLEEP,
+    '--sleep-request', settings.requestSleep,
+    '--sleep-extractor', settings.extractorSleep,
     '--retries', '0',
-    '-o', 'extractor.instagram.videos=merged'
+    ...settings.fixedOptions
   ];
-  if (phase === 'download') options.push('--sleep', INSTAGRAM_DOWNLOAD_SLEEP);
-  return [...options, ...cookieOptions(credentials)];
+  if (phase === 'download') options.push('--sleep', settings.downloadSleep);
+  return [...options, ...loginOptions(sourceType, credentials)];
 }
 
-function cookieOptions(credentials: RunCredentials | undefined): string[] {
-  const path = credentials?.cookiesFilePath;
-  if (path === undefined) return [];
-  // The path is the value of -C. It must be absolute (so it can never look like an option) and free of control characters.
-  // eslint-disable-next-line no-control-regex
-  if (!path.startsWith('/') || path.length > INSTAGRAM_MAX_COOKIES_PATH_CHARS || /[\u0000-\u001f\u007f]/.test(path)) {
-    throw new AdapterError('PROCESS_SPAWN_FAILED', 'The cookies file path must be absolute and free of control characters');
-  }
-  return ['-C', path, '-o', 'extractor.instagram.cookies-update=false'];
+function loginOptions(sourceType: FeedSourceType, credentials: RunCredentials | undefined): string[] {
+  const login = loginOptionOf(sourceType, credentials);
+  if (!login) return [];
+  const path = checkedCredentialPath(login.path);
+  return login.kind === 'config'
+    ? ['-c', path]
+    : ['-C', path, '-o', `extractor.${sourceType}.cookies-update=false`];
 }
 
-// --- reading the listing ---------------------------------------------------------------------
-
-/**
- * Reads the output of a single-post listing. A failure of the tool without any file becomes the matching
- * AdapterError; a failure after some files makes the listing incomplete instead.
- */
-function readPostListing(result: ProcessResult, target: CanonicalTarget, context: FailureContext): PostListing {
-  const hasOutput = result.untrustedStdout.trim().length > 0;
-  if (result.exitCode !== 0 && !hasOutput) throw failureFromProcess(result, context, 'listing files');
-  const output = parseDumpJson(result.untrustedStdout);
-
-  const metadataList = output.posts.flatMap((post) => post.files);
-  const truncated = output.posts.some((post) => post.filesTruncated);
-  if (output.error && metadataList.length === 0) throw failureFromToolError(output.error, context);
-
-  const merged: ParsedPost = {
-    directory: output.posts[0]?.directory,
-    files: metadataList.slice(0, MAX_FILES_PER_POST),
-    filesTruncated: truncated || metadataList.length > MAX_FILES_PER_POST
-  };
-  const listing = listingOfPost(merged, target.sourceType);
-  assertSamePost(target, listing);
-  if (listing.incomplete) return listing;
-  if (output.error) {
-    return { ...listing, incomplete: { code: 'TOOL_REPORTED_ERRORS', message: 'The tool reported an error after listing files; the list may be partial' } };
-  }
-  if (result.exitCode !== 0) {
-    return { ...listing, incomplete: { code: 'TOOL_REPORTED_ERRORS', message: `The tool exited with code ${result.exitCode} after listing; the list may be partial` } };
-  }
-  return listing;
-}
-
-function readProfileListing(result: ProcessResult, context: FailureContext, maxPosts: number): ProfileListing {
-  const hasOutput = result.untrustedStdout.trim().length > 0;
-  if (result.exitCode !== 0 && !hasOutput) throw failureFromProcess(result, context, 'listing posts');
-  const output: ParsedOutput = parseDumpJson(result.untrustedStdout);
-  const stoppedBy = output.error ? failureFromToolError(output.error, context) : null;
-
-  const seen = new Set<string>();
-  const listings: PostListing[] = [];
-  for (const post of output.posts) {
-    const listing = listingOfPost(post, 'instagram');
-    // A post without a usable shortcode cannot be addressed later, so it cannot be archived.
-    if (listing.postId === null || seen.has(listing.postId)) continue;
-    seen.add(listing.postId);
-    listings.push(listing);
-  }
-
-  if (listings.length === 0) throw stoppedBy ?? failureOfEmptyProfileListing(result.untrustedStderr, context);
-  return { posts: newestFirst(listings).slice(0, maxPosts), stoppedBy };
-}
-
-/**
- * Profile pages put pinned posts first. A stable sort by date gives "newest first" whenever every post has a
- * date; with a missing date the tool's own order is kept rather than guessing.
- */
-function newestFirst(listings: PostListing[]): PostListing[] {
-  if (listings.some((listing) => listing.date === null)) return listings;
-  return [...listings].sort((left, right) => (left.date! < right.date! ? 1 : left.date! > right.date! ? -1 : 0));
-}
-
-/** One post as the tool printed it. Everything is optional; nothing read here is ever used as an argument. */
-function listingOfPost(post: ParsedPost, sourceType: SourceType): PostListing {
-  const files: ListedFile[] = [];
-  const usedAssetIds = new Set<string>();
-  for (const metadata of post.files) {
-    const index = files.length;
-    const mediaId = sourceType === 'instagram' ? identifierText(metadata.media_id, MEDIA_ID) : null;
-    // A stable media id survives a change in the order of a carousel; the position does not.
-    const preferredId = mediaId ? `media-${mediaId}` : `file-${index}`;
-    const sourceAssetId = usedAssetIds.has(preferredId) ? `file-${index}` : preferredId;
-    usedAssetIds.add(sourceAssetId);
-    files.push({
-      index,
-      sourceAssetId,
-      extension: typeof metadata.extension === 'string' && /^[A-Za-z0-9]{1,5}$/.test(metadata.extension) ? metadata.extension.toLowerCase() : null,
-      name: sourceType === 'instagram' ? instagramFileName(post.directory, metadata, index) : cleanText(metadata.filename, 200),
-      width: positiveInteger(metadata.width),
-      height: positiveInteger(metadata.height)
-    });
-  }
-
-  const instagram = sourceType === 'instagram';
-  // Instagram prints the post's own data (date, owner, caption) in the directory entry; the file entries of a
-  // carousel carry the date of the single item. Other sites are read from the first file, as before.
-  const first = instagram ? (post.directory ?? post.files[0]) : (post.files[0] ?? post.directory);
-  const user = asObject(first?.user) ?? asObject(first?.creator) ?? asObject(first?.owner);
-  const dateText = typeof first?.date === 'string' ? first.date : typeof first?.post_date === 'string' ? first.post_date : undefined;
-  const parsedDate = dateText === undefined ? undefined : new Date(asUtcTimestamp(dateText));
-  return {
-    postId: first ? (instagram ? identifierText(first.post_shortcode, INSTAGRAM_SHORTCODE) : identifierText(first.id, NUMERIC_ID)) : null,
-    postType: first?.type === 'reel' ? 'reel' : 'p',
-    creatorId: (instagram
-      ? identifierText(first?.owner_id, /^[A-Za-z0-9][\w.@:-]{0,99}$/)
-      : identifierText(user?.id, /^[A-Za-z0-9][\w.@:-]{0,99}$/)) ?? 'unknown',
-    creatorName: instagram
-      ? cleanText(first?.fullname, 200) ?? cleanText(first?.username, 200)
-      : cleanText(user?.name ?? user?.full_name, 200),
-    title: instagram ? firstLine(first?.description, 300) : cleanText(first?.title, 300),
-    date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null,
-    files,
-    incomplete: post.filesTruncated
-      ? { code: 'LISTING_TRUNCATED', message: `More than ${MAX_FILES_PER_POST} files; the list was cut off` }
-      : null
-  };
-}
-
-/** `<shortcode>_<position>`: the CDN file names ("481..._n") say nothing to a person. */
-function instagramFileName(directory: Record<string, unknown> | undefined, metadata: Record<string, unknown>, index: number): string | null {
-  const shortcode = identifierText(metadata.post_shortcode ?? directory?.post_shortcode, INSTAGRAM_SHORTCODE);
-  return shortcode ? `${shortcode}_${index + 1}` : null;
-}
-
-function firstLine(value: unknown, maxLength: number): string | null {
-  return typeof value === 'string' ? cleanText(value.split('\n')[0], maxLength) : null;
-}
-
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-}
-
-/** gallery-dl prints naive timestamps ("2026-01-01T00:00:00" or "2026-01-01 00:00:00"); they are UTC, not local time. */
-function asUtcTimestamp(value: string): string {
-  const withT = value.replace(' ', 'T');
-  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(withT) ? withT : `${withT}Z`;
-}
-
-/**
- * The tool was given the target URL, so its files must belong to that post.
- * A different id means a redirect or an extractor surprise: stop. The key that carries the id is
- * `id` for Pixiv and Patreon and `post_shortcode` for Instagram (gallery_dl/extractor/instagram.py).
- */
-function assertSamePost(target: CanonicalTarget, listing: PostListing): void {
-  if (listing.files.length === 0) return;
-  if (listing.postId === null) throw new AdapterError('OUTPUT_INVALID', 'gallery-dl metadata has no usable post id');
-  if (listing.postId !== target.platformId) {
-    throw new AdapterError('OUTPUT_INVALID', 'gallery-dl returned files for a different post than requested');
-  }
+/** Pixiv: restricts the artist's feed to illustrations or to manga with gallery-dl's own post filter. */
+function feedFilterOptions(target: CanonicalTarget): string[] {
+  if (target.sourceType !== 'pixiv') return [];
+  const parsed = parsePixivPath(new URL(target.canonicalUrl).pathname.split('/').filter(Boolean));
+  const expression = parsed.kind === 'user' ? pixivScopeFilter(parsed.scope) : undefined;
+  return expression === undefined ? [] : ['--post-filter', expression];
 }
