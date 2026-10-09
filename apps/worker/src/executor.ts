@@ -160,12 +160,22 @@ export class JobExecutor {
     await history.updateRun(runId, { state: 'discovering', stats });
     const posts: SourcePost[] = [];
     let truncated = false;
-    for await (const post of adapter.discover({ ...jobContext, target })) {
-      if (posts.length >= MAX_POSTS_PER_RUN) {
-        truncated = true;
-        break;
+    // A profile listing can stop half way (login wall, throttling). What was listed before is still worth
+    // archiving, but the run must end with that error and the "checked through" mark must not advance.
+    let discoveryStop: Disposition | undefined;
+    try {
+      for await (const post of adapter.discover({ ...jobContext, target })) {
+        if (posts.length >= MAX_POSTS_PER_RUN) {
+          truncated = true;
+          break;
+        }
+        posts.push(post);
       }
-      posts.push(post);
+    } catch (error) {
+      if (error instanceof LeaseLostError || signal.aborted) throw error;
+      const failure = classifyFailure(error);
+      if (posts.length === 0 || !stopsWholeRun(failure)) throw error;
+      discoveryStop = failure;
     }
     if (posts.length === 0 && target.kind === 'post') {
       // A single post that cannot be listed is a failure, not "nothing new".
@@ -192,6 +202,8 @@ export class JobExecutor {
       firstFailure ??= outcome.failure;
       await history.updateRun(runId, { stats });
     }
+
+    if (discoveryStop) throw new RunStop(discoveryStop);
 
     const last = posts.at(-1);
     const enumerationComplete = !truncated && outcomes.every((outcome) => outcome.discoveryComplete);

@@ -63,6 +63,7 @@ export class Worker implements WorkerLifecycle {
       externalToolsEgressConfirmed: downloads.externalToolsEgressConfirmed,
       workDir: downloads.workDir,
       maxAssetBytes: downloads.maxAssetBytes,
+      instagramMaxPostsPerRun: downloads.instagramMaxPostsPerRun,
       directUrl: dependencies.directUrl ?? { approvals: approveNothing },
       logger
     });

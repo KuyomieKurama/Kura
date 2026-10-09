@@ -49,6 +49,8 @@ interface CatalogOptions {
   externalToolsEgressConfirmed?: boolean;
   workDir: string;
   maxAssetBytes: number;
+  /** Posts per Instagram profile run; absent = the adapter's default. */
+  instagramMaxPostsPerRun?: number;
   directUrl: DirectUrlSettings;
   logger: Logger;
   /** Additional environment variables per tool. Tests only (the fake tools log through them). */
@@ -113,7 +115,12 @@ export class AdapterCatalog {
     };
 
     availability.push(await this.registerCli(registry, 'gallery-dl', tools.galleryDl, (binary) =>
-      GalleryDlAdapter.create({ binary, workRoot: workDir, extraEnv: environmentFor(this.options.toolEnvironment?.galleryDl) })));
+      GalleryDlAdapter.create({
+        binary,
+        workRoot: workDir,
+        extraEnv: environmentFor(this.options.toolEnvironment?.galleryDl),
+        instagramMaxPostsPerRun: this.options.instagramMaxPostsPerRun
+      })));
     availability.push(await this.registerCli(registry, 'yt-dlp', tools.ytDlp, (binary) =>
       YtDlpAdapter.create({ binary, workRoot: workDir, extraEnv: environmentFor(this.options.toolEnvironment?.ytDlp) })));
 

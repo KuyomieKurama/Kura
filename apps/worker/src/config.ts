@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN, INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT } from '@kura/adapters';
 
 /** An administrator-installed external tool: absolute path plus the SHA-256 the file must have. */
 export interface ToolBinaryConfig {
@@ -35,6 +36,12 @@ export interface DownloadConfig {
   };
   /** How often the worker checks again whether the tools are usable. */
   adapterRecheckMs: number;
+  /**
+   * Posts read from an Instagram profile per run (KURA_INSTAGRAM_MAX_POSTS_PER_RUN, 1-500, default 50). The
+   * newest posts come first, so this also bounds the first run of a new subscription. There is no
+   * administrator limit for items per run elsewhere (checked in M4-B), hence this adapter-level bound.
+   */
+  instagramMaxPostsPerRun: number;
 }
 
 export interface WorkerConfig {
@@ -114,6 +121,7 @@ export function loadDownloadConfig(environment: NodeJS.ProcessEnv = process.env)
       galleryDl: tool('gallery-dl', 'KURA_GALLERYDL_PATH', 'KURA_GALLERYDL_SHA256', environment),
       toolPath: environment.KURA_TOOL_PATH || undefined
     },
-    adapterRecheckMs: integerInRange('WORKER_ADAPTER_RECHECK_SECONDS', environment.WORKER_ADAPTER_RECHECK_SECONDS, 600, 30, 86_400) * 1000
+    adapterRecheckMs: integerInRange('WORKER_ADAPTER_RECHECK_SECONDS', environment.WORKER_ADAPTER_RECHECK_SECONDS, 600, 30, 86_400) * 1000,
+    instagramMaxPostsPerRun: integerInRange('KURA_INSTAGRAM_MAX_POSTS_PER_RUN', environment.KURA_INSTAGRAM_MAX_POSTS_PER_RUN, INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN, 1, INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT)
   };
 }

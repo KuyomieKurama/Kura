@@ -560,8 +560,10 @@ function listingOfPost(post: ParsedPost, sourceType: SourceType): PostListing {
     });
   }
 
-  const first = post.files[0] ?? post.directory;
   const instagram = sourceType === 'instagram';
+  // Instagram prints the post's own data (date, owner, caption) in the directory entry; the file entries of a
+  // carousel carry the date of the single item. Other sites are read from the first file, as before.
+  const first = instagram ? (post.directory ?? post.files[0]) : (post.files[0] ?? post.directory);
   const user = asObject(first?.user) ?? asObject(first?.creator) ?? asObject(first?.owner);
   const dateText = typeof first?.date === 'string' ? first.date : typeof first?.post_date === 'string' ? first.post_date : undefined;
   const parsedDate = dateText === undefined ? undefined : new Date(asUtcTimestamp(dateText));
