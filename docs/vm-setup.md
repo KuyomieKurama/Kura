@@ -177,7 +177,7 @@ are plain executables on `PATH`, so the directory must be read-only for the work
 Optionally `curl_cffi` makes yt-dlp impersonate a browser for Pornhub (Cloudflare); a standalone build may include it.
 Pornhub works without it as long as the site does not ask for it.
 
-- Address types, one canonical form each (`docs` of the report P2): YouTube video, playlist and channel tab (videos,
+- Address types, one canonical form each (table in the report P2): YouTube video, playlist and channel tab (videos,
   shorts, streams); Pornhub video, video list of a model, pornstar, channel or user, playlist, photo album. A YouTube
   address with a video and a list is the single video.
 - Reading a list: `--flat-playlist --dump-single-json --playlist-items 1:N`. `N` is `KURA_YOUTUBE_MAX_POSTS_PER_RUN` or
