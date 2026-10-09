@@ -158,6 +158,50 @@ deleted at the end of the run). What differs:
 - Account risk: all three platforms can restrict accounts that fetch a lot or quickly. Use your own account.
 - Test steps are in `.claude/team/reports/P1-implementer.md`.
 
+## YouTube and Pornhub (yt-dlp)
+
+Besides single videos, yt-dlp now serves YouTube playlists and channels and Pornhub video lists. Photo albums of
+Pornhub go through gallery-dl (`/album/<number>`).
+
+Tools on the VM (D-026), all found through `KURA_TOOL_PATH`, which becomes the `PATH` of the tool processes:
+
+| Tool | Version | Why |
+| --- | --- | --- |
+| yt-dlp | 2026.08.19 (floor 2026.07.04, D-007) | the extractor; must be a self-contained build that includes `yt-dlp-ejs` (the official standalone binary does). Kura never passes `--remote-components`, so yt-dlp does not fetch code from the network |
+| deno | 2.9.7 | the JavaScript runtime that YouTube needs. yt-dlp enables `deno` by default (`--js-runtimes` default in `options.py`) and looks it up on `PATH`; Kura passes no runtime option |
+| ffmpeg (with ffprobe) | n9.0 | merges the best video stream and the best audio stream; found on `PATH` (Kura passes no `--ffmpeg-location`). Without it a download fails with "tool not installed" |
+
+Example: `KURA_TOOLS_HOST_DIR=/home/kura/kura-tools`, `KURA_TOOL_PATH=/opt/kura-tools/bin`, with `yt-dlp`, `deno`,
+`ffmpeg` and `ffprobe` in that `bin` directory. Only `yt-dlp` and `gallery-dl` are checked against a hash; deno and ffmpeg
+are plain executables on `PATH`, so the directory must be read-only for the worker (it is mounted read-only).
+Optionally `curl_cffi` makes yt-dlp impersonate a browser for Pornhub (Cloudflare); a standalone build may include it.
+Pornhub works without it as long as the site does not ask for it.
+
+- Address types, one canonical form each (`docs` of the report P2): YouTube video, playlist and channel tab (videos,
+  shorts, streams); Pornhub video, video list of a model, pornstar, channel or user, playlist, photo album. A YouTube
+  address with a video and a list is the single video.
+- Reading a list: `--flat-playlist --dump-single-json --playlist-items 1:N`. `N` is `KURA_YOUTUBE_MAX_POSTS_PER_RUN` or
+  `KURA_PORNHUB_MAX_POSTS_PER_RUN` (default 50, 1-500). Channels are listed newest first by YouTube, so this also caps
+  the first run of a subscription. Playlists and Pornhub lists are read in the order the site gives; videos beyond
+  position `N` are not fetched later, so raise `N` for long playlists. Videos that are already stored are skipped by
+  their id without a request.
+- Download: best video stream plus best audio stream, merged by ffmpeg without re-encoding into `mp4`, `webm` or
+  `mkv` (whichever can hold the chosen codecs, in this order). A fragmented download that misses a fragment fails
+  instead of being stored incomplete.
+- Pacing (Kura's own choice): 1 s between two requests of an extraction, 3-8 s before each download, no automatic
+  retry of extractor errors (`--extractor-retries 0`): after a 429 or a bot check a second request makes it worse.
+- Livestreams that are running, premieres and announced videos are not recorded; the entry shows
+  "Noch nicht verfügbar" and is looked at again on the next run. Private, removed and region-blocked videos are marked
+  as such for that entry and do not stop the run.
+- Bot check ("Sign in to confirm you're not a bot"), age-restricted and members-only videos stop the run with
+  "Anmeldung erforderlich" and the hint to upload YouTube cookies (account page, Zugänge). With cookies stored, a video
+  that the account still may not watch is marked for that entry only. YouTube cookies are optional; Pornhub has no
+  login in Kura.
+- Account risk: YouTube can restrict accounts and addresses that fetch a lot or quickly. Use your own account.
+- Not checked on a real VM: the real merge with ffmpeg, YouTube with deno and `yt-dlp-ejs`, Pornhub behind Cloudflare,
+  the real wording of YouTube's error texts. Test steps are in `.claude/team/reports/P2-implementer.md`, section
+  "Betrieb auf der VM".
+
 ## Limits of this setup
 
 - No TLS: passwords cross the network unencrypted. Use only on a trusted LAN with test data.
