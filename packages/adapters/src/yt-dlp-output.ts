@@ -110,6 +110,7 @@ export function readFlatListing(stdout: string, site: ListedSite, maxEntries: nu
 
 export type ToolProblem =
   | 'rate_limit'
+  | 'ffmpeg'
   | 'bot_check'
   | 'members'
   | 'age'
@@ -136,6 +137,8 @@ export type ToolProblem =
  */
 const PATTERNS: readonly (readonly [ToolProblem, RegExp])[] = [
   ['rate_limit', /http error 429|too many requests|rate.?limited by youtube|isn.t available, try again later/i],
+  // YoutubeDL.py: "You have requested merging of multiple formats but ffmpeg is not installed"; postprocessor/ffmpeg.py: "ffprobe and ffmpeg not found"
+  ['ffmpeg', /ffmpeg is not installed|ffmpeg not found|ffmpeg and ffprobe|ffprobe and ffmpeg|ffprobe not found/i],
   ['bot_check', /not a bot|confirm you.{1,3}re not/i],
   ['members', /members[- ]only|join this channel|channel.s members|available to members/i],
   ['age', /confirm your age|age[- ]restricted|age verification|inappropriate for some users/i],
@@ -244,6 +247,9 @@ export function classifyYtDlpFailure(result: ProcessResult, context: YtDlpContex
   switch (problem) {
     case 'rate_limit':
       return { kind: 'error', error: new AdapterError('RATE_LIMITED', 'The source reported too many requests', diagnostics) };
+    case 'ffmpeg':
+      // The merge of video and audio needs ffmpeg on the tool PATH (KURA_TOOL_PATH); the worker words this as "tool not installed".
+      return { kind: 'error', error: new AdapterError('BINARY_NOT_CONFIGURED', 'ffmpeg is not available to yt-dlp', diagnostics) };
     case 'bot_check':
       return { kind: 'error', error: new AdapterError('AUTH_REQUIRED', 'The source asks for proof that no bot is calling', diagnostics, context.hasLogin ? YOUTUBE_TEXT.botCheckWithLogin : YOUTUBE_TEXT.botCheck) };
     case 'members':

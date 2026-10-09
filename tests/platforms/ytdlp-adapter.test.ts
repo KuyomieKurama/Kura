@@ -450,6 +450,18 @@ describe('failures and entry states, from the error output of the real yt-dlp', 
     expect(error.untrustedDiagnostics).toContain('something nobody has seen');
   });
 
+  it('reports a missing ffmpeg as a tool that is not installed, not as a broken video', async () => {
+    const stderr = 'ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error\n';
+    const { adapter, tool } = await setup({ videos: { [watch(ID)]: await videoMetadata('ytdlp-youtube-video-h264.json', ID) } });
+    const [post] = (await discover(adapter, CHANNEL_URL)).filter((candidate) => candidate.platformPostId === ID);
+    const manifest = await resolve(adapter, post!);
+    await tool.control({ videos: { [watch(ID)]: await videoMetadata('ytdlp-youtube-video-h264.json', ID) }, downloads: { [watch(ID)]: { exitCode: 1, stderr } } });
+    const error = await failureCode(adapter.stage!(manifest.assets[0]!, {
+      ...jobContext, post: post!, policy: { preset: 'BEST_AVAILABLE' }, limits: { maxBytes: 1024 * 1024 }, workspace: await testWorkspace()
+    }));
+    expect(error.code).toBe('BINARY_NOT_CONFIGURED');
+  });
+
   it('does not let a warning line decide anything', async () => {
     const { adapter } = await setup({ lists: { [CHANNEL_URL]: { stderr: 'WARNING: [youtube] Sign in to confirm you are not a bot\n', exitCode: 1 } } });
     expect((await failureCode(discover(adapter, CHANNEL_URL))).code).toBe('PROCESS_FAILED');
