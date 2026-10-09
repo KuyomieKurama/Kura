@@ -80,6 +80,8 @@ export interface AssetRecord {
   blobObjectId: string | null;
   handoverState: HandoverState;
   transferId: string | null;
+  /** Why the asset failed, as recorded by markAssetFailed (null for other states and in handover queries). */
+  errorCode: string | null;
 }
 
 export interface StoredAssetFacts {
@@ -111,10 +113,11 @@ interface AssetRow {
   blob_object_id: string | null;
   handover_state: HandoverState;
   transfer_id: string | null;
+  error_code?: string | null;
 }
 
 const ASSET_COLUMNS = `id, asset_index, source_asset_id, original_name, media_type, state, attempts, byte_size,
-  sha256, sha1, blob_object_id, handover_state, transfer_id`;
+  sha256, sha1, blob_object_id, handover_state, transfer_id, error_code`;
 
 function toAsset(row: AssetRow): AssetRecord {
   return {
@@ -130,7 +133,8 @@ function toAsset(row: AssetRow): AssetRecord {
     sha1: row.sha1,
     blobObjectId: row.blob_object_id,
     handoverState: row.handover_state,
-    transferId: row.transfer_id
+    transferId: row.transfer_id,
+    errorCode: row.error_code ?? null
   };
 }
 

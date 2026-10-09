@@ -64,6 +64,8 @@ export class Worker implements WorkerLifecycle {
       workDir: downloads.workDir,
       maxAssetBytes: downloads.maxAssetBytes,
       instagramMaxPostsPerRun: downloads.instagramMaxPostsPerRun,
+      patreonMaxPostsPerRun: downloads.patreonMaxPostsPerRun,
+      pixivMaxPostsPerRun: downloads.pixivMaxPostsPerRun,
       directUrl: dependencies.directUrl ?? { approvals: approveNothing },
       logger
     });

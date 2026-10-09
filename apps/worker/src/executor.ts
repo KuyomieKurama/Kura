@@ -3,10 +3,12 @@ import { rm } from 'node:fs/promises';
 import {
   AdapterError,
   createRunWorkspace,
+  isCredentialPlatform,
   selectSource,
   stageByteStream,
   toPersistableAsset,
   type AdapterCandidate,
+  type CredentialPlatform,
   type AssetManifest,
   type QualityPreset,
   type ResolvedAsset,
@@ -27,12 +29,10 @@ import type { Pool } from 'pg';
 import { EGRESS_NOT_CONFIRMED, loadKillSwitches, type AdapterCatalog } from './catalog.js';
 import { importStagedFile } from './blob-import.js';
 import {
-  INSTAGRAM_COOKIES_EXPIRED_MESSAGE,
-  INSTAGRAM_COOKIES_MISSING_MESSAGE,
-  INSTAGRAM_COOKIES_UNREADABLE_MESSAGE,
-  InstagramCredentials,
-  isSpecificInstagramAuthMessage,
-  writeCookiesFile
+  CREDENTIAL_MESSAGES,
+  isSpecificAuthMessage,
+  PlatformCredentials,
+  writeRunCredentials
 } from './credentials.js';
 import { classifyFailure, sourceGoneDisposition, stopsWholeRun, type Disposition } from './failure.js';
 import type { ImmichHandover } from './handover.js';
@@ -79,10 +79,10 @@ export type ExecutionOutcome =
 
 /** What a run did with the owner's stored platform credentials; read when the run ends. */
 interface RunAccess {
-  /** The target is an Instagram address, so the owner's cookies are relevant. */
-  instagram: boolean;
-  /** Cookies were decrypted and handed to the tool for this run. */
-  cookiesUsed: boolean;
+  /** The platform of the target if it can have a stored login (Instagram, Patreon, Pixiv, YouTube), else undefined. */
+  platform: CredentialPlatform | undefined;
+  /** The stored login was decrypted and handed to the tool for this run. */
+  used: boolean;
 }
 
 /** What stopped a post early: the whole run must stop (login needed, throttled, quota full, aborted). */
@@ -110,17 +110,17 @@ interface PostOutcome {
  */
 export class JobExecutor {
   private readonly preset: QualityPreset;
-  private readonly instagramCredentials: InstagramCredentials;
+  private readonly credentials: PlatformCredentials;
 
   constructor(private readonly deps: ExecutorDependencies) {
     this.preset = deps.preset ?? 'BEST_AVAILABLE';
-    this.instagramCredentials = new InstagramCredentials(deps.pool, deps.clock, deps.secretKey);
+    this.credentials = new PlatformCredentials(deps.pool, deps.clock, deps.secretKey);
   }
 
   async execute(lease: JobLease, signal: AbortSignal): Promise<ExecutionOutcome> {
     const { history, logger } = this.deps;
     const stats = emptyStats();
-    const access: RunAccess = { instagram: false, cookiesUsed: false };
+    const access: RunAccess = { platform: undefined, used: false };
     let runId: string | undefined;
     try {
       const subscription = await this.deps.subscriptions.getSubscription(lease.userId, lease.subscriptionId);
@@ -176,7 +176,7 @@ export class JobExecutor {
     await history.updateRun(runId, { platform: target.sourceType, adapterId, adapterVersion });
     await subscriptions.setTargetState(lease.userId, lease.subscriptionId, 'valid', sourceUrl);
 
-    // The cookie file exists only while this run needs it: it is removed in the finally block, together with
+    // The credentials file exists only while this run needs it: it is removed in the finally block, together with
     // the private directory it lives in.
     const credentials = await this.provideCredentials(lease, candidate, access);
     try {
@@ -267,8 +267,9 @@ export class JobExecutor {
   }
 
   /**
-   * Instagram targets get the owner's stored cookies as a file in a private directory of their own. Other
-   * platforms get nothing. The returned dispose() removes the file and the directory and never throws.
+   * Targets of a platform with stored logins get the owner's login as a file in a private directory of its own:
+   * cookies for Instagram, Patreon and YouTube, a gallery-dl configuration with the token for Pixiv. Other targets
+   * get nothing. The returned dispose() removes the file and the directory and never throws.
    */
   private async provideCredentials(
     lease: JobLease,
@@ -276,22 +277,23 @@ export class JobExecutor {
     access: RunAccess
   ): Promise<{ value?: RunCredentials; dispose: () => Promise<void> }> {
     const nothing = { dispose: async () => undefined };
-    if (candidate.target.sourceType !== 'instagram') return nothing;
-    access.instagram = true;
+    const platform = candidate.target.sourceType;
+    if (!isCredentialPlatform(platform)) return nothing;
+    access.platform = platform;
 
-    const cookies = await this.instagramCredentials.load(lease.userId);
-    if (cookies.status === 'none') return nothing;
-    if (cookies.status === 'unreadable') throw new RunStop(unreadableCookiesDisposition());
+    const stored = await this.credentials.load(lease.userId, platform);
+    if (stored.status === 'none') return nothing;
+    if (stored.status === 'unreadable') throw new RunStop(unreadableCredentialsDisposition(platform));
 
     const directory = await createRunWorkspace(this.deps.workDir);
     const dispose = async () => {
       await directory.dispose().catch(() => this.deps.logger.error('could not remove the private credentials directory', { runId: lease.runId }));
     };
     try {
-      const cookiesFilePath = await writeCookiesFile(directory.rootDir, cookies.netscapeText);
-      access.cookiesUsed = true;
-      await this.instagramCredentials.recordUse(lease.userId);
-      return { value: { cookiesFilePath }, dispose };
+      const value = await writeRunCredentials(platform, directory.rootDir, stored.secret);
+      access.used = true;
+      await this.credentials.recordUse(lease.userId, platform);
+      return { value, dispose };
     } catch (error) {
       await dispose();
       throw error;
@@ -299,32 +301,33 @@ export class JobExecutor {
   }
 
   /**
-   * Records how stored cookies fared and words the Instagram login problem for the user: with cookies they are
-   * expired, without cookies they are missing. The adapter's precise sentences (private profile, checkpoint) are
-   * kept; the code and the retry rules stay as classified.
+   * Records how a stored login fared and words the login problem for the user: with a stored login it is expired,
+   * without one it is missing. The adapter's precise sentences (private profile, security check) are kept; the code
+   * and the retry rules stay as classified.
    */
-  private async settleInstagramAccess(
+  private async settleCredentialAccess(
     lease: JobLease,
     access: RunAccess,
     problem: { disposition: Disposition; partial: boolean } | undefined
   ): Promise<{ disposition: Disposition; partial: boolean } | undefined> {
-    if (!access.instagram) return problem;
+    const { platform } = access;
+    if (!platform) return problem;
     try {
       if (!problem) {
-        if (access.cookiesUsed) await this.instagramCredentials.recordResult(lease.userId, 'ok');
+        if (access.used) await this.credentials.recordResult(lease.userId, platform, 'ok');
         return problem;
       }
       const { disposition } = problem;
       if (disposition.code === 'CREDENTIALS_UNREADABLE') {
-        await this.instagramCredentials.recordResult(lease.userId, 'auth_required');
+        await this.credentials.recordResult(lease.userId, platform, 'auth_required');
       } else if (disposition.code === 'AUTH_REQUIRED') {
-        if (access.cookiesUsed) await this.instagramCredentials.recordResult(lease.userId, 'auth_required');
-        if (isSpecificInstagramAuthMessage(disposition.message)) return problem;
-        const message = access.cookiesUsed ? INSTAGRAM_COOKIES_EXPIRED_MESSAGE : INSTAGRAM_COOKIES_MISSING_MESSAGE;
-        return { ...problem, disposition: { ...disposition, message } };
+        if (access.used) await this.credentials.recordResult(lease.userId, platform, 'auth_required');
+        if (isSpecificAuthMessage(disposition.message)) return problem;
+        const messages = CREDENTIAL_MESSAGES[platform];
+        return { ...problem, disposition: { ...disposition, message: access.used ? messages.expired : messages.missing } };
       }
     } catch (error) {
-      this.deps.logger.error('could not record the result of the stored cookies', { runId: lease.runId, error: error instanceof Error ? error.name : 'unknown' });
+      this.deps.logger.error('could not record the result of the stored login', { runId: lease.runId, error: error instanceof Error ? error.name : 'unknown' });
     }
     return problem;
   }
@@ -413,6 +416,16 @@ export class JobExecutor {
         const record = records.find((candidateRecord) => candidateRecord.sourceAssetId === asset.sourceAssetId);
         if (!record || record.state === 'stored') continue; // finished assets are never downloaded again
         this.throwIfAborted(signal);
+        if (asset.unavailable) {
+          // Known to be impossible to fetch (embedded video of another site, locked post, file type). It is recorded
+          // as failed with its reason, once as a problem of the run; later runs repeat nothing and only keep the record.
+          await history.markAssetFailed(record.id, asset.unavailable.code, asset.unavailable.message);
+          if (record.errorCode !== asset.unavailable.code) {
+            stats.assetsFailed += 1;
+            failure ??= { runState: 'failed', code: asset.unavailable.code, message: asset.unavailable.message, retryable: false };
+          }
+          continue;
+        }
         try {
           await this.storeAsset({ lease, runId, adapter: candidate, post, asset, record, workspace, stats, signal, credentials });
         } catch (error) {
@@ -496,6 +509,8 @@ export class JobExecutor {
     stats.bytesStored += imported.byteSize;
     await history.updateRun(runId, { state: 'downloading', stats });
 
+    // Immich takes photos and videos; a file Kura generated itself (the ugoira timing) stays in Kura.
+    if (staged.mediaType === 'application/json') return;
     await this.handOver(record.id, {
       userId: lease.userId,
       objectId: imported.objectId,
@@ -547,10 +562,10 @@ export class JobExecutor {
     runId: string | undefined,
     stats: RunStats,
     outcomeOfSync: { disposition: Disposition; partial: boolean } | undefined,
-    access: RunAccess = { instagram: false, cookiesUsed: false }
+    access: RunAccess = { platform: undefined, used: false }
   ): Promise<ExecutionOutcome> {
     const { history, queue, subscriptions, logger } = this.deps;
-    const problem = await this.settleInstagramAccess(lease, access, outcomeOfSync);
+    const problem = await this.settleCredentialAccess(lease, access, outcomeOfSync);
     try {
       if (!problem) {
         if (runId) await history.updateRun(runId, { state: 'stored', stats, errorCode: null, errorMessage: null, finished: true });
@@ -627,11 +642,11 @@ export class JobExecutor {
   }
 }
 
-function unreadableCookiesDisposition(): Disposition {
+function unreadableCredentialsDisposition(platform: CredentialPlatform): Disposition {
   return {
     runState: 'waiting_auth',
     code: 'CREDENTIALS_UNREADABLE',
-    message: INSTAGRAM_COOKIES_UNREADABLE_MESSAGE,
+    message: CREDENTIAL_MESSAGES[platform].unreadable,
     retryable: false,
     pauseSubscription: true
   };

@@ -51,6 +51,9 @@ interface CatalogOptions {
   maxAssetBytes: number;
   /** Posts per Instagram profile run; absent = the adapter's default. */
   instagramMaxPostsPerRun?: number;
+  /** Posts per Patreon creator run, and per Pixiv artist run; absent = the adapter's default. */
+  patreonMaxPostsPerRun?: number;
+  pixivMaxPostsPerRun?: number;
   directUrl: DirectUrlSettings;
   logger: Logger;
   /** Additional environment variables per tool. Tests only (the fake tools log through them). */
@@ -119,7 +122,9 @@ export class AdapterCatalog {
         binary,
         workRoot: workDir,
         extraEnv: environmentFor(this.options.toolEnvironment?.galleryDl),
-        instagramMaxPostsPerRun: this.options.instagramMaxPostsPerRun
+        instagramMaxPostsPerRun: this.options.instagramMaxPostsPerRun,
+        patreonMaxPostsPerRun: this.options.patreonMaxPostsPerRun,
+        pixivMaxPostsPerRun: this.options.pixivMaxPostsPerRun
       })));
     availability.push(await this.registerCli(registry, 'yt-dlp', tools.ytDlp, (binary) =>
       YtDlpAdapter.create({ binary, workRoot: workDir, extraEnv: environmentFor(this.options.toolEnvironment?.ytDlp) })));
