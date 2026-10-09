@@ -3,7 +3,7 @@ import { classifyFailure, stopsWholeRun } from '../../apps/worker/src/failure.js
 import { AdapterError } from '../../packages/adapters/src/index.js';
 
 describe('worker disposition of the Instagram failure codes', () => {
-  it('maps AUTH_REQUIRED to waiting_auth and pauses the subscription (never \"no new posts\")', () => {
+  it('maps AUTH_REQUIRED to waiting_auth and pauses the subscription (never "no new posts")', () => {
     const disposition = classifyFailure(new AdapterError('AUTH_REQUIRED', 'login required'));
     expect(disposition).toMatchObject({ runState: 'waiting_auth', code: 'AUTH_REQUIRED', retryable: false, pauseSubscription: true });
     expect(stopsWholeRun(disposition)).toBe(true);

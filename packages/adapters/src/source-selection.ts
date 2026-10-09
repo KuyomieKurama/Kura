@@ -33,6 +33,13 @@ export function selectSource(registry: AdapterRegistry, url: string): AdapterCan
   const platform = lookup.candidates.find((candidate) => candidate.target.sourceType !== 'direct_media');
   if (platform) return platform;
 
+  // An adapter the administrator switched off would have accepted the URL: say that, not "broken" (for
+  // example an Instagram profile when gallery-dl is off and yt-dlp still calls instagram:user broken).
+  if (lookup.disabled.length > 0) throwDisabled(lookup.disabled);
+  // An adapter that recognised the platform and explains in its own words why it refuses this address
+  // (for example Instagram stories) is more helpful than a general answer.
+  const explained = lookup.rejections.find((error) => error.userMessage !== undefined);
+  if (explained) throw explained;
   const broken = lookup.rejections.find((error) => error.code === 'TARGET_BROKEN');
   if (broken) throw broken;
   const invalid = lookup.rejections.find((error) => error.code === 'TARGET_INVALID');
@@ -42,14 +49,15 @@ export function selectSource(registry: AdapterRegistry, url: string): AdapterCan
   const direct = lookup.candidates[0];
   if (direct && !knownPlatform) return direct;
 
-  if (lookup.disabled.length > 0) {
-    const names = lookup.disabled.map((entry) => `${entry.adapterId} ${entry.adapterVersion}`).join(', ');
-    throw new AdapterError('ADAPTER_DISABLED', `All adapters for this URL are disabled (${names})`);
-  }
   if (knownPlatform) {
     throw new AdapterError('TARGET_UNSUPPORTED', 'This kind of address on a known platform is not supported (for example a profile, channel or playlist)');
   }
   throw new AdapterError('TARGET_UNSUPPORTED', 'No registered adapter accepts this URL');
+}
+
+function throwDisabled(disabled: readonly { adapterId: string; adapterVersion: string }[]): never {
+  const names = disabled.map((entry) => `${entry.adapterId} ${entry.adapterVersion}`).join(', ');
+  throw new AdapterError('ADAPTER_DISABLED', `All adapters for this URL are disabled (${names})`);
 }
 
 /**

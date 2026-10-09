@@ -33,7 +33,7 @@ describe('source validation, adapters, run-now, history and kill switches (API o
     it.each([
       ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { platform: 'youtube', platformLabel: 'YouTube', adapter: { id: 'yt-dlp' }, capabilities: { videos: true, images: false, creatorFeed: false, authKind: 'none' } }],
       ['https://www.pixiv.net/en/artworks/98765?x=1', { platform: 'pixiv', canonicalUrl: 'https://www.pixiv.net/artworks/98765', adapter: { id: 'gallery-dl' }, capabilities: { images: true, videos: false } }],
-      ['https://www.instagram.com/p/Cabc12345/', { platform: 'instagram', adapter: { id: 'gallery-dl' } }],
+      ['https://www.instagram.com/p/Cabc12345/', { platform: 'instagram', adapter: { id: 'gallery-dl' }, capabilities: { creatorFeed: true, videos: true, images: true, authKind: 'cookies', authLabel: 'Cookies' } }],
       ['https://www.patreon.com/posts/own-post-123456', { platform: 'patreon', adapter: { id: 'gallery-dl' } }],
       ['https://media.example.test/files/pic.jpg', { platform: 'direct_media', platformLabel: 'Direkte Medien-URL', adapter: { id: 'direct-url', availability: 'available' }, runnable: true, capabilities: { images: true, videos: true } }]
     ])('recognises %s', async (url, expected) => {
@@ -46,7 +46,9 @@ describe('source validation, adapters, run-now, history and kill switches (API o
     it.each([
       ['https://www.youtube.com/playlist?list=PL12345', 'TARGET_UNSUPPORTED', /keinem Adapter unterstützt/],
       ['https://www.pornhub.com/view_video.php?viewkey=abc', 'TARGET_UNSUPPORTED', /keinem Adapter unterstützt/],
-      ['https://www.instagram.com/someprofile/', 'TARGET_BROKEN', /bekanntermaßen defekt/],
+      ['https://www.instagram.com/stories/someprofile/', 'TARGET_UNSUPPORTED', /Stories sind zurzeit nicht unterstützt/],
+      ['https://www.instagram.com/someprofile/highlights/', 'TARGET_UNSUPPORTED', /Highlights sind zurzeit nicht unterstützt/],
+      ['https://www.instagram.com/explore/', 'TARGET_UNSUPPORTED', /kein Profil, kein Beitrag und kein Reel/],
       ['http://media.example.test/pic.jpg', 'TARGET_INVALID', /nur https-Adressen/],
       ['https://user:secret@media.example.test/pic.jpg', 'TARGET_INVALID', /nur https-Adressen/],
       ['ftp://media.example.test/pic.jpg', 'TARGET_INVALID', /nur https-Adressen/]

@@ -50,6 +50,9 @@ const egressNotConfirmed = fail(
   'Externe Werkzeuge gesperrt: Egress-Schutz nicht bestätigt. Der Administrator muss die Netzwerksperre für den Worker einrichten und bestätigen.'
 );
 
+/** Codes for which the adapter's own German sentence may replace the general text. */
+const USER_MESSAGE_CODES: ReadonlySet<AdapterErrorCode> = new Set(['AUTH_REQUIRED', 'RATE_LIMITED', 'TARGET_NOT_FOUND', 'TARGET_UNSUPPORTED', 'TARGET_INVALID']);
+
 const targetNotFound = fail(
   'TARGET_NOT_FOUND',
   'Das Ziel wurde nicht gefunden, zum Beispiel ein Profil, das nicht existiert, oder ein gelöschter Beitrag. Bereits archivierte Dateien bleiben erhalten.'
@@ -129,7 +132,7 @@ export function classifyFailure(error: unknown): Disposition {
   const general = byAdapterCode[error.code];
   // A fixed German sentence of the adapter (for example "this profile is private") is more precise than the
   // general text. It replaces the text only; it never changes what happens to the run.
-  if (error.userMessage && (error.code === 'AUTH_REQUIRED' || error.code === 'RATE_LIMITED' || error.code === 'TARGET_NOT_FOUND')) {
+  if (error.userMessage && USER_MESSAGE_CODES.has(error.code)) {
     return { ...general, message: error.userMessage };
   }
 

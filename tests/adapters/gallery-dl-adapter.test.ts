@@ -7,9 +7,11 @@ import {
   deliverAssets,
   GalleryDlAdapter,
   YtDlpAdapter,
+  capabilitiesForSourceType,
   type AssetManifest,
   type DownloadContext,
-  type SourcePost
+  type SourcePost,
+  type SourceType
 } from '../../packages/adapters/src/index.js';
 import { fakeGalleryDl, fakeYtDlp, pixivListing, youtubeInfo, type FakeGalleryDlConfig, type FakeTool } from './fake-tools.js';
 import { JPEG_BYTES, PNG_BYTES, tempDir, testWorkspace } from './helpers.js';
@@ -47,13 +49,18 @@ async function resolve(adapter: GalleryDlAdapter, url = PIXIV_URL): Promise<{ po
 }
 
 describe('GalleryDlAdapter basics', () => {
-  it('declares single image posts only; videos and feeds stay absent', async () => {
+  it('declares what it can do per platform: Instagram feeds, videos and cookies; Pixiv and Patreon stay single posts', async () => {
     const { adapter } = await setup();
     expect(adapter.capabilities()).toMatchObject({
       adapterId: 'gallery-dl', adapterVersion: '1.32.2', sourceTypes: ['pixiv', 'instagram', 'patreon'], single_post: true,
-      creator_feed: false, pagination: false, resume: false, images: true, videos: false, page_snapshot: false,
-      quality_variants: false, auth_kind: 'none', presets: ['BEST_AVAILABLE', 'SOURCE_BYTES']
+      creator_feed: true, pagination: true, resume: false, images: true, videos: true, page_snapshot: false,
+      quality_variants: false, auth_kind: 'cookies', presets: ['BEST_AVAILABLE', 'SOURCE_BYTES']
     });
+    const forType = (sourceType: SourceType) => capabilitiesForSourceType(adapter.capabilities(), sourceType);
+    expect(forType('instagram')).toMatchObject({ single_post: true, creator_feed: true, pagination: true, images: true, videos: true, auth_kind: 'cookies' });
+    for (const sourceType of ['pixiv', 'patreon'] as const) {
+      expect(forType(sourceType)).toMatchObject({ single_post: true, creator_feed: false, pagination: false, images: true, videos: false, auth_kind: 'none' });
+    }
   });
 
   it('refuses a mismatching hash, an unparsable version and a version below an administrator floor', async () => {
@@ -91,7 +98,6 @@ describe('GalleryDlAdapter basics', () => {
 
   it.each([
     ['a Pixiv user page', 'https://www.pixiv.net/users/12345'],
-    ['an Instagram profile', 'https://www.instagram.com/owntest/'],
     ['a Patreon creator page', 'https://www.patreon.com/owntest'],
     ['a look-alike host', 'https://www.pixiv.net.evil.example.test/artworks/98765'],
     ['an unlisted site', 'https://example.test/artworks/98765']
@@ -271,7 +277,7 @@ describe('deliverAssets: completion per asset', () => {
     expect(delivery.completion).toBe('partially_completed');
     expect(delivery.outcomes.map((outcome) => `${outcome.assetIndex}:${outcome.status}`)).toEqual(['0:staged', '1:staged', '2:failed', '3:staged', '4:staged']);
     const failed = delivery.outcomes[2]!;
-    expect(failed).toMatchObject({ status: 'failed', errorCode: 'PROCESS_FAILED', sourceAssetId: 'file-2' });
+    expect(failed).toMatchObject({ status: 'failed', errorCode: 'RATE_LIMITED', sourceAssetId: 'file-2' }); // the fake prints a 429
     expect(JSON.stringify(failed)).not.toContain('429'); // tool text never becomes part of the outcome
     expect(await readdir(workspace.mediaDir)).toEqual(['item-0000.jpg', 'item-0001.jpg', 'item-0003.jpg', 'item-0004.jpg']);
     expect((await tool.calls()).filter((args) => args.includes('--range'))).toHaveLength(5);
@@ -285,7 +291,7 @@ describe('deliverAssets: completion per asset', () => {
     expect(result).toMatchObject({ schemaVersion: 1, jobId: 'job-7', leaseGeneration: 3, adapterId: 'gallery-dl', discoveryComplete: true });
     expect(result.items.map((item) => item.relativePath)).toEqual(['media/item-0000.jpg', 'media/item-0001.jpg', 'media/item-0003.jpg', 'media/item-0004.jpg']);
     expect(result.items[0]).toMatchObject({ sourcePostId: '98765', sourceAssetId: 'file-0', metadata: { creatorId: '12345', index: 0 } });
-    expect(result.errors).toEqual([{ sourceAssetId: 'file-2', code: 'PROCESS_FAILED', message: expect.any(String) }]);
+    expect(result.errors).toEqual([{ sourceAssetId: 'file-2', code: 'RATE_LIMITED', message: expect.any(String) }]);
   });
 
   it('reports "complete" only when every asset is staged and the enumeration was clean', async () => {

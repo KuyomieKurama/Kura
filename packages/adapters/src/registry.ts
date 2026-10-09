@@ -141,11 +141,11 @@ export class AdapterRegistry {
     const { candidates, disabled, rejections } = this.lookup(url);
     const first = candidates[0];
     if (first) return first;
-    const broken = rejections.find((error) => error.code === 'TARGET_BROKEN');
-    if (broken) throw broken;
     if (disabled.length > 0) {
       throw new AdapterError('ADAPTER_DISABLED', `All adapters for this URL are disabled (${disabled.map((entry) => `${entry.adapterId} ${entry.adapterVersion}`).join(', ')})`);
     }
+    const broken = rejections.find((error) => error.code === 'TARGET_BROKEN');
+    if (broken) throw broken;
     throw new AdapterError('TARGET_UNSUPPORTED', 'No registered adapter accepts this URL');
   }
 }

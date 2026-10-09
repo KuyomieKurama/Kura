@@ -1,9 +1,9 @@
 import { Prohibit, ProhibitInset } from '@phosphor-icons/react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { api, type AdapterInfo, type KillSwitch } from './api.js';
+import { api, type AdapterCapabilities, type AdapterInfo, type KillSwitch } from './api.js';
 import { errorMessage } from './error-message.js';
 import { labels } from './labels.js';
-import { CapabilityTags } from './SourceCheck.js';
+import { CapabilityTags, describeCapabilities } from './SourceCheck.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { Chip } from './ui/Chip.js';
@@ -100,6 +100,26 @@ function KillSwitches({ adapters }: { adapters: AdapterInfo[] }) {
   );
 }
 
+/**
+ * One adapter can serve platforms with different abilities (gallery-dl: Instagram profiles yes, Pixiv profiles
+ * no). If the API reports capabilities per source type and they differ, each source type gets its own list.
+ */
+function AdapterCapabilityTags({ adapter }: { adapter: AdapterInfo }) {
+  const perType = adapter.sourceTypes.filter((type): type is typeof type & { capabilities: AdapterCapabilities } => type.capabilities !== undefined);
+  const lists = perType.map((type) => describeCapabilities(type.capabilities).join('|'));
+  if (perType.length < 2 || new Set(lists).size < 2) return <CapabilityTags capabilities={adapter.capabilities} />;
+  return (
+    <>
+      {perType.map((type) => (
+        <div key={type.id}>
+          <strong>{type.label}</strong>
+          <CapabilityTags capabilities={type.capabilities} />
+        </div>
+      ))}
+    </>
+  );
+}
+
 /** Which adapters exist, what they can do and whether the worker can run them. Loaded when opened. */
 export function AdaptersPanel({ isAdmin }: { isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
@@ -138,7 +158,7 @@ export function AdaptersPanel({ isAdmin }: { isAdmin: boolean }) {
         </span>
       )
     },
-    { key: 'capabilities', header: 'Fähigkeiten', render: (adapter) => <CapabilityTags capabilities={adapter.capabilities} /> }
+    { key: 'capabilities', header: 'Fähigkeiten', render: (adapter) => <AdapterCapabilityTags adapter={adapter} /> }
   ];
 
   return (

@@ -73,11 +73,14 @@ export class CliTool {
     return result.untrustedStdout.split('\n')[0]!.trim();
   }
 
-  /** Runs a metadata command; stdout is returned for defensive parsing. */
-  async runMetadata(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
+  /**
+   * Runs a metadata command; stdout is returned for defensive parsing. `timeoutMs` replaces the configured
+   * timeout for listings that are slow by design (a profile read at a polite request rate).
+   */
+  async runMetadata(args: readonly string[], signal?: AbortSignal, timeoutMs?: number): Promise<ProcessResult> {
     this.assertUsable();
     return this.runInTemporaryWorkspace(args, {
-      timeoutMs: this.options.metadataTimeoutMs ?? DEFAULT_METADATA_TIMEOUT_MS,
+      timeoutMs: timeoutMs ?? this.options.metadataTimeoutMs ?? DEFAULT_METADATA_TIMEOUT_MS,
       maxStdoutBytes: MAX_METADATA_STDOUT_BYTES,
       maxStderrBytes: MAX_STDERR_BYTES,
       maxTempBytes: MAX_METADATA_TEMP_BYTES
@@ -90,13 +93,16 @@ export class CliTool {
    * `buildArgs` receives the scratch directory (also the tool's cwd). The
    * scratch directory is removed whether or not the run succeeded, so a
    * failed asset leaves no partial data behind for the next one.
+   * `interpretFailure` may turn a failed run into a more precise error than PROCESS_FAILED (login needed,
+   * throttled ...); it only ever sees the result of this one process.
    */
   async stageOneFile(
     workspace: RunWorkspace,
     assetIndex: number,
     maxFileBytes: number,
     buildArgs: (scratchDir: string) => string[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    interpretFailure?: (result: ProcessResult) => AdapterError
   ): Promise<StagedFile> {
     this.assertUsable();
     const scratchDir = await workspace.createScratchDir();
@@ -116,6 +122,7 @@ export class CliTool {
           maxTempBytes: await workspace.usedBytes() + maxFileBytes * 2 + DOWNLOAD_TEMP_HEADROOM_BYTES
         }
       });
+      if (result.exitCode !== 0 && interpretFailure) throw interpretFailure(result);
       assertToolSucceeded(result, 'downloading');
       return await adoptToolOutput(scratchDir, workspace, assetIndex, maxFileBytes);
     } finally {

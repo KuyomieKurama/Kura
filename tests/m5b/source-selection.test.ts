@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AdapterError,
+  AdapterRegistry,
   GalleryDlAdapter,
   YtDlpAdapter,
   createTargetRecognizer,
@@ -38,8 +39,23 @@ describe('selectSource', () => {
     expect(codeOf(() => selectSource(recognizer, 'https://www.patreon.com/someone'))).toBe('TARGET_UNSUPPORTED');
   });
 
+  it('sends an Instagram profile to gallery-dl as a feed, never to yt-dlp', () => {
+    const { adapter, target } = selectSource(recognizer, 'https://www.instagram.com/someprofile/');
+    expect(adapter.capabilities().adapterId).toBe('gallery-dl');
+    expect(target).toMatchObject({ sourceType: 'instagram', kind: 'creator_feed', platformId: 'someprofile' });
+  });
+
   it('reports a known broken target instead of falling back to a direct download', () => {
-    expect(codeOf(() => selectSource(recognizer, 'https://www.instagram.com/someprofile/'))).toBe('TARGET_BROKEN');
+    // Only yt-dlp is looking at the profile here: its instagram:user extractor is broken (plan 04, section 2).
+    const onlyYtDlp = new AdapterRegistry();
+    onlyYtDlp.register(YtDlpAdapter.forTargetValidationOnly());
+    expect(codeOf(() => selectSource(onlyYtDlp, 'https://www.instagram.com/someprofile/'))).toBe('TARGET_BROKEN');
+  });
+
+  it('says "disabled" and not "broken" when the administrator switched gallery-dl off', () => {
+    const switched = createTargetRecognizer();
+    switched.disable({ adapterId: 'gallery-dl', reason: 'maintenance' });
+    expect(codeOf(() => selectSource(switched, 'https://www.instagram.com/someprofile/'))).toBe('ADAPTER_DISABLED');
   });
 
   it('reports invalid URLs as invalid', () => {

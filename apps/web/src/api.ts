@@ -123,7 +123,7 @@ export type SourceValidation =
   }
   | { supported: false; code: string; message: string; notices: string[] };
 export type AdapterInfo = {
-  id: string; label: string; version: string | null; sourceTypes: { id: string; label: string }[];
+  id: string; label: string; version: string | null; sourceTypes: { id: string; label: string; capabilities?: AdapterCapabilities }[];
   capabilities: AdapterCapabilities; availability: Availability; reasonCode: string | null; message: string | null;
   checkedAt: string | null; disabledByAdministrator: boolean;
 };

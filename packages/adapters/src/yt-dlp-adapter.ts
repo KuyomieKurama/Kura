@@ -14,6 +14,7 @@ import {
   positiveInteger,
   type CliToolOptions
 } from './cli-support.js';
+import { INSTAGRAM_RESERVED_PATHS } from './instagram-target.js';
 import { extensionForMediaType, mediaTypeForExtension } from './media.js';
 import { parseHttpsTarget } from './target-url.js';
 import type {
@@ -266,8 +267,9 @@ export class YtDlpAdapter implements SourceAdapter {
       if (!INSTAGRAM_ID.test(id)) throw new AdapterError('TARGET_INVALID', 'Instagram post id has an unexpected format');
       return this.targetOf('instagram', `https://www.instagram.com/${kind}/${id}/`, id);
     }
-    if (segments.length === 1) {
+    if (segments.length === 1 && !INSTAGRAM_RESERVED_PATHS.has(segments[0]!.toLowerCase())) {
       // yt-dlp's supported-sites list marks the instagram:user extractor as broken (plan 04, section 2).
+      // Profiles are served by gallery-dl; this answer only appears where gallery-dl is not in the picture.
       throw new AdapterError('TARGET_BROKEN', 'Instagram profiles are not supported: yt-dlp marks instagram:user as broken');
     }
     throw new AdapterError('TARGET_UNSUPPORTED', 'Only single Instagram posts and reels are supported');

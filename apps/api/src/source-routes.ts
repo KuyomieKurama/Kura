@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import {
   AdapterError,
+  capabilitiesForSourceType,
   createTargetRecognizer,
   selectSource,
   type AdapterCapabilities,
@@ -45,11 +46,15 @@ const AUTH_LABELS: Record<AdapterCapabilities['auth_kind'], string> = {
   login: 'Benutzername und Passwort'
 };
 
-/** German text for what an adapter refuses. Written here, never taken from adapters or tools. */
+/**
+ * German text for what an adapter refuses. Written here, never taken from tools. An adapter may add a more
+ * precise sentence of its own (AdapterError.userMessage, fixed text written by Kura, never tool output); it
+ * replaces the text of the same code below.
+ */
 const REJECTION_MESSAGES: Partial<Record<string, string>> = {
   TARGET_INVALID: 'Die Adresse ist ungültig. Erlaubt sind nur https-Adressen ohne Zugangsdaten.',
-  TARGET_UNSUPPORTED: 'Diese Adresse wird von keinem Adapter unterstützt. Zurzeit gehen einzelne Beiträge von YouTube, Instagram, Pixiv und Patreon sowie direkte Medien-URLs (Bilder und Videos).',
-  TARGET_BROKEN: 'Für diese Art von Adresse (zum Beispiel Instagram-Profile) ist die Unterstützung zurzeit bekanntermaßen defekt.',
+  TARGET_UNSUPPORTED: 'Diese Adresse wird von keinem Adapter unterstützt. Zurzeit gehen einzelne Beiträge von YouTube, Pixiv und Patreon, bei Instagram Profile, einzelne Beiträge (Fotos, Karussells) und einzelne Reels sowie direkte Medien-URLs (Bilder und Videos).',
+  TARGET_BROKEN: 'Für diese Art von Adresse ist die Unterstützung zurzeit bekanntermaßen defekt.',
   ADAPTER_DISABLED: 'Der zuständige Adapter wurde vom Administrator abgeschaltet.'
 };
 
@@ -115,6 +120,11 @@ function toKillSwitch(row: KillSwitchRow): KillSwitch {
     ...(row.source_type === null ? {} : { sourceType: row.source_type }),
     reason: row.reason
   };
+}
+
+/** The capabilities for one source type; the adapter-wide values are the union over all of its source types. */
+function presentCapabilitiesFor(capabilities: AdapterCapabilities, sourceType: SourceType) {
+  return presentCapabilities(capabilitiesForSourceType(capabilities, sourceType));
 }
 
 function presentCapabilities(capabilities: AdapterCapabilities) {
@@ -194,8 +204,19 @@ export function registerSourceRoutes(input: {
       const notices: string[] = [];
       if (availability === 'unavailable') notices.push(unavailableMessage(capabilities.adapterId, row?.reason_code ?? null));
       if (availability === 'unknown') notices.push('Der Worker hat noch nicht gemeldet, ob das benötigte Werkzeug verfügbar ist.');
-      if (!capabilities.creator_feed) notices.push('Es wird genau dieser eine Beitrag geladen, kein ganzer Kanal und keine Playlist.');
-      if (capabilities.auth_kind === 'none' && target.sourceType !== 'direct_media') notices.push('Anmeldedaten für die Quelle können noch nicht hinterlegt werden; Quellen, die eine Anmeldung verlangen, schlagen fehl.');
+      const forTarget = capabilitiesForSourceType(capabilities, target.sourceType);
+      if (target.kind === 'creator_feed') {
+        notices.push('Es werden die neuesten Beiträge dieses Profils geladen, je Lauf nur eine begrenzte Anzahl. Ältere Beiträge werden nicht nachgeladen.');
+      } else {
+        notices.push('Es wird genau dieser eine Beitrag geladen, kein ganzer Kanal und keine Playlist.');
+      }
+      if (forTarget.auth_kind === 'none' && target.sourceType !== 'direct_media') notices.push('Anmeldedaten für die Quelle können noch nicht hinterlegt werden; Quellen, die eine Anmeldung verlangen, schlagen fehl.');
+      if (forTarget.auth_kind === 'cookies') {
+        // Slice IG-B adds the place to store the cookies; until then the notice must not promise it.
+        notices.push(target.kind === 'creator_feed'
+          ? 'Instagram-Profile lassen sich in der Praxis nur mit angemeldeter Sitzung (Cookies) abrufen. Cookies können in dieser Version noch nicht hinterlegt werden; bis dahin schlägt der Abruf fehl und das Abonnement wird pausiert.'
+          : 'Instagram verlangt oft auch für einzelne Beiträge und Reels eine angemeldete Sitzung (Cookies). Cookies können in dieser Version noch nicht hinterlegt werden; ohne Anmeldung schlägt der Abruf dann fehl.');
+      }
       return {
         supported: true as const,
         canonicalUrl: target.canonicalUrl,
@@ -208,7 +229,7 @@ export function registerSourceRoutes(input: {
           availability,
           version: row?.adapter_version ?? null
         },
-        capabilities: presentCapabilities(capabilities),
+        capabilities: presentCapabilitiesFor(capabilities, target.sourceType),
         runnable: availability !== 'unavailable',
         notices
       };
@@ -217,7 +238,7 @@ export function registerSourceRoutes(input: {
       return {
         supported: false as const,
         code: error.code,
-        message: REJECTION_MESSAGES[error.code] ?? REJECTION_MESSAGES.TARGET_UNSUPPORTED!,
+        message: error.userMessage ?? REJECTION_MESSAGES[error.code] ?? REJECTION_MESSAGES.TARGET_UNSUPPORTED!,
         notices: [] as string[]
       };
     }
@@ -234,7 +255,7 @@ export function registerSourceRoutes(input: {
           id: capabilities.adapterId,
           label: ADAPTER_LABELS[capabilities.adapterId] ?? capabilities.adapterId,
           version: row?.adapter_version ?? null,
-          sourceTypes: capabilities.sourceTypes.map((type) => ({ id: type, label: PLATFORM_LABELS[type] })),
+          sourceTypes: capabilities.sourceTypes.map((type) => ({ id: type, label: PLATFORM_LABELS[type], capabilities: presentCapabilitiesFor(capabilities, type) })),
           capabilities: presentCapabilities(capabilities),
           availability,
           reasonCode: row?.reason_code ?? null,
