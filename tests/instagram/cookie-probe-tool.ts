@@ -34,7 +34,8 @@ const path = require('node:path');
 const childProcess = require('node:child_process');
 const args = process.argv.slice(2);
 if (!args.includes('--version')) {
-  const at = args.indexOf('-C');
+  // -C: cookies for gallery-dl; -c: gallery-dl configuration (Pixiv token); --cookies: yt-dlp.
+  const at = [args.indexOf('-C'), args.indexOf('-c'), args.indexOf('--cookies')].find((index) => index >= 0) ?? -1;
   let record = { cookies: false };
   if (at >= 0) {
     const file = args[at + 1];
