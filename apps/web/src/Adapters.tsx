@@ -1,11 +1,16 @@
+import { Prohibit, ProhibitInset } from '@phosphor-icons/react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, type AdapterInfo, type KillSwitch } from './api.js';
-import { describeCapabilities } from './SourceCheck.js';
-import { availabilityLabels } from './history-labels.js';
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Die Anfrage konnte nicht verarbeitet werden.';
-}
+import { errorMessage } from './error-message.js';
+import { labels } from './labels.js';
+import { CapabilityTags } from './SourceCheck.js';
+import { Banner } from './ui/Banner.js';
+import { Button } from './ui/Button.js';
+import { Chip } from './ui/Chip.js';
+import { DataTable, type Column } from './ui/DataTable.js';
+import { Field } from './ui/Field.js';
+import { SkeletonRows } from './ui/Skeleton.js';
+import { StatusChip } from './ui/StatusChip.js';
 
 function KillSwitches({ adapters }: { adapters: AdapterInfo[] }) {
   const [switches, setSwitches] = useState<KillSwitch[]>([]);
@@ -48,23 +53,50 @@ function KillSwitches({ adapters }: { adapters: AdapterInfo[] }) {
     }
   }
 
-  return <section aria-label="Abschaltungen">
-    <h4>Adapter abschalten (Administrator)</h4>
-    <p>Ein abgeschalteter Adapter nimmt keine neuen Aufträge an. Andere Quellen laufen weiter.</p>
-    {switches.length === 0 ? <p>Es ist nichts abgeschaltet.</p> : <ul>{switches.map((entry) => <li key={entry.id}>
-      <strong>{entry.adapterId}</strong>{entry.adapterVersion ? ` Version ${entry.adapterVersion}` : ' alle Versionen'}{entry.sourceType ? `, Quelltyp ${entry.sourceType}` : ''}: {entry.reason}
-      <button type="button" className="secondary" onClick={() => void lift(entry.id)}>Aufheben</button>
-    </li>)}</ul>}
-    <form onSubmit={add} aria-label="Adapter abschalten">
-      <label>Adapter
-        <select name="adapterId">{adapters.map((adapter) => <option key={adapter.id} value={adapter.id}>{adapter.label}</option>)}</select>
-      </label>
-      <label>Version (leer = alle)<input name="adapterVersion" maxLength={64} /></label>
-      <label>Grund<input name="reason" maxLength={500} required /></label>
-      <button>Abschalten</button>
-    </form>
-    {message && <p>{message}</p>}
-  </section>;
+  const columns: Column<KillSwitch>[] = [
+    { key: 'adapter', header: 'Adapter', render: (entry) => entry.adapterId, mono: true },
+    {
+      key: 'scope',
+      header: 'Gilt für',
+      render: (entry) => `${entry.adapterVersion ? `Version ${entry.adapterVersion}` : 'alle Versionen'}${entry.sourceType ? `, Quelltyp ${entry.sourceType}` : ''}`
+    },
+    { key: 'reason', header: 'Grund', render: (entry) => entry.reason },
+    {
+      key: 'actions',
+      header: labels.userActionsColumn,
+      actions: true,
+      render: (entry) => <Button variant="ghost" onClick={() => void lift(entry.id)}>Aufheben</Button>
+    }
+  ];
+
+  return (
+    <section className="section adapters-admin" aria-label="Abschaltungen">
+      <h3>Adapter abschalten (Administrator)</h3>
+      <p className="muted">Ein abgeschalteter Adapter nimmt keine neuen Aufträge an. Andere Quellen laufen weiter.</p>
+      {switches.length === 0
+        ? <p>Es ist nichts abgeschaltet.</p>
+        : <DataTable label="Abgeschaltete Adapter" columns={columns} rows={switches} rowKey={(entry) => entry.id} />}
+      <form onSubmit={add} aria-label="Adapter abschalten" className="form-grid">
+        <Field label="Adapter">
+          {(control) => (
+            <select {...control} name="adapterId">
+              {adapters.map((adapter) => <option key={adapter.id} value={adapter.id}>{adapter.label}</option>)}
+            </select>
+          )}
+        </Field>
+        <Field label="Version (leer = alle)">
+          {(control) => <input {...control} name="adapterVersion" maxLength={64} className="input-mono" />}
+        </Field>
+        <Field label="Grund" wide>
+          {(control) => <input {...control} name="reason" maxLength={500} required />}
+        </Field>
+        <div className="form-actions form-wide">
+          <Button variant="danger" type="submit" icon={Prohibit}>Abschalten</Button>
+        </div>
+      </form>
+      {message && <Banner tone="danger">{message}</Banner>}
+    </section>
+  );
 }
 
 /** Which adapters exist, what they can do and whether the worker can run them. Loaded when opened. */
@@ -82,17 +114,41 @@ export function AdaptersPanel({ isAdmin }: { isAdmin: boolean }) {
     return () => { active = false; };
   }, [open]);
 
-  return <details onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}>
-    <summary>Unterstützte Quellen und Adapter</summary>
-    {message && <p>{message}</p>}
-    {open && adapters === null && !message && <p>Wird abgerufen …</p>}
-    {adapters && <ul>{adapters.map((adapter) => <li key={adapter.id}>
-      <strong>{adapter.label}</strong>: {availabilityLabels[adapter.availability]}{adapter.version ? ` (Version ${adapter.version})` : ''}
-      {adapter.disabledByAdministrator ? ' · vom Administrator abgeschaltet' : ''}
-      <br />Quellen: {adapter.sourceTypes.map((type) => type.label).join(', ')}
-      <br />Fähigkeiten: {describeCapabilities(adapter.capabilities).join(' · ')}
-      {adapter.message && <><br /><span className="error">{adapter.message}</span></>}
-    </li>)}</ul>}
-    {adapters && isAdmin && <KillSwitches adapters={adapters} />}
-  </details>;
+  const columns: Column<AdapterInfo>[] = [
+    {
+      key: 'adapter',
+      header: 'Adapter',
+      render: (adapter) => (
+        <>
+          <strong>{adapter.label}</strong>
+          {adapter.message && <span className="cell-note">{adapter.message}</span>}
+        </>
+      )
+    },
+    { key: 'version', header: 'Version', render: (adapter) => adapter.version ?? labels.unknown, mono: true },
+    { key: 'sources', header: 'Quellen', render: (adapter) => adapter.sourceTypes.map((type) => type.label).join(', ') },
+    {
+      key: 'availability',
+      header: 'Werkzeug',
+      render: (adapter) => (
+        <span className="chip-group">
+          <StatusChip domain="availability" status={adapter.availability} />
+          {adapter.disabledByAdministrator && <Chip tone="danger" icon={ProhibitInset}>Vom Administrator abgeschaltet</Chip>}
+        </span>
+      )
+    },
+    { key: 'capabilities', header: 'Fähigkeiten', render: (adapter) => <CapabilityTags capabilities={adapter.capabilities} /> }
+  ];
+
+  return (
+    <details className="disclosure" onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}>
+      <summary>Unterstützte Quellen und Adapter</summary>
+      <div className="disclosure-body">
+        {message && <Banner tone="danger">{message}</Banner>}
+        {open && adapters === null && !message && <SkeletonRows count={2} />}
+        {adapters && <DataTable label="Adapter" columns={columns} rows={adapters} rowKey={(adapter) => adapter.id} />}
+        {adapters && isAdmin && <KillSwitches adapters={adapters} />}
+      </div>
+    </details>
+  );
 }

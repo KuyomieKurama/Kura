@@ -1,3 +1,4 @@
+import { CalendarCheck, FloppyDisk } from '@phosphor-icons/react';
 import { type FormEvent, useMemo, useState } from 'react';
 import { api, type PreviewEntry, type Schedule, type ScheduleRule } from './api.js';
 import {
@@ -10,13 +11,14 @@ import {
   splitInterval,
   timeZoneOptions
 } from './cron-presets.js';
+import { errorMessage } from './error-message.js';
+import { labels } from './labels.js';
 import { describePreviewEntry } from './schedule-format.js';
+import { Banner } from './ui/Banner.js';
+import { Button } from './ui/Button.js';
+import { Field } from './ui/Field.js';
 
 type Mode = CronPreset | 'interval' | 'once';
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Die Anfrage konnte nicht verarbeitet werden.';
-}
 
 function initialState(schedule?: Schedule) {
   const rule = schedule?.rule;
@@ -103,69 +105,111 @@ export function ScheduleForm({ subscriptionId, schedule, onSaved, onCancel }: {
   }
 
   const isCron = state.mode !== 'interval' && state.mode !== 'once';
-  return <form onSubmit={submit} aria-label={schedule ? 'Zeitplan bearbeiten' : 'Zeitplan anlegen'}>
-    <label>Art des Zeitplans
-      <select value={state.mode} onChange={(event) => set('mode', event.target.value as Mode)}>
-        <option value="daily">Täglich</option>
-        <option value="weekdays">Montag bis Freitag</option>
-        <option value="weekly">Wöchentlich</option>
-        <option value="hourly">Stündlich</option>
-        <option value="interval">Festes Intervall</option>
-        <option value="once">Einmalig</option>
-        <option value="custom">Eigener Cron-Ausdruck</option>
-      </select>
-    </label>
-    {(state.mode === 'daily' || state.mode === 'weekdays' || state.mode === 'weekly') &&
-      <label>Uhrzeit<input type="time" value={state.time} onChange={(event) => set('time', event.target.value)} required /></label>}
-    {state.mode === 'weekly' &&
-      <label>Wochentag
-        <select value={state.weekday} onChange={(event) => set('weekday', event.target.value)}>
-          {WEEKDAYS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
-        </select>
-      </label>}
-    {state.mode === 'hourly' &&
-      <label>Minute der Stunde<input type="number" min="0" max="59" value={state.minute} onChange={(event) => set('minute', event.target.value)} required /></label>}
-    {state.mode === 'custom' && <>
-      <label>Cron-Ausdruck (fünf Felder)<input value={state.expression} onChange={(event) => set('expression', event.target.value)} spellCheck={false} required /></label>
-      <p>Minute Stunde Tag Monat Wochentag, zum Beispiel <code>30 2 * * 1-5</code>.</p>
-    </>}
-    {state.mode === 'interval' && <>
-      <label>Alle<input type="number" min="1" value={state.amount} onChange={(event) => set('amount', event.target.value)} required /></label>
-      <label>Einheit
-        <select value={state.unit} onChange={(event) => set('unit', event.target.value as IntervalUnit)}>
-          <option value="minutes">Minuten</option>
-          <option value="hours">Stunden</option>
-          <option value="days">Tage</option>
-        </select>
-      </label>
-      <p>Ein Intervall zählt die verstrichene Zeit und folgt keiner Zeitumstellung. Mindestens 1 Minute.</p>
-    </>}
-    {state.mode === 'once' &&
-      <label>Zeitpunkt (UTC)<input type="datetime-local" value={state.atUtc} onChange={(event) => set('atUtc', event.target.value)} required /></label>}
-    <label>Zeitzone
-      <select value={state.timeZone} onChange={(event) => set('timeZone', event.target.value)}>
-        {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
-      </select>
-    </label>
-    {isCron && <>
-      <label>Fehlende Uhrzeit bei Zeitumstellung
-        <select value={state.gapPolicy} onChange={(event) => set('gapPolicy', event.target.value as 'skip' | 'run_after_gap')}>
-          <option value="skip">Termin überspringen (Standard)</option>
-          <option value="run_after_gap">Direkt nach der Lücke ausführen</option>
-        </select>
-      </label>
-      <p>Im Frühjahr fehlt eine Stunde. Standardmäßig entfällt ein Termin in dieser Stunde; die Vorschau zeigt das an.</p>
-    </>}
-    <label>Startverzögerung zur Lastverteilung (Sekunden, 0 bis 3600)
-      <input type="number" min="0" max="3600" value={state.jitter} onChange={(event) => set('jitter', event.target.value)} required />
-    </label>
-    {error && <p className="form-error" role="alert">{error}</p>}
-    <button type="button" className="secondary" onClick={() => void showPreview()}>Vorschau der nächsten Läufe</button>
-    {preview && <section aria-label="Vorschau der nächsten Läufe">
-      <h4>Nächste Läufe</h4>
-      {preview.length === 0 ? <p>Diese Regel löst nicht mehr aus.</p> : <ol>{preview.map((entry, index) => <li key={index}>{describePreviewEntry(entry)}</li>)}</ol>}
-    </section>}
-    <button>Speichern</button>
-    <button type="button" className="secondary" onClick={onCancel}>Abbrechen</button>
-  </form>;
+  const takesTime = state.mode === 'daily' || state.mode === 'weekdays' || state.mode === 'weekly';
+  return (
+    <form onSubmit={submit} aria-label={schedule ? 'Zeitplan bearbeiten' : 'Zeitplan anlegen'} className="form-grid schedule-form">
+      <Field label="Art des Zeitplans">
+        {(control) => (
+          <select {...control} value={state.mode} onChange={(event) => set('mode', event.target.value as Mode)}>
+            <option value="daily">Täglich</option>
+            <option value="weekdays">Montag bis Freitag</option>
+            <option value="weekly">Wöchentlich</option>
+            <option value="hourly">Stündlich</option>
+            <option value="interval">Festes Intervall</option>
+            <option value="once">Einmalig</option>
+            <option value="custom">Eigener Cron-Ausdruck</option>
+          </select>
+        )}
+      </Field>
+      {takesTime && (
+        <Field label="Uhrzeit">
+          {(control) => <input {...control} type="time" value={state.time} onChange={(event) => set('time', event.target.value)} required />}
+        </Field>
+      )}
+      {state.mode === 'weekly' && (
+        <Field label="Wochentag">
+          {(control) => (
+            <select {...control} value={state.weekday} onChange={(event) => set('weekday', event.target.value)}>
+              {WEEKDAYS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
+            </select>
+          )}
+        </Field>
+      )}
+      {state.mode === 'hourly' && (
+        <Field label="Minute der Stunde">
+          {(control) => <input {...control} type="number" min="0" max="59" value={state.minute} onChange={(event) => set('minute', event.target.value)} required />}
+        </Field>
+      )}
+      {state.mode === 'custom' && (
+        <Field
+          label="Cron-Ausdruck (fünf Felder)"
+          wide
+          hint={<>Minute Stunde Tag Monat Wochentag, zum Beispiel <code>30 2 * * 1-5</code>.</>}
+        >
+          {(control) => <input {...control} className="input-mono" value={state.expression} onChange={(event) => set('expression', event.target.value)} spellCheck={false} required />}
+        </Field>
+      )}
+      {state.mode === 'interval' && (
+        <>
+          <Field label="Alle">
+            {(control) => <input {...control} type="number" min="1" value={state.amount} onChange={(event) => set('amount', event.target.value)} required />}
+          </Field>
+          <Field
+            label="Einheit"
+            hint="Ein Intervall zählt die verstrichene Zeit und folgt keiner Zeitumstellung. Mindestens 1 Minute."
+          >
+            {(control) => (
+              <select {...control} value={state.unit} onChange={(event) => set('unit', event.target.value as IntervalUnit)}>
+                <option value="minutes">Minuten</option>
+                <option value="hours">Stunden</option>
+                <option value="days">Tage</option>
+              </select>
+            )}
+          </Field>
+        </>
+      )}
+      {state.mode === 'once' && (
+        <Field label="Zeitpunkt (UTC)">
+          {(control) => <input {...control} type="datetime-local" value={state.atUtc} onChange={(event) => set('atUtc', event.target.value)} required />}
+        </Field>
+      )}
+      <Field label="Zeitzone">
+        {(control) => (
+          <select {...control} value={state.timeZone} onChange={(event) => set('timeZone', event.target.value)}>
+            {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+          </select>
+        )}
+      </Field>
+      {isCron && (
+        <Field
+          label="Fehlende Uhrzeit bei Zeitumstellung"
+          hint="Im Frühjahr fehlt eine Stunde. Standardmäßig entfällt ein Termin in dieser Stunde; die Vorschau zeigt das an."
+        >
+          {(control) => (
+            <select {...control} value={state.gapPolicy} onChange={(event) => set('gapPolicy', event.target.value as 'skip' | 'run_after_gap')}>
+              <option value="skip">Termin überspringen (Standard)</option>
+              <option value="run_after_gap">Direkt nach der Lücke ausführen</option>
+            </select>
+          )}
+        </Field>
+      )}
+      <Field label="Startverzögerung zur Lastverteilung (Sekunden, 0 bis 3600)">
+        {(control) => <input {...control} type="number" min="0" max="3600" value={state.jitter} onChange={(event) => set('jitter', event.target.value)} required />}
+      </Field>
+      {error && <div className="form-wide"><Banner tone="danger">{error}</Banner></div>}
+      <div className="form-actions form-wide">
+        <Button variant="primary" type="submit" icon={FloppyDisk}>{labels.save}</Button>
+        <Button icon={CalendarCheck} onClick={() => void showPreview()}>Vorschau der nächsten Läufe</Button>
+        <Button variant="ghost" onClick={onCancel}>{labels.cancel}</Button>
+      </div>
+      {preview && (
+        <section className="form-wide preview" aria-label="Vorschau der nächsten Läufe">
+          <h4>Nächste Läufe</h4>
+          {preview.length === 0
+            ? <p>Diese Regel löst nicht mehr aus.</p>
+            : <ol>{preview.map((entry, index) => <li key={index}>{describePreviewEntry(entry)}</li>)}</ol>}
+        </section>
+      )}
+    </form>
+  );
 }

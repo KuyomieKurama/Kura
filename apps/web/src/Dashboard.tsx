@@ -49,7 +49,7 @@ export function Dashboard({ health, status, checkedAt, onNavigate }: {
           </div>
           <div className="status-item">
             <dt>{labels.version}</dt>
-            <dd className="mono">{status?.version ?? labels.unknown}</dd>
+            <dd className="mono" title={status?.version}>{status?.version ?? labels.unknown}</dd>
           </div>
           <div className="status-item">
             <dt>{labels.databaseAvailable}</dt>
@@ -61,7 +61,7 @@ export function Dashboard({ health, status, checkedAt, onNavigate }: {
           </div>
           <div className="status-item">
             <dt>{labels.latestMigration}</dt>
-            <dd className="mono">{status?.migrations.latestVersion ?? labels.unknown}</dd>
+            <dd className="mono" title={status?.migrations.latestVersion ?? undefined}>{status?.migrations.latestVersion ?? labels.unknown}</dd>
           </div>
           <div className="status-item">
             <dt>{labels.lastUpdated}</dt>

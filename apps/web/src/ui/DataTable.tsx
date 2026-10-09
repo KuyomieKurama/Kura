@@ -42,7 +42,7 @@ export function DataTable<Row>({ label, columns, rows, rowKey }: {
             <tr key={rowKey(row)}>
               {columns.map((column) => (
                 <td key={column.key} className={cellClass(column)} data-label={column.actions ? undefined : column.header}>
-                  {column.render(row)}
+                  <div className="cell">{column.render(row)}</div>
                 </td>
               ))}
             </tr>

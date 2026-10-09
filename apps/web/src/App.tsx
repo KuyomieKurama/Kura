@@ -160,7 +160,7 @@ export function App() {
     >
       {view === 'dashboard' && <Dashboard health={health} status={status} checkedAt={checkedAt} onNavigate={(next) => setView(next as View)} />}
       {view === 'subscriptions' && <SubscriptionsPage isAdmin={isAdmin} />}
-      {view === 'history' && <HistoryPage />}
+      {view === 'history' && <HistoryPage onOpenSubscriptions={() => setView('subscriptions')} />}
       {view === 'limits' && isAdmin && <AdminLimitsPage />}
       {view === 'immich' && <ImmichPage isAdmin={isAdmin} />}
       {view === 'account' && (

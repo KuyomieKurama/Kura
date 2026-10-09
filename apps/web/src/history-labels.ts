@@ -63,6 +63,13 @@ export const platformLabels: Record<string, string> = {
   pornhub: 'Pornhub'
 };
 
+/** State of the check of a subscription's target address. */
+export const targetStateLabels = {
+  unvalidated: 'Noch nicht geprüft',
+  valid: 'Adresse erkannt und unterstützt',
+  invalid: 'Adresse wird nicht unterstützt'
+} as const;
+
 export const availabilityLabels = {
   available: 'Verfügbar',
   unavailable: 'Nicht verfügbar',

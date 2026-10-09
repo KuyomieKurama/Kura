@@ -128,6 +128,7 @@ async function main() {
     const shooter = (page, variant) => async (name) => {
       if (only && !only.has(name)) return;
       const file = `${name}-${variant.theme}-${variant.width}.png`;
+      await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({ path: resolve(outDirectory, file), fullPage: true });
       written.push(file);
     };
@@ -199,7 +200,7 @@ async function main() {
       await page.route('**/api/v1/subscriptions', async (route) => {
         if (route.request().method() !== 'GET') return route.continue();
         await new Promise((done) => setTimeout(done, 4000));
-        return route.continue();
+        return route.continue().catch(() => undefined);
       });
       await navigate(page, 'Übersicht');
       await navigate(page, 'Abonnements');
@@ -222,7 +223,8 @@ async function main() {
       await page.getByRole('heading', { name: 'Läufe' }).waitFor();
       await page.evaluate(() => document.fonts.ready);
       await shot('history');
-      for (const button of await page.getByRole('button', { name: /Dateien anzeigen/ }).all()) await button.click();
+      const expandable = await page.getByRole('button', { name: 'Dateien anzeigen' }).count();
+      for (let index = 0; index < expandable; index += 1) await page.getByRole('button', { name: 'Dateien anzeigen' }).first().click();
       await page.waitForTimeout(400);
       await shot('history-expanded');
 
@@ -232,7 +234,7 @@ async function main() {
       await navigate(page, 'Immich');
       await page.getByRole('heading', { name: 'Freigaben für private Immich-Endpunkte' }).waitFor();
       await shot('immich');
-      await page.getByLabel('Testdatei').setInputFiles({ name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('test') });
+      await page.getByLabel('Testdatei', { exact: true }).setInputFiles({ name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('test') });
       await page.getByRole('button', { name: 'Testdatei übertragen' }).click();
       await page.getByText('Testübertragung verifiziert.').waitFor();
       await shot('immich-transfer');

@@ -349,11 +349,16 @@ tbody tr:hover td {
 th.num,
 td.num {
   text-align: right;
+  white-space: nowrap;
 }
 
 td.actions {
   text-align: right;
   white-space: nowrap;
+}
+
+td .cell {
+  min-width: 0;
 }
 
 td.cell-mono {

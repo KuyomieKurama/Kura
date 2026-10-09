@@ -1,0 +1,190 @@
+/*
+ * The history ledger: every post is a row group. Source and time on the left, one segment per file in the middle,
+ * the verification stamp on the right. Expanding a row shows the per-file table.
+ */
+
+.ledger {
+  overflow: hidden;
+}
+
+.ledger-entry {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger-entry:last-child {
+  border-bottom: 0;
+}
+
+.ledger-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.ledger-source {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ledger-source p {
+  max-width: 100%;
+}
+
+.ledger-state {
+  min-width: 0;
+}
+
+.ledger-segments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The segmented bar: fully round container, 2px gaps, segments without a radius of their own. */
+.segments {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  max-width: 220px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-chip);
+}
+
+.segment {
+  flex: 1 1 0;
+  min-width: 2px;
+  background: var(--ink-muted);
+}
+
+.segment-ok {
+  background: var(--ok);
+}
+
+.segment-danger {
+  background: var(--danger);
+}
+
+.segment-warn {
+  background: var(--warn);
+}
+
+.segment-accent {
+  background: var(--accent);
+}
+
+/* Not started: hollow, so it is distinct from the filled states without colour. */
+.segment-neutral {
+  background: var(--surface);
+  outline: 1px solid var(--line-strong);
+  outline-offset: -1px;
+}
+
+.ledger-mark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+/* Verification stamp: outlined, no fill. Solid line when verified, dashed when not. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: var(--text-meta-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.stamp-verified {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.stamp-partial {
+  border-style: dashed;
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.stamp-none {
+  border-style: dashed;
+}
+
+.ledger-status {
+  margin-bottom: var(--space-3);
+}
+
+/* Expand and collapse: the only animation in the UI, 150ms, off for prefers-reduced-motion. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows var(--collapse-duration) ease-out, visibility 0s linear var(--collapse-duration);
+}
+
+.collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows var(--collapse-duration) ease-out, visibility 0s;
+}
+
+.collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+  overflow-clip-margin: 4px;
+}
+
+.collapse[data-open='true'] .collapse-inner {
+  padding-top: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse,
+  .collapse[data-open='true'] {
+    transition: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ledger-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ledger-state {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .ledger-mark {
+    align-items: flex-end;
+  }
+}
+
+@media (max-width: 639px) {
+  .ledger-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ledger-mark {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .ledger-head > .btn {
+    justify-self: start;
+  }
+}

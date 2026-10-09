@@ -58,7 +58,9 @@ it('checks an address without saving and shows platform, capabilities and the mi
 
   const result = await screen.findByLabelText('Ergebnis der Adressprüfung');
   expect(within(result).getByText(/Erkannt:/).closest('p')).toHaveTextContent('Erkannt: YouTube über yt-dlp (Videos)');
-  expect(within(result).getByText(/Fähigkeiten:/)).toHaveTextContent('Einzelner Beitrag · Kein ganzer Kanal, keine Playlist · Videos · Anmeldung: Keine Anmeldung');
+  const capabilities = within(within(result).getByText(/Fähigkeiten:/).parentElement!).getByRole('list', { name: 'Fähigkeiten' });
+  expect(within(capabilities).getAllByRole('listitem').map((item) => item.textContent))
+    .toEqual(['Einzelner Beitrag', 'Kein ganzer Kanal, keine Playlist', 'Videos', 'Anmeldung: Keine Anmeldung']);
   expect(within(result).getByText('Werkzeug: Nicht verfügbar')).toBeInTheDocument();
   expect(within(result).getByText(/nicht installiert oder nicht freigegeben/)).toBeInTheDocument();
   expect(JSON.parse(String(calls(fetch, 'POST', '/sources/validate')[0][1]?.body))).toEqual({ url: youtube.canonicalUrl });
@@ -201,7 +203,7 @@ it('lists the adapters and lets only administrators switch one off', async () =>
   details.open = true;
   fireEvent(details, new Event('toggle'));
   expect(await screen.findByText(/Nicht verfügbar/)).toBeInTheDocument();
-  expect(screen.getByText(/Quellen: YouTube/)).toBeInTheDocument();
+  expect(screen.getByRole('cell', { name: 'YouTube' })).toBeInTheDocument();
   expect(await screen.findByText('Es ist nichts abgeschaltet.')).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText('Grund'), { target: { value: 'Extraktor defekt' } });

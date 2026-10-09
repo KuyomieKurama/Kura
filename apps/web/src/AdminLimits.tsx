@@ -1,5 +1,14 @@
+import { ArrowsClockwise, FloppyDisk, Info } from '@phosphor-icons/react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type ApiError, type RuntimePolicyResponse, type User } from './api.js';
+import { labels } from './labels.js';
+import { Banner, type BannerTone } from './ui/Banner.js';
+import { Button } from './ui/Button.js';
+import { DataTable, type Column } from './ui/DataTable.js';
+import { Field } from './ui/Field.js';
+import { Glyph } from './ui/Glyph.js';
+import { PageHeader } from './ui/PageHeader.js';
+import { SkeletonRows } from './ui/Skeleton.js';
 
 type Field = { key: string; label: string; hint?: string; min?: number };
 
@@ -39,6 +48,7 @@ export function AdminLimitsPage() {
   const [overrides, setOverrides] = useState<Overrides>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [notice, setNotice] = useState('');
+  const [noticeTone, setNoticeTone] = useState<BannerTone>('danger');
   const [problems, setProblems] = useState<string[]>([]);
   const [stale, setStale] = useState(false);
 
@@ -52,6 +62,7 @@ export function AdminLimitsPage() {
       setStale(false);
       setProblems([]);
     } catch (cause) {
+      setNoticeTone('danger');
       setNotice(cause instanceof Error ? cause.message : 'Die Limits konnten nicht geladen werden.');
     }
   }
@@ -88,68 +99,146 @@ export function AdminLimitsPage() {
       setOverrides(next.overrides);
       setProblems([]);
       setStale(false);
+      setNoticeTone('ok');
       setNotice(`Limits gespeichert (Version ${saved.version}). Neue Einstellungen gelten für neue Starts; laufende Läufe werden nicht angetastet.`);
     } catch (cause) {
       const failure = cause as ApiError;
       setProblems(failure.problems ?? []);
       setStale(failure.status === 409);
+      setNoticeTone(failure.status === 409 ? 'warn' : 'danger');
       setNotice(failure.message);
     }
   }
 
-  if (!current) return <section><h2>Limits</h2>{notice ? <p className="form-error" role="alert">{notice}</p> : <p>Wird abgerufen …</p>}</section>;
+  if (!current) {
+    return (
+      <>
+        <PageHeader title={labels.limits} />
+        {notice ? <Banner tone="danger">{notice}</Banner> : <SkeletonRows count={4} />}
+      </>
+    );
+  }
 
   const enforced = new Set(current.enforced);
   const input = (field: Field, group: 'downloads' | 'workers' | 'retention') => {
     const isEnforced = enforced.has(`${group}.${field.key}`);
-    return <label key={field.key}>{field.label}
-      <input
-        name={field.key}
-        type="number"
-        min={field.min ?? 0}
-        value={values[field.key] ?? ''}
-        onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
-        required={group !== 'downloads'}
-      />
-      {field.hint && <small>{field.hint}</small>}
-      {!isEnforced && <small> Wird gespeichert, aber noch nicht durchgesetzt.</small>}
-    </label>;
+    const hint = field.hint || !isEnforced
+      ? (
+        <>
+          {field.hint && <span className="hint-line">{field.hint}</span>}
+          {!isEnforced && (
+            <span className="hint-line hint-notice">
+              <Glyph icon={Info} size={14} />
+              Wird gespeichert, aber noch nicht durchgesetzt.
+            </span>
+          )}
+        </>
+      )
+      : undefined;
+    return (
+      <Field key={field.key} label={field.label} hint={hint}>
+        {(control) => (
+          <input
+            {...control}
+            name={field.key}
+            type="number"
+            min={field.min ?? 0}
+            value={values[field.key] ?? ''}
+            onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
+            required={group !== 'downloads'}
+          />
+        )}
+      </Field>
+    );
   };
   const availableUsers = users.filter((user) => !overrides.some((entry) => entry.userId === user.id));
+  const userName = (userId: string) => users.find((user) => user.id === userId)?.display_name ?? userId;
 
-  return <section>
-    <h2>Limits</h2>
-    <p>Version {current.version}{current.updatedAt ? `, zuletzt geändert am ${new Date(current.updatedAt).toLocaleString('de-DE')}` : ' (Standardwerte, noch nie gespeichert)'}. Das niedrigste anwendbare Limit gewinnt. Eine abgesenkte Grenze verhindert nur neue Starts.</p>
-    <form onSubmit={submit} aria-label="Limits bearbeiten">
-      <h3>Ausführung</h3>
-      {DOWNLOAD_FIELDS.map((field) => input(field, 'downloads'))}
-      <h3>Begrenzung je Benutzer</h3>
-      {overrides.length === 0 && <p>Keine Ausnahmen: Es gilt das Limit je Benutzer von oben.</p>}
-      {overrides.map((entry) => <p key={entry.userId}>
-        {users.find((user) => user.id === entry.userId)?.display_name ?? entry.userId}:{' '}
+  const overrideColumns: Column<Overrides[number]>[] = [
+    { key: 'user', header: labels.userNameColumn, render: (entry) => userName(entry.userId) },
+    {
+      key: 'limit',
+      header: 'Gleichzeitige Läufe',
+      render: (entry) => (
         <input
-          aria-label={`Limit für ${users.find((user) => user.id === entry.userId)?.display_name ?? entry.userId}`}
+          aria-label={`Limit für ${userName(entry.userId)}`}
           type="number"
           min="0"
           value={entry.maxConcurrent}
           onChange={(event) => setOverrides(overrides.map((item) => item.userId === entry.userId ? { ...item, maxConcurrent: event.target.value } : item))}
         />
-        <button type="button" className="secondary" onClick={() => setOverrides(overrides.filter((item) => item.userId !== entry.userId))}>Ausnahme entfernen</button>
-      </p>)}
-      {availableUsers.length > 0 && <label>Ausnahme hinzufügen
-        <select value="" onChange={(event) => event.target.value && setOverrides([...overrides, { userId: event.target.value, maxConcurrent: '' }])}>
-          <option value="">Benutzer wählen …</option>
-          {availableUsers.map((user) => <option key={user.id} value={user.id}>{user.display_name}</option>)}
-        </select>
-      </label>}
-      <h3>Worker-Kapazität</h3>
-      {WORKER_FIELDS.map((field) => input(field, 'workers'))}
-      <h3>Aufbewahrung</h3>
-      {input({ key: 'finishedRunDays', label: 'Beendete Läufe aufbewahren (Tage, 1 bis 3650)', min: 1 }, 'retention')}
-      {problems.length > 0 && <ul role="alert" className="form-error">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>}
-      {notice && <p role={stale ? 'alert' : 'status'}>{notice}</p>}
-      {stale && <button type="button" onClick={() => void load()}>Aktuelle Version laden</button>}
-      <button>Limits speichern</button>
-    </form>
-  </section>;
+      )
+    },
+    {
+      key: 'actions',
+      header: labels.userActionsColumn,
+      actions: true,
+      render: (entry) => (
+        <Button variant="ghost" onClick={() => setOverrides(overrides.filter((item) => item.userId !== entry.userId))}>Ausnahme entfernen</Button>
+      )
+    }
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title={labels.limits}
+        lead={`Version ${current.version}${current.updatedAt ? `, zuletzt geändert am ${new Date(current.updatedAt).toLocaleString('de-DE')}` : ' (Standardwerte, noch nie gespeichert)'}. Das niedrigste anwendbare Limit gewinnt. Eine abgesenkte Grenze verhindert nur neue Starts.`}
+      />
+      <form onSubmit={submit} aria-label="Limits bearbeiten" className="limits-form">
+        <section className="section" aria-labelledby="limits-run-heading">
+          <h2 id="limits-run-heading">Ausführung</h2>
+          <div className="form-grid">{DOWNLOAD_FIELDS.map((field) => input(field, 'downloads'))}</div>
+        </section>
+
+        <section className="section" aria-labelledby="limits-user-heading">
+          <h2 id="limits-user-heading">Begrenzung je Benutzer</h2>
+          {overrides.length === 0
+            ? <p className="muted">Keine Ausnahmen: Es gilt das Limit je Benutzer von oben.</p>
+            : <DataTable label="Ausnahmen je Benutzer" columns={overrideColumns} rows={overrides} rowKey={(entry) => entry.userId} />}
+          {availableUsers.length > 0 && (
+            <div className="form-grid">
+              <Field label="Ausnahme hinzufügen">
+                {(control) => (
+                  <select
+                    {...control}
+                    value=""
+                    onChange={(event) => event.target.value && setOverrides([...overrides, { userId: event.target.value, maxConcurrent: '' }])}
+                  >
+                    <option value="">Benutzer wählen …</option>
+                    {availableUsers.map((user) => <option key={user.id} value={user.id}>{user.display_name}</option>)}
+                  </select>
+                )}
+              </Field>
+            </div>
+          )}
+        </section>
+
+        <section className="section" aria-labelledby="limits-worker-heading">
+          <h2 id="limits-worker-heading">Worker-Kapazität</h2>
+          <div className="form-grid">{WORKER_FIELDS.map((field) => input(field, 'workers'))}</div>
+        </section>
+
+        <section className="section" aria-labelledby="limits-retention-heading">
+          <h2 id="limits-retention-heading">Aufbewahrung</h2>
+          <div className="form-grid">
+            {input({ key: 'finishedRunDays', label: 'Beendete Läufe aufbewahren (Tage, 1 bis 3650)', min: 1 }, 'retention')}
+          </div>
+        </section>
+
+        {problems.length > 0
+          ? (
+            <Banner tone="danger">
+              <p>{notice}</p>
+              <ul>{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>
+            </Banner>
+          )
+          : notice && <Banner tone={noticeTone}>{notice}</Banner>}
+        <div className="form-actions">
+          <Button variant="primary" type="submit" icon={FloppyDisk}>Limits speichern</Button>
+          {stale && <Button icon={ArrowsClockwise} onClick={() => void load()}>Aktuelle Version laden</Button>}
+        </div>
+      </form>
+    </>
+  );
 }

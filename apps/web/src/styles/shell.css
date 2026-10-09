@@ -20,7 +20,7 @@
 
 .wordmark {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
   color: var(--ink);
   font-size: var(--text-section);
@@ -28,10 +28,32 @@
   letter-spacing: -0.01em;
 }
 
-.wordmark-kanji {
-  color: var(--accent);
-  font-family: var(--font-cjk);
-  font-weight: 500;
+/*
+ * The mark is plain geometry (a tile with three ledger lines), drawn with CSS boxes.
+ * It does not depend on a CJK font being installed.
+ */
+.wordmark-mark {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  align-self: center;
+  width: 1.1em;
+  height: 1.1em;
+  padding: 0.22em;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+}
+
+.wordmark-mark i {
+  display: block;
+  height: 2px;
+  border-radius: var(--radius-chip);
+  background: var(--accent-ink);
+}
+
+.wordmark-mark i:last-child {
+  width: 60%;
 }
 
 /* Sidebar (desktop) */

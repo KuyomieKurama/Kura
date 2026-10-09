@@ -10,7 +10,11 @@ export type NavItem = { view: string; label: string; icon: Icon };
 export function Wordmark() {
   return (
     <span className="wordmark">
-      <span className="wordmark-kanji" lang="ja" aria-hidden="true">蔵</span>
+      <span className="wordmark-mark" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
       <span>{labels.title}</span>
     </span>
   );

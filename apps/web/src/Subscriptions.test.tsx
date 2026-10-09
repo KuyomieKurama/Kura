@@ -145,7 +145,7 @@ it('previews the next runs and marks the skipped DST occurrence', async () => {
 
   const preview = await screen.findByRole('region', { name: 'Vorschau der nächsten Läufe' });
   expect(within(preview).getAllByRole('listitem')).toHaveLength(3);
-  expect(within(preview).getByText(/29\.03\.2026 02:30 \(Europe\/Berlin\) – entfällt: Die Uhrzeit existiert wegen der Zeitumstellung nicht/)).toBeInTheDocument();
+  expect(within(preview).getByText(/29\.03\.2026 02:30 \(Europe\/Berlin\), entfällt: Die Uhrzeit existiert wegen der Zeitumstellung nicht/)).toBeInTheDocument();
   expect(within(preview).getAllByText(/UTC\+01:00/)).toHaveLength(1);
   expect(within(preview).getAllByText(/UTC\+02:00/)).toHaveLength(1);
   const body = JSON.parse(String(calls(fetch, 'POST', '/schedules/preview')[0][1]?.body));

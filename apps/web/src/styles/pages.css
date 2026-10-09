@@ -1,0 +1,294 @@
+/* Subscriptions, schedules, adapters, limits and other page-specific layouts. */
+
+/* Subscription list: one panel, rows separated by 1px lines. */
+.sub-list {
+  overflow: hidden;
+}
+
+.sub-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.sub-row:last-child {
+  border-bottom: 0;
+}
+
+.sub-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.sub-main {
+  display: flex;
+  flex: 1 1 360px;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sub-main p {
+  max-width: 100%;
+}
+
+.sub-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+}
+
+.sub-facts p {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.form-panel {
+  padding: var(--space-5);
+}
+
+/* Details below a subscription (schedules, last runs) */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.detail-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.detail-block > .table-wrap,
+.detail-block > .skeleton-list {
+  align-self: stretch;
+}
+
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-list > li {
+  max-width: none;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.schedule-list > li:last-child {
+  border-bottom: 0;
+}
+
+.schedule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.schedule-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.schedule-form {
+  align-self: stretch;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface-sunken);
+}
+
+.preview {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.preview ol {
+  margin: var(--space-2) 0 0;
+}
+
+/* Result of "Adresse prüfen" */
+.check-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+
+.check-result ul:not(.tag-list) {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.check-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tool-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tool-ok svg {
+  color: var(--ok);
+}
+
+.tool-warn svg {
+  color: var(--warn);
+}
+
+/* Disclosure for adapters */
+.disclosure {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.disclosure > summary {
+  padding: var(--space-3) var(--space-4);
+  font-weight: 500;
+}
+
+.disclosure-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.adapters-admin {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.chip-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Two-line cell content */
+.cell-title,
+.cell-note {
+  display: block;
+}
+
+.cell-title {
+  font-weight: 500;
+}
+
+.cell-note {
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+}
+
+.cell-note-danger {
+  color: var(--danger);
+}
+
+td .chip + .cell-note {
+  margin-top: var(--space-1);
+}
+
+/* Cells with two lines are taller than 40px; the min height still applies. */
+td:has(.cell-note) {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.hash {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Limits form */
+.limits-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hint-line {
+  display: block;
+}
+
+.hint-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.limits-form .table-wrap input {
+  max-width: 160px;
+}
+
+.narrow .form-stack {
+  max-width: 400px;
+}
+
+/* Native disclosure inside table cells */
+.evidence {
+  margin-top: var(--space-1);
+}
+
+.evidence > summary {
+  color: var(--accent);
+  font-size: var(--text-meta);
+}
+
+.evidence-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  font-size: var(--text-meta);
+  white-space: normal;
+}
+
+.evidence-body ul {
+  margin: 0;
+}

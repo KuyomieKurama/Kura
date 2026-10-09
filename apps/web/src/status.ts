@@ -21,7 +21,7 @@ import {
   XCircle
 } from '@phosphor-icons/react';
 import { labels } from './labels.js';
-import { assetStateLabels, downloadStateLabels, postStateLabels, transferStateLabels } from './history-labels.js';
+import { assetStateLabels, availabilityLabels, downloadStateLabels, postStateLabels, targetStateLabels, transferStateLabels } from './history-labels.js';
 import { runStateLabels } from './schedule-format.js';
 
 /**
@@ -31,7 +31,7 @@ import { runStateLabels } from './schedule-format.js';
 export type Tone = 'ok' | 'warn' | 'danger' | 'neutral' | 'accent';
 
 /** Where a state comes from. The same key looks the same in every domain. */
-export type StatusDomain = 'download' | 'run' | 'post' | 'asset' | 'transfer' | 'user';
+export type StatusDomain = 'download' | 'run' | 'post' | 'asset' | 'transfer' | 'user' | 'target' | 'availability';
 
 type Appearance = { tone: Tone; icon: Icon };
 
@@ -61,6 +61,13 @@ const appearance: Record<string, Appearance> = {
   uploaded_unverified: { tone: 'warn', icon: UploadSimple },
   verified: { tone: 'ok', icon: SealCheck },
   mismatch: { tone: 'danger', icon: WarningCircle },
+  // Subscriptions, their target address and the tools behind adapters
+  unvalidated: { tone: 'neutral', icon: Question },
+  valid: { tone: 'ok', icon: CheckCircle },
+  invalid: { tone: 'danger', icon: WarningCircle },
+  available: { tone: 'ok', icon: CheckCircle },
+  unavailable: { tone: 'warn', icon: Warning },
+  unknown: { tone: 'neutral', icon: Question },
   // Users
   active: { tone: 'ok', icon: CheckCircle },
   blocked: { tone: 'danger', icon: Prohibit }
@@ -74,7 +81,9 @@ const labelTables: Record<StatusDomain, Record<string, string>> = {
   post: postStateLabels,
   asset: assetStateLabels,
   transfer: transferStateLabels,
-  user: { active: labels.active, blocked: labels.blocked }
+  user: { active: labels.active, blocked: labels.blocked },
+  target: targetStateLabels,
+  availability: availabilityLabels
 };
 
 export function describeStatus(domain: StatusDomain, status: string): Appearance & { label: string } {

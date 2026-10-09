@@ -35,10 +35,10 @@ export function describePreviewEntry(entry: PreviewEntry): string {
   const zone = `${entry.timeZone}, UTC${entry.utcOffset ?? ''}`;
   if (entry.scheduledForUtc) {
     const base = `${formatInstant(entry.scheduledForUtc, entry.timeZone)} (${zone})`;
-    return note ? `${base} – ${note}` : base;
+    return note ? `${base}, ${note}` : base;
   }
   const planned = entry.localPlanTime ? formatPlanTime(entry.localPlanTime) : 'unbekannter Termin';
-  return `${planned} (${entry.timeZone}) – ${note}`;
+  return `${planned} (${entry.timeZone}), ${note}`;
 }
 
 function describeInterval(seconds: number): string {
