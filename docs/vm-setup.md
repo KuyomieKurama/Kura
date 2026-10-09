@@ -49,7 +49,7 @@ worker needs on top of what the API needs:
 | --- | --- | --- |
 | `DATABASE_URL` | API, worker | PostgreSQL URL (host `kura-postgres` on `kura-net`). |
 | `KURA_STORAGE_BACKEND` | API (script) | Set `database`. See "Storage" below. |
-| `KURA_SECRET_KEY` | API, worker | Same base64 32-byte key in both (`openssl rand -base64 32`). Without it the worker cannot read the stored Immich API keys and every file ends as "Übergabe fehlgeschlagen". |
+| `KURA_SECRET_KEY` | API, worker | Same base64 32-byte key in both (`openssl rand -base64 32`). Without it the worker cannot read the stored Immich API keys and every file ends as "Übergabe fehlgeschlagen". The same key encrypts the Instagram cookies (see "Instagram access"); without it no cookies can be uploaded. |
 | `KURA_STORAGE_QUOTA_BYTES` | API, worker | Same per-user quota. |
 | `WORKER_*`, `KURA_WORK_DIR` | worker | Optional tuning; defaults are in `.env.example`. In the container `KURA_WORK_DIR` is `/var/lib/kura/staging` (not persistent; the biggest file must fit there twice). |
 | `KURA_YTDLP_PATH`, `KURA_YTDLP_SHA256`, `KURA_GALLERYDL_PATH`, `KURA_GALLERYDL_SHA256`, `KURA_TOOL_PATH` | worker | External tools; see "External tools" below. Path and hash only together. |
@@ -114,6 +114,26 @@ What the operator has to provide before setting it (Kura does not write firewall
    Only then add `KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED=true` to `~/.config/kura/kura.env` and run
    `kura-deploy.sh` again. A plain `podman restart` is not enough: Podman reads the env file when the container
    is created, so the container has to be recreated.
+
+## Instagram access
+
+Instagram profiles (and posts or reels that ask for a login) can only be fetched with the session of a logged-in
+account. Each Kura user stores the cookies of their own account; nothing is shared between users.
+
+- Prerequisites: `KURA_SECRET_KEY` is set in both containers (see the table above), gallery-dl is installed and the
+  egress barrier is confirmed (see below). Without the key the upload is refused with "SECRET_KEY_REQUIRED".
+- Storage: the cookies are kept in PostgreSQL (table `platform_credentials`) only as AES-256-GCM ciphertext, bound
+  to the user. API responses, logs and audit entries never contain them. Deleting them on the account page deletes
+  the row. Changing `KURA_SECRET_KEY` makes stored cookies unreadable; Instagram runs then stop with "bitte Cookies
+  neu hochladen" and the cookies have to be uploaded again (there is no key rotation yet).
+- Use during a run: the worker decrypts the cookies in memory, writes them to a file with mode 0600 in a private
+  directory (mode 0700) below `KURA_WORK_DIR`, hands the path to gallery-dl with `-C` and deletes the file and the
+  directory when the run ends, also after errors and aborts. If the worker is killed in the middle of a run, the
+  leftover directory is removed by the existing cleanup of abandoned run directories (older than 24 hours); the
+  container directory `KURA_WORK_DIR` is not persistent and not shared.
+- Account risk: Instagram can restrict accounts that fetch a lot or quickly. Use a dedicated account. Kura spaces its
+  requests and fetches at most `KURA_INSTAGRAM_MAX_POSTS_PER_RUN` posts per run.
+- Test steps for the operator are in the report `.claude/team/reports/IG-B-implementer.md`, section "Betrieb auf der VM".
 
 ## Limits of this setup
 
