@@ -81,7 +81,8 @@ export class Worker implements WorkerLifecycle {
       clock,
       logger,
       workDir: downloads.workDir,
-      maxAssetBytes: downloads.maxAssetBytes
+      maxAssetBytes: downloads.maxAssetBytes,
+      secretKey: downloads.secretKey
     });
     // Maintenance first: it checks the tools once, so the loop starts with the real adapter set.
     this.lifecycles.push(

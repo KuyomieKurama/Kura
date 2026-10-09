@@ -10,6 +10,7 @@ import {
   type AssetManifest,
   type QualityPreset,
   type ResolvedAsset,
+  type RunCredentials,
   type SourcePost,
   type StagedFile
 } from '@kura/adapters';
@@ -25,6 +26,13 @@ import {
 import type { Pool } from 'pg';
 import { EGRESS_NOT_CONFIRMED, loadKillSwitches, type AdapterCatalog } from './catalog.js';
 import { importStagedFile } from './blob-import.js';
+import {
+  INSTAGRAM_COOKIES_EXPIRED_MESSAGE,
+  INSTAGRAM_COOKIES_MISSING_MESSAGE,
+  INSTAGRAM_COOKIES_UNREADABLE_MESSAGE,
+  InstagramCredentials,
+  writeCookiesFile
+} from './credentials.js';
 import { classifyFailure, sourceGoneDisposition, stopsWholeRun, type Disposition } from './failure.js';
 import type { ImmichHandover } from './handover.js';
 import {
@@ -56,6 +64,8 @@ export interface ExecutorDependencies {
   /** Hard cap for one asset in bytes. */
   maxAssetBytes: number;
   preset?: QualityPreset;
+  /** KURA_SECRET_KEY, to decrypt stored platform cookies. Without it stored cookies are unreadable. */
+  secretKey?: Buffer;
 }
 
 /** Why the signal was aborted; the loop sets it as the abort reason. */
@@ -65,6 +75,14 @@ export type ExecutionOutcome =
   | { result: 'stored' }
   | { result: 'problem'; disposition: Disposition; partial: boolean; queue: 'retry_wait' | 'failed' | 'lease_lost' }
   | { result: 'lease_lost' };
+
+/** What a run did with the owner's stored platform credentials; read when the run ends. */
+interface RunAccess {
+  /** The target is an Instagram address, so the owner's cookies are relevant. */
+  instagram: boolean;
+  /** Cookies were decrypted and handed to the tool for this run. */
+  cookiesUsed: boolean;
+}
 
 /** What stopped a post early: the whole run must stop (login needed, throttled, quota full, aborted). */
 class RunStop extends Error {
@@ -91,14 +109,17 @@ interface PostOutcome {
  */
 export class JobExecutor {
   private readonly preset: QualityPreset;
+  private readonly instagramCredentials: InstagramCredentials;
 
   constructor(private readonly deps: ExecutorDependencies) {
     this.preset = deps.preset ?? 'BEST_AVAILABLE';
+    this.instagramCredentials = new InstagramCredentials(deps.pool, deps.clock, deps.secretKey);
   }
 
   async execute(lease: JobLease, signal: AbortSignal): Promise<ExecutionOutcome> {
     const { history, logger } = this.deps;
     const stats = emptyStats();
+    const access: RunAccess = { instagram: false, cookiesUsed: false };
     let runId: string | undefined;
     try {
       const subscription = await this.deps.subscriptions.getSubscription(lease.userId, lease.subscriptionId);
@@ -116,8 +137,8 @@ export class JobExecutor {
       if (subscription.status === 'paused') throw new RunStop(pausedDisposition());
       if (!sourceUrl) throw new AdapterError('TARGET_INVALID', 'The subscription has no target URL');
 
-      const problem = await this.syncTarget(lease, runId, sourceUrl, stats, signal);
-      return await this.conclude(lease, runId, stats, problem);
+      const problem = await this.syncTarget(lease, runId, sourceUrl, stats, signal, access);
+      return await this.conclude(lease, runId, stats, problem, access);
     } catch (error) {
       if (error instanceof LeaseLostError) return this.leaseLost(lease, runId, stats);
       if (error instanceof NotFoundError) {
@@ -125,12 +146,12 @@ export class JobExecutor {
         return this.conclude(lease, runId, stats, {
           disposition: { runState: 'failed', code: 'SUBSCRIPTION_GONE', message: 'Das Abonnement existiert nicht mehr.', retryable: false },
           partial: false
-        });
+        }, access);
       }
       const disposition = this.dispositionFor(error, signal);
       if (!(error instanceof RunStop) && !signal.aborted) logger.error('run failed', { runId: lease.runId, code: disposition.code });
       this.logUnexpected(lease, disposition, error);
-      return this.conclude(lease, runId, stats, { disposition, partial: stats.assetsStored > 0 });
+      return this.conclude(lease, runId, stats, { disposition, partial: stats.assetsStored > 0 }, access);
     }
   }
 
@@ -142,7 +163,8 @@ export class JobExecutor {
     runId: string,
     sourceUrl: string,
     stats: RunStats,
-    signal: AbortSignal
+    signal: AbortSignal,
+    access: RunAccess
   ): Promise<{ disposition: Disposition; partial: boolean } | undefined> {
     const { catalog, history, subscriptions } = this.deps;
     catalog.setKillSwitches(await loadKillSwitches(this.deps.pool));
@@ -152,7 +174,29 @@ export class JobExecutor {
     const { adapterId, adapterVersion } = adapter.capabilities();
     await history.updateRun(runId, { platform: target.sourceType, adapterId, adapterVersion });
     await subscriptions.setTargetState(lease.userId, lease.subscriptionId, 'valid', sourceUrl);
-    const jobContext = { jobId: lease.runId, leaseGeneration: lease.leaseGeneration, signal };
+
+    // The cookie file exists only while this run needs it: it is removed in the finally block, together with
+    // the private directory it lives in.
+    const credentials = await this.provideCredentials(lease, candidate, access);
+    try {
+      return await this.syncWithCredentials({ lease, runId, candidate, stats, signal, credentials: credentials.value });
+    } finally {
+      await credentials.dispose();
+    }
+  }
+
+  private async syncWithCredentials(input: {
+    lease: JobLease;
+    runId: string;
+    candidate: AdapterCandidate;
+    stats: RunStats;
+    signal: AbortSignal;
+    credentials?: RunCredentials;
+  }): Promise<{ disposition: Disposition; partial: boolean } | undefined> {
+    const { lease, runId, candidate, stats, signal, credentials } = input;
+    const { history } = this.deps;
+    const { adapter, target } = candidate;
+    const jobContext = { jobId: lease.runId, leaseGeneration: lease.leaseGeneration, signal, ...(credentials ? { credentials } : {}) };
 
     const summary = await adapter.probe({ ...jobContext, target });
     if (!summary.available) throw new RunStop(sourceGoneDisposition);
@@ -188,7 +232,7 @@ export class JobExecutor {
       this.throwIfAborted(signal);
       let outcome: PostOutcome;
       try {
-        outcome = await this.processPost({ lease, runId, candidate, post, stats, signal });
+        outcome = await this.processPost({ lease, runId, candidate, post, stats, signal, credentials });
       } catch (error) {
         if (error instanceof LeaseLostError || error instanceof RunStop) throw error;
         if (signal.aborted) throw error;
@@ -219,6 +263,68 @@ export class JobExecutor {
     await this.retryEarlierHandovers(lease.userId);
     if (firstFailure) return { disposition: firstFailure, partial: stats.assetsStored > 0 || outcomes.some((o) => o.status === 'partially_completed') };
     return undefined;
+  }
+
+  /**
+   * Instagram targets get the owner's stored cookies as a file in a private directory of their own. Other
+   * platforms get nothing. The returned dispose() removes the file and the directory and never throws.
+   */
+  private async provideCredentials(
+    lease: JobLease,
+    candidate: AdapterCandidate,
+    access: RunAccess
+  ): Promise<{ value?: RunCredentials; dispose: () => Promise<void> }> {
+    const nothing = { dispose: async () => undefined };
+    if (candidate.target.sourceType !== 'instagram') return nothing;
+    access.instagram = true;
+
+    const cookies = await this.instagramCredentials.load(lease.userId);
+    if (cookies.status === 'none') return nothing;
+    if (cookies.status === 'unreadable') throw new RunStop(unreadableCookiesDisposition());
+
+    const directory = await createRunWorkspace(this.deps.workDir);
+    const dispose = async () => {
+      await directory.dispose().catch(() => this.deps.logger.error('could not remove the private credentials directory', { runId: lease.runId }));
+    };
+    try {
+      const cookiesFilePath = await writeCookiesFile(directory.rootDir, cookies.netscapeText);
+      access.cookiesUsed = true;
+      await this.instagramCredentials.recordUse(lease.userId);
+      return { value: { cookiesFilePath }, dispose };
+    } catch (error) {
+      await dispose();
+      throw error;
+    }
+  }
+
+  /**
+   * Records how stored cookies fared and words the Instagram login problem for the user: with cookies they are
+   * expired, without cookies they are missing. The adapter's own sentences (private profile, checkpoint) are
+   * replaced by these two; the code and the retry rules stay as classified.
+   */
+  private async settleInstagramAccess(
+    lease: JobLease,
+    access: RunAccess,
+    problem: { disposition: Disposition; partial: boolean } | undefined
+  ): Promise<{ disposition: Disposition; partial: boolean } | undefined> {
+    if (!access.instagram) return problem;
+    try {
+      if (!problem) {
+        if (access.cookiesUsed) await this.instagramCredentials.recordResult(lease.userId, 'ok');
+        return problem;
+      }
+      const { disposition } = problem;
+      if (disposition.code === 'CREDENTIALS_UNREADABLE') {
+        await this.instagramCredentials.recordResult(lease.userId, 'auth_required');
+      } else if (disposition.code === 'AUTH_REQUIRED') {
+        if (access.cookiesUsed) await this.instagramCredentials.recordResult(lease.userId, 'auth_required');
+        const message = access.cookiesUsed ? INSTAGRAM_COOKIES_EXPIRED_MESSAGE : INSTAGRAM_COOKIES_MISSING_MESSAGE;
+        return { ...problem, disposition: { ...disposition, message } };
+      }
+    } catch (error) {
+      this.deps.logger.error('could not record the result of the stored cookies', { runId: lease.runId, error: error instanceof Error ? error.name : 'unknown' });
+    }
+    return problem;
   }
 
   /** The first adapter that can run the URL; a missing tool is reported as such, not as "unsupported". */
@@ -264,8 +370,9 @@ export class JobExecutor {
     post: SourcePost;
     stats: RunStats;
     signal: AbortSignal;
+    credentials?: RunCredentials;
   }): Promise<PostOutcome> {
-    const { lease, runId, candidate, post, stats, signal } = input;
+    const { lease, runId, candidate, post, stats, signal, credentials } = input;
     const { history, catalog } = this.deps;
     const { adapter } = candidate;
     const { adapterId, adapterVersion } = adapter.capabilities();
@@ -293,7 +400,7 @@ export class JobExecutor {
     }
 
     catalog.registry.assertEnabled(adapter, post.sourceType);
-    const manifest = await adapter.resolveAssets(post, { preset: this.preset }, { signal });
+    const manifest = await adapter.resolveAssets(post, { preset: this.preset }, { signal, ...(credentials ? { credentials } : {}) });
     const records = await history.upsertAssets(saved.id, lease.userId, manifest.assets.map(toPersistableAsset));
     await history.setPostState(saved.id, 'downloading', manifest.discoveryComplete);
 
@@ -305,7 +412,7 @@ export class JobExecutor {
         if (!record || record.state === 'stored') continue; // finished assets are never downloaded again
         this.throwIfAborted(signal);
         try {
-          await this.storeAsset({ lease, runId, adapter: candidate, post, asset, record, workspace, stats, signal });
+          await this.storeAsset({ lease, runId, adapter: candidate, post, asset, record, workspace, stats, signal, credentials });
         } catch (error) {
           if (error instanceof LeaseLostError || signal.aborted) throw error;
           const disposition = classifyFailure(error);
@@ -351,8 +458,9 @@ export class JobExecutor {
     workspace: Awaited<ReturnType<typeof createRunWorkspace>>;
     stats: RunStats;
     signal: AbortSignal;
+    credentials?: RunCredentials;
   }): Promise<void> {
-    const { lease, runId, post, asset, record, workspace, stats, signal } = input;
+    const { lease, runId, post, asset, record, workspace, stats, signal, credentials } = input;
     const { adapter } = input.adapter;
     const { history, blobstore } = this.deps;
     const context = {
@@ -361,7 +469,8 @@ export class JobExecutor {
       signal,
       post,
       policy: { preset: this.preset },
-      limits: { maxBytes: this.deps.maxAssetBytes }
+      limits: { maxBytes: this.deps.maxAssetBytes },
+      ...(credentials ? { credentials } : {})
     };
 
     await history.startAsset(record.id);
@@ -435,9 +544,11 @@ export class JobExecutor {
     lease: JobLease,
     runId: string | undefined,
     stats: RunStats,
-    problem: { disposition: Disposition; partial: boolean } | undefined
+    outcomeOfSync: { disposition: Disposition; partial: boolean } | undefined,
+    access: RunAccess = { instagram: false, cookiesUsed: false }
   ): Promise<ExecutionOutcome> {
     const { history, queue, subscriptions, logger } = this.deps;
+    const problem = await this.settleInstagramAccess(lease, access, outcomeOfSync);
     try {
       if (!problem) {
         if (runId) await history.updateRun(runId, { state: 'stored', stats, errorCode: null, errorMessage: null, finished: true });
@@ -512,6 +623,16 @@ export class JobExecutor {
     );
     return result.rows[0]?.trigger_kind ?? 'schedule';
   }
+}
+
+function unreadableCookiesDisposition(): Disposition {
+  return {
+    runState: 'waiting_auth',
+    code: 'CREDENTIALS_UNREADABLE',
+    message: INSTAGRAM_COOKIES_UNREADABLE_MESSAGE,
+    retryable: false,
+    pauseSubscription: true
+  };
 }
 
 function pausedDisposition(): Disposition {
