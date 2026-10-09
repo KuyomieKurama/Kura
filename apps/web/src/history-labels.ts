@@ -29,6 +29,16 @@ export const assetStateLabels: Record<string, string> = {
   failed: 'Fehlgeschlagen'
 };
 
+/**
+ * Error code of a file that is expected to become available later (a running livestream, a premiere). Such a file is
+ * recorded with its reason but is no failure: the entry is looked at again on the next run.
+ */
+export const NOT_YET_AVAILABLE_CODE = 'ASSET_NOT_YET_AVAILABLE';
+
+export function isNotYetAvailable(asset: { state: string; errorCode: string | null }): boolean {
+  return asset.state === 'failed' && asset.errorCode === NOT_YET_AVAILABLE_CODE;
+}
+
 export const handoverLabels: Record<string, string> = {
   not_attempted: 'Noch nicht an Immich übergeben',
   no_connection: 'Keine Immich-Verbindung',

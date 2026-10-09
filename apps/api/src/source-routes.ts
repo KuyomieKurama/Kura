@@ -55,13 +55,63 @@ const AUTH_LABELS: Record<AdapterCapabilities['auth_kind'], string> = {
  */
 const REJECTION_MESSAGES: Partial<Record<string, string>> = {
   TARGET_INVALID: 'Die Adresse ist ungültig. Erlaubt sind nur https-Adressen ohne Zugangsdaten.',
-  TARGET_UNSUPPORTED: 'Diese Adresse wird von keinem Adapter unterstützt. Zurzeit gehen einzelne Videos von YouTube, Profile, einzelne Beiträge (Fotos, Karussells) und Reels von Instagram, Creator und einzelne Beiträge von Patreon, Künstler und einzelne Werke von Pixiv sowie direkte Medien-URLs (Bilder und Videos).',
+  TARGET_UNSUPPORTED: 'Diese Adresse wird von keinem Adapter unterstützt. Zurzeit gehen einzelne Videos, Playlists und Kanäle von YouTube, Profile, einzelne Beiträge (Fotos, Karussells) und Reels von Instagram, Creator und einzelne Beiträge von Patreon, Künstler und einzelne Werke von Pixiv, Videos, Videolisten, Playlists und Fotoalben von Pornhub sowie direkte Medien-URLs (Bilder und Videos).',
   TARGET_BROKEN: 'Für diese Art von Adresse ist die Unterstützung zurzeit bekanntermaßen defekt.',
   ADAPTER_DISABLED: 'Der zuständige Adapter wurde vom Administrator abgeschaltet.'
 };
 
 /** Noun for "the newest posts of this ...". */
 const FEED_OWNER_NOUNS: Partial<Record<SourceType, string>> = { instagram: 'Profils', patreon: 'Creators', pixiv: 'Künstlers' };
+
+/**
+ * The kinds of address each adapter takes for a platform, as German phrases for the adapter overview. One list per
+ * adapter and source type, because an adapter may take only part of a platform (Pornhub: videos with yt-dlp, photo
+ * albums with gallery-dl).
+ */
+const ADDRESS_KINDS: Readonly<Record<string, readonly string[]>> = {
+  'yt-dlp:youtube': ['Einzelnes Video (watch, youtu.be, Shorts, Live)', 'Playlist', 'Kanal (Reiter Videos, Shorts, Livestreams)'],
+  'yt-dlp:pornhub': ['Einzelnes Video', 'Videos eines Models, Pornstars, Kanals oder Benutzers', 'Öffentliche Playlist'],
+  'yt-dlp:instagram': ['Einzelner Beitrag oder Reel (Rückfall, wenn gallery-dl fehlt)'],
+  'gallery-dl:pornhub': ['Einzelnes Fotoalbum'],
+  'gallery-dl:instagram': ['Profil und Reels-Reiter', 'Einzelner Beitrag, Karussell oder Reel'],
+  'gallery-dl:patreon': ['Creator', 'Einzelner Beitrag'],
+  'gallery-dl:pixiv': ['Künstler (Werke, Illustrationen, Manga)', 'Einzelnes Werk'],
+  'direct-url:direct_media': ['Direkte Adresse einer Bild-, Video- oder Audiodatei']
+};
+
+/**
+ * What a feed address means for the user, per platform and kind. YouTube and Pornhub lists are read in the order the
+ * site delivers them: channels newest first, playlists as the owner ordered them.
+ */
+function feedNotice(target: { sourceType: SourceType; canonicalUrl: string }): string {
+  const path = new URL(target.canonicalUrl).pathname;
+  if (target.sourceType === 'youtube') {
+    const tab = /\/(videos|shorts|streams)$/.exec(path)?.[1];
+    const tabLabel = tab === 'shorts' ? 'Shorts' : tab === 'streams' ? 'Livestreams' : 'Videos';
+    return path === '/playlist'
+      ? 'Es werden die ersten Videos dieser Playlist in der Reihenfolge von YouTube geladen, je Lauf nur eine begrenzte Anzahl. Videos weiter hinten in der Liste werden nicht nachgeladen. Bereits gespeicherte Videos werden übersprungen.'
+      : `Es werden die neuesten Einträge im Reiter ${tabLabel} dieses Kanals geladen, je Lauf nur eine begrenzte Anzahl. Ältere Videos werden nicht nachgeladen. Bereits gespeicherte Videos werden übersprungen, laufende Livestreams werden übersprungen und nach ihrem Ende erneut geprüft.`;
+  }
+  if (target.sourceType === 'pornhub') {
+    return 'Es werden die ersten Videos dieser Liste in der Reihenfolge von Pornhub geladen, je Lauf nur eine begrenzte Anzahl. Weitere Videos werden nicht nachgeladen. Bereits gespeicherte Videos werden übersprungen.';
+  }
+  return `Es werden die neuesten Beiträge dieses ${FEED_OWNER_NOUNS[target.sourceType] ?? 'Profils'} geladen, je Lauf nur eine begrenzte Anzahl. Ältere Beiträge werden nicht nachgeladen.`;
+}
+
+/** Extra hints for single videos: a YouTube address that also names a playlist, and Pornhub's missing login. */
+function postNotices(target: { sourceType: SourceType; canonicalUrl: string }, originalUrl: string): string[] {
+  const notices = ['Es wird genau dieser eine Beitrag geladen, kein ganzer Kanal und keine Playlist.'];
+  if (target.sourceType === 'youtube') {
+    try {
+      if (new URL(originalUrl).searchParams.has('list')) {
+        notices.push('Die Adresse nennt auch eine Playlist. Geladen wird nur das Video. Für die ganze Playlist verwende die Adresse der Playlist (youtube.com/playlist?list=...).');
+      }
+    } catch {
+      // The address was accepted, so it parses; nothing to add otherwise.
+    }
+  }
+  return notices;
+}
 
 /**
  * Whether the target needs a stored login in practice: Instagram and Patreon feeds do (a feed without a login is
@@ -254,11 +304,15 @@ export function registerSourceRoutes(input: {
       if (availability === 'unknown') notices.push('Der Worker hat noch nicht gemeldet, ob das benötigte Werkzeug verfügbar ist.');
       const forTarget = capabilitiesForSourceType(capabilities, target.sourceType);
       if (target.kind === 'creator_feed') {
-        notices.push(`Es werden die neuesten Beiträge dieses ${FEED_OWNER_NOUNS[target.sourceType] ?? 'Profils'} geladen, je Lauf nur eine begrenzte Anzahl. Ältere Beiträge werden nicht nachgeladen.`);
+        notices.push(feedNotice(target));
       } else {
-        notices.push('Es wird genau dieser eine Beitrag geladen, kein ganzer Kanal und keine Playlist.');
+        notices.push(...postNotices(target, url));
       }
-      if (forTarget.auth_kind === 'none' && target.sourceType !== 'direct_media') notices.push('Anmeldedaten für die Quelle können noch nicht hinterlegt werden; Quellen, die eine Anmeldung verlangen, schlagen fehl.');
+      if (target.sourceType === 'pornhub') {
+        notices.push('Pornhub wird ohne Anmeldung abgerufen; Kura speichert dafür keine Zugangsdaten. Entfernte, gesperrte oder in der Region des Servers nicht abrufbare Videos werden mit dem Grund im Verlauf vermerkt.');
+      } else if (forTarget.auth_kind === 'none' && target.sourceType !== 'direct_media') {
+        notices.push('Anmeldedaten für die Quelle können noch nicht hinterlegt werden; Quellen, die eine Anmeldung verlangen, schlagen fehl.');
+      }
       // Logins are stored per user (IG-B, P1). Only the fact that one exists is looked up, never its content.
       const platform = target.sourceType;
       const loginKind = forTarget.auth_kind === 'cookies' || forTarget.auth_kind === 'token' ? forTarget.auth_kind : undefined;
@@ -309,7 +363,12 @@ export function registerSourceRoutes(input: {
           id: capabilities.adapterId,
           label: ADAPTER_LABELS[capabilities.adapterId] ?? capabilities.adapterId,
           version: row?.adapter_version ?? null,
-          sourceTypes: capabilities.sourceTypes.map((type) => ({ id: type, label: PLATFORM_LABELS[type], capabilities: presentCapabilitiesFor(capabilities, type) })),
+          sourceTypes: capabilities.sourceTypes.map((type) => ({
+            id: type,
+            label: PLATFORM_LABELS[type],
+            capabilities: presentCapabilitiesFor(capabilities, type),
+            addressKinds: ADDRESS_KINDS[`${capabilities.adapterId}:${type}`] ?? []
+          })),
           capabilities: presentCapabilities(capabilities),
           availability,
           reasonCode: row?.reason_code ?? null,

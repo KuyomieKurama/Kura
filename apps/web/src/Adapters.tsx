@@ -147,7 +147,20 @@ export function AdaptersPanel({ isAdmin }: { isAdmin: boolean }) {
       )
     },
     { key: 'version', header: 'Version', render: (adapter) => adapter.version ?? labels.unknown, mono: true },
-    { key: 'sources', header: 'Quellen', render: (adapter) => adapter.sourceTypes.map((type) => type.label).join(', ') },
+    {
+      key: 'sources',
+      header: 'Quellen',
+      render: (adapter) => (
+        <ul className="source-list">
+          {adapter.sourceTypes.map((type) => (
+            <li key={type.id}>
+              <strong>{type.label}</strong>
+              {type.addressKinds && type.addressKinds.length > 0 && <span className="cell-note">{type.addressKinds.join('; ')}</span>}
+            </li>
+          ))}
+        </ul>
+      )
+    },
     {
       key: 'availability',
       header: 'Werkzeug',
