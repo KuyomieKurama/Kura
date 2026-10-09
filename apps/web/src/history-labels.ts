@@ -43,6 +43,17 @@ export const handoverLabels: Record<string, string> = {
   reconciling: 'Ausgang unklar, wird abgeglichen'
 };
 
+/** Short labels for the state of an Immich transfer, as shown in a status chip. */
+export const transferStateLabels: Record<string, string> = {
+  pending: 'Vorbereitet',
+  uploading: 'Wird hochgeladen',
+  uploaded_unverified: 'Hochgeladen, nicht geprüft',
+  verified: 'Verifiziert',
+  mismatch: 'Abweichung',
+  failed: 'Fehlgeschlagen',
+  reconciling: 'Unklar, wird abgeglichen'
+};
+
 export const platformLabels: Record<string, string> = {
   direct_media: 'Direkte Medien-URL',
   youtube: 'YouTube',

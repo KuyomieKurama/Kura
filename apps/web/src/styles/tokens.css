@@ -1,0 +1,105 @@
+/*
+ * Design tokens for the Kura web UI.
+ *
+ * One accent (aizome indigo), three status colours (ok, warn, danger) that are
+ * only ever used for state and always come with text or an icon.
+ * Every text/background and border/background pair used by the stylesheets is
+ * checked against WCAG AA by tests/ui-shots/contrast.test.ts, which reads this file.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces and text */
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-sunken: #eceff3;
+  --ink: #18202b;
+  --ink-muted: #566170;
+
+  /* Lines: --line separates areas (decorative), --line-strong draws the edge of controls (3:1). */
+  --line: #d7dce3;
+  --line-strong: #76818f;
+
+  /* The single accent */
+  --accent: #264a88;
+  --accent-hover: #1d3a6c;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4ebf7;
+
+  /* State colours */
+  --ok: #1b6a4a;
+  --ok-soft: #e1f1ea;
+  --warn: #86570a;
+  --warn-soft: #f8edd5;
+  --danger: #a2281d;
+  --danger-soft: #f9e3e0;
+
+  /* Dialogs are the only elements with a shadow; it is tinted with the accent. */
+  --shadow-dialog: 0 16px 40px -8px rgb(38 74 136 / 0.28);
+  --backdrop: rgb(24 32 43 / 0.4);
+
+  /* Type */
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-cjk: 'Hiragino Sans', 'Yu Gothic', 'Noto Sans CJK JP', 'Noto Sans JP', 'Source Han Sans', Meiryo, sans-serif;
+  --text-meta-sm: 12px;
+  --text-meta: 13px;
+  --text-body: 14px;
+  --text-lead: 16px;
+  --text-section: 20px;
+  --text-page: 28px;
+
+  /* Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Radius rule: controls 6, panels 10, chips fully round. */
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --radius-chip: 999px;
+
+  /* Sizes */
+  --control-height: 36px;
+  --row-height: 40px;
+  --sidebar-width: 232px;
+  --topbar-height: 56px;
+  --page-max-width: 1100px;
+  --prose-width: 68ch;
+  --collapse-duration: 150ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #0f1318;
+    --surface: #161b22;
+    --surface-sunken: #1c222b;
+    --ink: #e4e8ee;
+    --ink-muted: #9aa5b4;
+
+    --line: #2b333f;
+    --line-strong: #7b8798;
+
+    --accent: #86a9e6;
+    --accent-hover: #a3bdf0;
+    --accent-ink: #0f1318;
+    --accent-soft: #1d2a40;
+
+    --ok: #5fc496;
+    --ok-soft: #15291f;
+    --warn: #e0b25a;
+    --warn-soft: #2c2412;
+    --danger: #ee8076;
+    --danger-soft: #331a17;
+
+    --shadow-dialog: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+    --backdrop: rgb(15 19 24 / 0.6);
+  }
+}

@@ -1,0 +1,428 @@
+/* Panels, chips, banners, states, form layouts, dialogs and the dashboard. */
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+/* Chips: pill, 12px, icon and text. The tone sets text and background; the border follows the text colour. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: var(--radius-chip);
+  font-size: var(--text-meta-sm);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.chip svg {
+  flex: none;
+}
+
+.chip-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.chip-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.chip-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.chip-accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chip-neutral {
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+}
+
+/* Banners: inline messages with an icon, above or inside the content they belong to. */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+}
+
+.banner svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.banner-body {
+  min-width: 0;
+  max-width: var(--prose-width);
+  color: var(--ink);
+}
+
+.banner-body ul {
+  margin: var(--space-1) 0 0;
+}
+
+.banner-body strong {
+  font-weight: 600;
+}
+
+.banner-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.banner-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.banner-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.banner-info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.empty-title {
+  font-weight: 600;
+}
+
+.empty-hint {
+  margin-bottom: var(--space-2);
+  color: var(--ink-muted);
+}
+
+/* Loading skeletons, as tall as the final rows */
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.skeleton-row,
+.skeleton-inline {
+  background: var(--surface-sunken);
+}
+
+.skeleton-row {
+  height: var(--row-height);
+  margin: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+}
+
+.skeleton-row-tall {
+  height: 72px;
+}
+
+.skeleton-inline {
+  display: inline-block;
+  width: 96px;
+  height: 22px;
+  border-radius: var(--radius-chip);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-row,
+  .skeleton-inline {
+    background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--line) 50%, var(--surface-sunken) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Form layouts: label above, 2 columns from 768px. */
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.field-wide,
+.form-wide {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 768px) {
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-inline-actions {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+    align-items: end;
+  }
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-list li {
+  max-width: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font-size: var(--text-meta-sm);
+}
+
+.kv-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+/* Dialogs: panel radius, tinted shadow, backdrop at 40% ink. The only elevated element. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--backdrop);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(100%, 520px);
+  max-height: 90dvh;
+  overflow: auto;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Dashboard */
+.status-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 0 -1px -1px 0;
+}
+
+.status-item dt {
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+}
+
+.status-item dd {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  font-size: var(--text-lead);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.status-item dd.mono {
+  font-size: var(--text-body);
+}
+
+.quick-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quick-links li {
+  max-width: none;
+}
+
+.quick-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-link:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.quick-link svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.quick-link-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quick-link-title {
+  font-weight: 600;
+}
+
+/* Tables become stacked label/value rows below 640px. */
+@media (max-width: 639px) {
+  .table-wrap {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+  }
+
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  tr {
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: var(--space-3);
+    height: auto;
+    min-height: var(--row-height);
+    align-items: center;
+    text-align: left;
+  }
+
+  td.num,
+  td.actions {
+    text-align: left;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: var(--ink-muted);
+    font-size: var(--text-meta);
+  }
+
+  td.actions {
+    display: block;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 1px solid var(--line);
+  }
+
+  tr td:last-child {
+    border-bottom: 0 !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .status-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

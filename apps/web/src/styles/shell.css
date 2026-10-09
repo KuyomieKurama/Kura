@@ -1,0 +1,323 @@
+/* App shell: fixed sidebar on desktop, top bar with a disclosure menu below 1024px. Auth screens. */
+
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 100;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--ink);
+  font-size: var(--text-section);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.wordmark-kanji {
+  color: var(--accent);
+  font-family: var(--font-cjk);
+  font-weight: 500;
+}
+
+/* Sidebar (desktop) */
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-4) var(--space-4);
+}
+
+.menu-button {
+  display: none;
+}
+
+.sidebar-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 var(--space-2);
+  list-style: none;
+}
+
+.nav-list li {
+  max-width: none;
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: var(--surface-sunken);
+}
+
+.nav-item[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The 2px bar on the left marks the active item. */
+.nav-item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 2px;
+  border-radius: var(--radius-chip);
+  background: var(--accent);
+}
+
+.account-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: var(--space-4) var(--space-2) 0;
+  padding: var(--space-3) var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+.account-name {
+  max-width: 100%;
+  margin-left: var(--space-1);
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-box .meta {
+  margin-left: var(--space-1);
+}
+
+.account-box .btn {
+  margin-top: var(--space-2);
+}
+
+/* Main area */
+.main {
+  min-width: 0;
+  margin-left: var(--sidebar-width);
+}
+
+.main:focus {
+  outline: none;
+}
+
+.test-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: none;
+  padding: var(--space-1) var(--space-6);
+  border-bottom: 1px solid var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--text-meta);
+  font-weight: 500;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: var(--page-max-width);
+  padding: var(--space-6);
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 44px;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.page-lead {
+  max-width: var(--prose-width);
+  color: var(--ink-muted);
+  font-size: var(--text-lead);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.section.narrow {
+  max-width: 480px;
+}
+
+/* Below 1024px the sidebar becomes a top bar; the navigation is a disclosure. */
+@media (max-width: 1023px) {
+  .sidebar {
+    position: sticky;
+    inset: auto;
+    top: 0;
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .sidebar-top {
+    min-height: var(--topbar-height);
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .wordmark {
+    font-size: var(--text-lead);
+  }
+
+  .menu-button {
+    display: inline-flex;
+  }
+
+  .sidebar-body {
+    display: none;
+    max-height: calc(100dvh - var(--topbar-height));
+    border-top: 1px solid var(--line);
+    padding: var(--space-2) 0 var(--space-4);
+  }
+
+  .sidebar[data-open='true'] .sidebar-body {
+    display: flex;
+  }
+
+  .nav-item {
+    min-height: 44px;
+  }
+
+  .main {
+    margin-left: 0;
+  }
+
+  .test-strip {
+    padding: var(--space-1) var(--space-4);
+  }
+
+  .page {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  thead th {
+    top: var(--topbar-height);
+  }
+}
+
+@media (max-width: 639px) {
+  .page-title-row {
+    flex-wrap: wrap;
+  }
+
+  .page-title-row h1 {
+    font-size: 24px;
+  }
+}
+
+/* Login, setup and forced password change: one narrow panel, centred. */
+.auth-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.auth-main {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: var(--space-5) var(--space-4);
+}
+
+.auth-main:focus {
+  outline: none;
+}
+
+.auth-column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-column .wordmark {
+  align-self: flex-start;
+  font-size: var(--text-page);
+}
+
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.auth-title {
+  font-size: var(--text-section);
+}

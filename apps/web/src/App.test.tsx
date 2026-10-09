@@ -24,7 +24,8 @@ it('shows the setup form while unconfigured', async () => {
 it('shows dashboard status for an authenticated administrator', async () => {
   vi.stubGlobal('fetch', mockAuthenticated()); render(<App />);
   expect(await screen.findByText('Erreichbar')).toBeInTheDocument();
-  expect(screen.getByText('Angewendete Migrationen: 2')).toBeInTheDocument();
+  // The status row is a definition list: the term "Angewendete Migrationen" and the value "2" are separate elements.
+  expect(screen.getByText('Angewendete Migrationen').nextElementSibling).toHaveTextContent('2');
   expect(screen.getByRole('button', { name: 'Benutzerverwaltung' })).toBeInTheDocument();
 });
 it('does not show user management to a normal user', async () => {
