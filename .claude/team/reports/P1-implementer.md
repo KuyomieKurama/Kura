@@ -27,6 +27,34 @@ Stand: Branch/Worktree `/work/wt/ig`, 6 Commits nach `2784bf5`. Gesamt-`pnpm che
 - Bestehende Tests angepasst, weil ihre Annahme nicht mehr stimmt: Pixiv/Patreon sind nicht mehr „nur Einzelbeitrag" (`gallery-dl-adapter.test.ts`, `config-and-api.test.ts`, `listing.test.ts`, `source-selection.test.ts`, `source-api.test.ts`); `no-deletion.test.ts` erlaubt `DROP CONSTRAINT` (Migration 0053 ersetzt einen CHECK, löscht keine Daten).
 - Fixtures: `tests/platforms/fixtures/*.json` stammen aus den echten Extraktoren von gallery-dl 1.32.16 mit synthetischer HTTP-Schicht (`generate-fixtures.py`, wird von den Tests nicht ausgeführt). Keine echten Cookies oder Tokens im Repo; Werte tragen `FAKE-`.
 
+## Optionen und Konfigurationsschlüssel (gallery-dl 1.32.16, yt-dlp 2026.8.19)
+
+| Option / Schlüssel | Verwendung | Quelle |
+| --- | --- | --- |
+| `--config-ignore` | keine Konfigurationsdateien des Hosts | `option.py` |
+| `-c <Datei>` | Pixiv: Konfiguration mit Token | `option.py`, `docs/configuration.rst` |
+| `extractor.pixiv.refresh-token` | Pixiv-Token, nur in der Datei | `extractor/pixiv.py`, `oauth.py` (`OAuthPixiv`) |
+| `cache.file` (in der Datei) | Zugriffstoken im privaten Verzeichnis statt im gemeinsamen Cache | `cache.py`, `option.py` (`--cache-file`) |
+| `-C <Datei>`, `extractor.<site>.cookies-update=false` | Patreon/Instagram Cookies, Sitzung nicht zurückschreiben | `option.py`, `extractor/common.py` (`_init_cookies`) |
+| `--sleep-request`, `--sleep-extractor`, `--sleep`, `--retries 0` | Taktung | `option.py`, `common.py` (`wait`) |
+| `--post-range 1-N` | Erstlauf und Lauf begrenzen | `job.py` (Prädikate) |
+| `--post-filter <Ausdruck>` | Pixiv illustrations/manga, fester Ausdruck von Kura | `job.py` |
+| `-o extractor.pixiv.sanity=false` | keine zusätzlichen Web-Anfragen ohne PHPSESSID | `pixiv.py`, `configuration.rst` |
+| `-o extractor.pixiv.ugoira=true` | Ugoira als Original-Zip | `pixiv.py` (`ugoira_metadata`), `configuration.rst` |
+| `--range N`, `-D`, `-f`, `--filesize-max` | einzelne Datei nach Position laden (wie IG-A) | `option.py` |
+| yt-dlp `--cookies <Datei>` | YouTube | `options.py`; Cookies `LOGIN_INFO`, `*APISID` in `extractor/youtube/_base.py` |
+| Patreon-Pflicht-Cookie `session_id` | Validator | `extractor/patreon.py` (`_init_cookies`/`cookies_check`) |
+
+## nicht geprüft: echter Abruf
+
+Kein echter Aufruf von gallery-dl, yt-dlp, Patreon, Pixiv oder YouTube; kein echtes Konto, Cookie oder Token. Die Fixtures zeigen die Form der echten Extraktoren, nicht das Verhalten der echten Server. Nicht geprüft: Cloudflare bei Patreon, Pixiv-Rate-Limit-Verhalten im Betrieb, ob ein echtes Token akzeptiert wird, ob `cache.file` im Container beschreibbar ist (das Run-Verzeichnis ist es), YouTube-Cookie-Rotation.
+
+## Abnahme
+
+- `corepack pnpm check` grün: vorher 47 Dateien / 943 bestanden / 1 übersprungen, nachher 50 Dateien / 994 bestanden / 1 übersprungen (die Web-Tests laufen im Paket `apps/web`, dort zusätzlich 65 inkl. 15 neue).
+- `pnpm audit --audit-level=high`: keine Funde ab "high" (1 low, 1 moderate, nicht von P1 verursacht, keine neue Abhängigkeit).
+- Bestehende Tests unter `tests/` wurden an die neue Fähigkeit angepasst (siehe oben), nicht nur neue Dateien unter `tests/platforms/` hinzugefügt.
+
 ## Belege: gallery-dl und yt-dlp
 
 - gallery-dl 1.32.16, sdist sha256 `bacd7d63423ad45db98704fedafa1302343db6f250f9e9f69a9e142754ed9e37`: `extractor/patreon.py`, `pixiv.py` (`PixivAppAPI`, `ugoira_metadata`), `oauth.py`, `common.py`, `util.py` (`cookiestxt_load`), `job.py`, `option.py`, `docs/configuration.rst` gelesen.
