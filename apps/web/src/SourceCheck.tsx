@@ -1,7 +1,8 @@
-import { CheckCircle, Warning } from '@phosphor-icons/react';
+import { CheckCircle, Key, Warning } from '@phosphor-icons/react';
 import type { AdapterCapabilities, SourceValidation } from './api.js';
 import { availabilityLabels } from './history-labels.js';
 import { Banner } from './ui/Banner.js';
+import { Chip } from './ui/Chip.js';
 import { Glyph } from './ui/Glyph.js';
 
 /** What an adapter can do, as short German phrases. Only declared capabilities are listed. */
@@ -48,6 +49,11 @@ export function SourceValidationView({ result }: { result: SourceValidation }) {
         <Glyph icon={toolAvailable ? CheckCircle : Warning} />
         Werkzeug: {availabilityLabels[adapter.availability]}
       </p>
+      {result.credentials?.loginNeeded && (
+        <p>
+          <Chip tone="warn" icon={Key} title="Lade unter Konto deine Instagram-Cookies hoch.">Anmeldung nötig</Chip>
+        </p>
+      )}
       <div className="check-capabilities">
         <span>Fähigkeiten:</span>
         <CapabilityTags capabilities={result.capabilities} />

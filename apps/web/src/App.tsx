@@ -9,6 +9,7 @@ import { Dashboard, type HealthState, type ServiceStatus } from './Dashboard.js'
 import { errorMessage } from './error-message.js';
 import { HistoryPage } from './History.js';
 import { ImmichPage } from './Immich.js';
+import { InstagramSection } from './Instagram.js';
 import { labels } from './labels.js';
 import { SubscriptionsPage } from './Subscriptions.js';
 import { PageHeader } from './ui/PageHeader.js';
@@ -170,6 +171,7 @@ export function App() {
             <h2 id="password-heading">{labels.changePasswordTitle}</h2>
             <PasswordForm done={() => setView('dashboard')} />
           </section>
+          <InstagramSection />
         </>
       )}
       {view === 'users' && isAdmin && <UsersPage users={users} currentUserId={current?.id} reload={loadUsers} />}
