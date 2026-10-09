@@ -292,3 +292,17 @@ td:has(.cell-note) {
 .evidence-body ul {
   margin: 0;
 }
+
+@media (max-width: 639px) {
+  .evidence > summary {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .row-actions {
+    justify-content: flex-start;
+  }
+}
