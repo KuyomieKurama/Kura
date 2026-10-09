@@ -54,6 +54,9 @@ interface CatalogOptions {
   /** Posts per Patreon creator run, and per Pixiv artist run; absent = the adapter's default. */
   patreonMaxPostsPerRun?: number;
   pixivMaxPostsPerRun?: number;
+  /** Videos per YouTube channel or playlist run, and per Pornhub list run; absent = the adapter's default. */
+  youtubeMaxPostsPerRun?: number;
+  pornhubMaxPostsPerRun?: number;
   directUrl: DirectUrlSettings;
   logger: Logger;
   /** Additional environment variables per tool. Tests only (the fake tools log through them). */
@@ -127,7 +130,13 @@ export class AdapterCatalog {
         pixivMaxPostsPerRun: this.options.pixivMaxPostsPerRun
       })));
     availability.push(await this.registerCli(registry, 'yt-dlp', tools.ytDlp, (binary) =>
-      YtDlpAdapter.create({ binary, workRoot: workDir, extraEnv: environmentFor(this.options.toolEnvironment?.ytDlp) })));
+      YtDlpAdapter.create({
+        binary,
+        workRoot: workDir,
+        extraEnv: environmentFor(this.options.toolEnvironment?.ytDlp),
+        youtubeMaxPostsPerRun: this.options.youtubeMaxPostsPerRun,
+        pornhubMaxPostsPerRun: this.options.pornhubMaxPostsPerRun
+      })));
 
     // Last, so that platform adapters are asked first (selectSource also relies on this).
     const direct = new DirectUrlAdapter({

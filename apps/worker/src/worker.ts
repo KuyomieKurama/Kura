@@ -66,6 +66,8 @@ export class Worker implements WorkerLifecycle {
       instagramMaxPostsPerRun: downloads.instagramMaxPostsPerRun,
       patreonMaxPostsPerRun: downloads.patreonMaxPostsPerRun,
       pixivMaxPostsPerRun: downloads.pixivMaxPostsPerRun,
+      youtubeMaxPostsPerRun: downloads.youtubeMaxPostsPerRun,
+      pornhubMaxPostsPerRun: downloads.pornhubMaxPostsPerRun,
       directUrl: dependencies.directUrl ?? { approvals: approveNothing },
       logger
     });

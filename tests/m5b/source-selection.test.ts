@@ -34,8 +34,8 @@ describe('selectSource', () => {
   });
 
   it('never hands a URL on a known platform to the direct URL adapter', () => {
-    expect(codeOf(() => selectSource(recognizer, 'https://www.youtube.com/playlist?list=PL12345'))).toBe('TARGET_UNSUPPORTED');
-    expect(codeOf(() => selectSource(recognizer, 'https://www.pornhub.com/view_video.php?viewkey=abc'))).toBe('TARGET_UNSUPPORTED');
+    expect(codeOf(() => selectSource(recognizer, 'https://www.youtube.com/feed/subscriptions'))).toBe('TARGET_UNSUPPORTED');
+    expect(codeOf(() => selectSource(recognizer, 'https://www.pornhub.com/categories'))).toBe('TARGET_UNSUPPORTED');
     expect(codeOf(() => selectSource(recognizer, 'https://www.patreon.com/home'))).toBe('TARGET_UNSUPPORTED');
   });
 

@@ -175,6 +175,7 @@ export function listingOfPost(post: ParsedPost, sourceType: SourceType): PostLis
   const instagram = sourceType === 'instagram';
   const patreon = sourceType === 'patreon';
   const pixiv = sourceType === 'pixiv';
+  const pornhub = sourceType === 'pornhub';
   const first = instagram ? (post.directory ?? post.files[0]) : (post.files[0] ?? post.directory);
   const workType = pixiv ? cleanText(first?.type, 20) : null;
 
@@ -199,19 +200,23 @@ export function listingOfPost(post: ParsedPost, sourceType: SourceType): PostLis
   // Instagram prints the post's own data (date, owner, caption) in the directory entry; the file entries of a
   // carousel carry the date of the single item. Other sites are read from the first file, as before.
   const user = asObject(first?.user) ?? asObject(first?.creator) ?? asObject(first?.owner);
+  // Pornhub albums: `gallery` holds the album (id, title); `id` of a file entry is the photo's, `user` is a plain text.
+  const gallery = pornhub ? asObject(first?.gallery) : undefined;
   const dateText = typeof first?.date === 'string' ? first.date : typeof first?.post_date === 'string' ? first.post_date : undefined;
   const parsedDate = dateText === undefined ? undefined : new Date(asUtcTimestamp(dateText));
   const embed = patreon ? asObject(first?.embed) : undefined;
   return {
-    postId: first ? (instagram ? identifierText(first.post_shortcode, INSTAGRAM_SHORTCODE) : identifierText(first.id, NUMERIC_ID)) : null,
+    postId: first
+      ? (instagram ? identifierText(first.post_shortcode, INSTAGRAM_SHORTCODE) : pornhub ? identifierText(gallery?.id, NUMERIC_ID) : identifierText(first.id, NUMERIC_ID))
+      : null,
     postType: first?.type === 'reel' ? 'reel' : 'p',
     creatorId: (instagram
       ? identifierText(first?.owner_id, /^[A-Za-z0-9][\w.@:-]{0,99}$/)
       : identifierText(user?.id, /^[A-Za-z0-9][\w.@:-]{0,99}$/)) ?? 'unknown',
     creatorName: instagram
       ? cleanText(first?.fullname, 200) ?? cleanText(first?.username, 200)
-      : cleanText(user?.name ?? user?.full_name, 200),
-    title: instagram ? firstLine(first?.description, 300) : cleanText(first?.title, 300),
+      : pornhub ? cleanText(first?.user, 200) : cleanText(user?.name ?? user?.full_name, 200),
+    title: instagram ? firstLine(first?.description, 300) : pornhub ? cleanText(gallery?.title, 300) : cleanText(first?.title, 300),
     date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null,
     files,
     hasPostEntry: post.directory !== undefined,
@@ -227,7 +232,7 @@ export function listingOfPost(post: ParsedPost, sourceType: SourceType): PostLis
 
 /**
  * A stable id for a file, so that a changed order or a new file in a post does not make an old file look new.
- * Instagram: the media id. Pixiv: the single ugoira archive is "ugoira". Everything else is identified by its
+ * Instagram: the media id. Pornhub: the photo id. Pixiv: the single ugoira archive is "ugoira". Everything else is identified by its
  * position in the tool's file list ("file-N"), which is how single posts of these sites were identified before feeds
  * existed; keeping it means that already archived posts are not downloaded again.
  */
@@ -237,6 +242,10 @@ function preferredAssetId(sourceType: SourceType, metadata: Record<string, unkno
     return mediaId ? `media-${mediaId}` : `file-${index}`;
   }
   if (sourceType === 'pixiv' && workType === 'ugoira') return 'ugoira';
+  if (sourceType === 'pornhub') {
+    const photoId = identifierText(metadata.id, MEDIA_ID);
+    return photoId ? `photo-${photoId}` : `file-${index}`;
+  }
   return `file-${index}`;
 }
 

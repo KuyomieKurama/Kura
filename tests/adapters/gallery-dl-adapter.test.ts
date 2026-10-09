@@ -52,7 +52,7 @@ describe('GalleryDlAdapter basics', () => {
   it('declares what it can do per platform: feeds on all three, cookies for Instagram and Patreon, a token for Pixiv', async () => {
     const { adapter } = await setup();
     expect(adapter.capabilities()).toMatchObject({
-      adapterId: 'gallery-dl', adapterVersion: '1.32.2', sourceTypes: ['pixiv', 'instagram', 'patreon'], single_post: true,
+      adapterId: 'gallery-dl', adapterVersion: '1.32.2', sourceTypes: ['pixiv', 'instagram', 'patreon', 'pornhub'], single_post: true,
       creator_feed: true, pagination: true, resume: false, images: true, videos: true, page_snapshot: false,
       quality_variants: false, auth_kind: 'cookies', presets: ['BEST_AVAILABLE', 'SOURCE_BYTES']
     });
@@ -61,6 +61,8 @@ describe('GalleryDlAdapter basics', () => {
     expect(forType('patreon')).toMatchObject({ single_post: true, creator_feed: true, pagination: true, images: true, videos: true, auth_kind: 'cookies' });
     // Ugoira are stored as zip archives, so Pixiv declares no videos (P1).
     expect(forType('pixiv')).toMatchObject({ single_post: true, creator_feed: true, pagination: true, images: true, videos: false, auth_kind: 'token' });
+    // Pornhub: one photo album as a post (P2); videos and video lists belong to yt-dlp.
+    expect(forType('pornhub')).toMatchObject({ single_post: true, creator_feed: false, pagination: false, images: true, videos: false, auth_kind: 'none' });
   });
 
   it('refuses a mismatching hash, an unparsable version and a version below an administrator floor', async () => {

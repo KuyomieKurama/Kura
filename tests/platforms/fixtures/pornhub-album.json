@@ -1,0 +1,101 @@
+[
+  [
+    2,
+    {
+      "category": "pornhub",
+      "gallery": {
+        "id": 4242,
+        "score": 96,
+        "tags": [
+          "own",
+          "test"
+        ],
+        "title": "Own test album",
+        "views": 0
+      },
+      "subcategory": "gallery",
+      "user": "owntestuser's Photos"
+    }
+  ],
+  [
+    3,
+    "https://ei.phncdn.example.invalid/photos/own/111_large.jpg",
+    {
+      "caption": "one",
+      "category": "pornhub",
+      "extension": "jpg",
+      "filename": "111_large",
+      "gallery": {
+        "id": 4242,
+        "score": 96,
+        "tags": [
+          "own",
+          "test"
+        ],
+        "title": "Own test album",
+        "views": 0
+      },
+      "id": 111,
+      "num": 1,
+      "score": 90,
+      "subcategory": "gallery",
+      "url": "https://ei.phncdn.example.invalid/photos/own/111_large.jpg",
+      "user": "owntestuser's Photos",
+      "views": 10
+    }
+  ],
+  [
+    3,
+    "https://ei.phncdn.example.invalid/photos/own/222_large.jpg",
+    {
+      "caption": "two",
+      "category": "pornhub",
+      "extension": "jpg",
+      "filename": "222_large",
+      "gallery": {
+        "id": 4242,
+        "score": 96,
+        "tags": [
+          "own",
+          "test"
+        ],
+        "title": "Own test album",
+        "views": 0
+      },
+      "id": 222,
+      "num": 2,
+      "score": 91,
+      "subcategory": "gallery",
+      "url": "https://ei.phncdn.example.invalid/photos/own/222_large.jpg",
+      "user": "owntestuser's Photos",
+      "views": 20
+    }
+  ],
+  [
+    3,
+    "https://ei.phncdn.example.invalid/photos/own/333_large.png",
+    {
+      "caption": "three",
+      "category": "pornhub",
+      "extension": "png",
+      "filename": "333_large",
+      "gallery": {
+        "id": 4242,
+        "score": 96,
+        "tags": [
+          "own",
+          "test"
+        ],
+        "title": "Own test album",
+        "views": 0
+      },
+      "id": 333,
+      "num": 3,
+      "score": 92,
+      "subcategory": "gallery",
+      "url": "https://ei.phncdn.example.invalid/photos/own/333_large.png",
+      "user": "owntestuser's Photos",
+      "views": 30
+    }
+  ]
+]

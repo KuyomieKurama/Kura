@@ -120,7 +120,7 @@ const AUTH_EXCEPTIONS = new Set(['AuthRequired', 'AuthorizationError', 'Authenti
 
 /**
  * Fixed German sentences per platform. They are shown to users, so they contain nothing from the tool. Where a
- * platform has no sentence for a case, the worker's general text applies. Instagram: IG-A; Patreon, Pixiv: P1.
+ * platform has no sentence for a case, the worker's general text applies. Instagram: IG-A; Patreon, Pixiv: P1; Pornhub albums: P2.
  */
 interface PlatformText {
   readonly authNoLogin: string;
@@ -150,6 +150,12 @@ const PLATFORM_TEXT: Partial<Record<SourceType, PlatformText>> = {
     checkpoint: 'Patreon verlangt eine Sicherheitsprüfung (Cloudflare). Öffnen Sie Patreon im Browser, bestätigen Sie die Prüfung und hinterlegen Sie danach neue Patreon-Cookies. Das Abonnement wurde pausiert.',
     profileNotFound: 'Der Patreon-Creator wurde nicht gefunden. Prüfen Sie den Namen in der Adresse; die Seite wurde vielleicht umbenannt oder gelöscht.',
     postNotFound: 'Der Patreon-Beitrag wurde nicht gefunden. Er wurde gelöscht oder ist für das verwendete Konto nicht sichtbar.'
+  },
+  pornhub: {
+    authNoLogin: 'Das Pornhub-Album ist nicht öffentlich zugänglich (zum Beispiel nur für Freunde des Benutzers). Kura meldet sich bei Pornhub nicht an. Das Abonnement wurde pausiert.',
+    authWithLogin: 'Das Pornhub-Album ist nicht öffentlich zugänglich (zum Beispiel nur für Freunde des Benutzers). Kura meldet sich bei Pornhub nicht an. Das Abonnement wurde pausiert.',
+    profileNotFound: 'Die Pornhub-Seite wurde nicht gefunden. Prüfen Sie die Adresse.',
+    postNotFound: 'Das Pornhub-Album wurde nicht gefunden. Es wurde gelöscht oder ist nicht öffentlich.'
   },
   pixiv: {
     authNoLogin: 'Pixiv verlangt eine Anmeldung. Hinterlegen Sie unter Konto, Zugänge, Ihr Pixiv-Token (den refresh-token, den "gallery-dl oauth:pixiv" ausgibt). Das Abonnement wurde pausiert.',

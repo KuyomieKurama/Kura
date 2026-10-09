@@ -49,6 +49,19 @@ export function buildToolArguments(fixedOptions: readonly string[], urls: readon
   return [...fixedOptions, '--', ...urls];
 }
 
+/** Posts (or videos) read from a creator feed per run when the administrator sets nothing else. */
+export const FEED_DEFAULT_MAX_POSTS_PER_RUN = 50;
+export const FEED_MAX_POSTS_PER_RUN_LIMIT = 500;
+
+/** The configured upper bound of one feed run, checked: an integer between 1 and the limit, default 50. */
+export function checkedMaxPosts(name: string, value: number | undefined): number {
+  const maxPosts = value ?? FEED_DEFAULT_MAX_POSTS_PER_RUN;
+  if (!Number.isInteger(maxPosts) || maxPosts < 1 || maxPosts > FEED_MAX_POSTS_PER_RUN_LIMIT) {
+    throw new AdapterError('BINARY_NOT_CONFIGURED', `${name} must be an integer between 1 and ${FEED_MAX_POSTS_PER_RUN_LIMIT}`);
+  }
+  return maxPosts;
+}
+
 const MAX_CREDENTIAL_PATH_CHARS = 4_096;
 
 /**

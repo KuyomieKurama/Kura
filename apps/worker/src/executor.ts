@@ -420,7 +420,9 @@ export class JobExecutor {
           // Known to be impossible to fetch (embedded video of another site, locked post, file type). It is recorded
           // as failed with its reason, once as a problem of the run; later runs repeat nothing and only keep the record.
           await history.markAssetFailed(record.id, asset.unavailable.code, asset.unavailable.message);
-          if (record.errorCode !== asset.unavailable.code) {
+          // Something that is expected to appear later (a running livestream, a premiere) is recorded for the entry
+          // but is no failure of the run; the post is looked at again on the next run.
+          if (asset.unavailable.code !== 'ASSET_NOT_YET_AVAILABLE' && record.errorCode !== asset.unavailable.code) {
             stats.assetsFailed += 1;
             failure ??= { runState: 'failed', code: asset.unavailable.code, message: asset.unavailable.message, retryable: false };
           }

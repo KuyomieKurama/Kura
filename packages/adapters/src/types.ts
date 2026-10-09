@@ -150,8 +150,10 @@ export interface ManifestAsset {
    * Set when the asset is known to be impossible to fetch (an embedded video of another site, a file type that is
    * not allowed, a post the account may not view). It is listed and recorded as failed with this fixed German
    * sentence and the code, instead of being downloaded or silently left out. Never contains tool output.
+   * ASSET_NOT_YET_AVAILABLE is the same for something that is expected to become available (a livestream that is
+   * running, a premiere): it is recorded for the entry, is not a failure of the run, and is checked again next time.
    */
-  readonly unavailable?: { readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE'; readonly message: string };
+  readonly unavailable?: { readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE' | 'ASSET_NOT_YET_AVAILABLE'; readonly message: string };
 }
 
 /** Volatile access data. Lives only in the job context and must never be persisted or logged. */

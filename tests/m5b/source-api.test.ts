@@ -31,7 +31,7 @@ describe('source validation, adapters, run-now, history and kill switches (API o
 
   describe('POST /api/v1/sources/validate', () => {
     it.each([
-      ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { platform: 'youtube', platformLabel: 'YouTube', adapter: { id: 'yt-dlp' }, capabilities: { videos: true, images: false, creatorFeed: false, authKind: 'cookies' } }],
+      ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { platform: 'youtube', platformLabel: 'YouTube', adapter: { id: 'yt-dlp' }, capabilities: { videos: true, images: false, creatorFeed: true, authKind: 'cookies' } }],
       ['https://www.pixiv.net/en/artworks/98765?x=1', { platform: 'pixiv', canonicalUrl: 'https://www.pixiv.net/artworks/98765', adapter: { id: 'gallery-dl' }, capabilities: { images: true, videos: false } }],
       ['https://www.instagram.com/p/Cabc12345/', { platform: 'instagram', adapter: { id: 'gallery-dl' }, capabilities: { creatorFeed: true, videos: true, images: true, authKind: 'cookies', authLabel: 'Cookies' } }],
       ['https://www.patreon.com/posts/own-post-123456', { platform: 'patreon', adapter: { id: 'gallery-dl' } }],
@@ -44,8 +44,10 @@ describe('source validation, adapters, run-now, history and kill switches (API o
     });
 
     it.each([
-      ['https://www.youtube.com/playlist?list=PL12345', 'TARGET_UNSUPPORTED', /keinem Adapter unterstützt/],
-      ['https://www.pornhub.com/view_video.php?viewkey=abc', 'TARGET_UNSUPPORTED', /keinem Adapter unterstützt/],
+      ['https://www.youtube.com/feed/subscriptions', 'TARGET_UNSUPPORTED', /YouTube-Adresse ist zurzeit nicht unterstützt/],
+      ['https://www.youtube.com/playlist?list=PL12345', 'TARGET_INVALID', /Kennung der YouTube-Playlist ist ungültig/],
+      ['https://www.pornhub.com/categories', 'TARGET_UNSUPPORTED', /Pornhub-Adresse ist zurzeit nicht unterstützt/],
+      ['https://www.pornhub.com/view_video.php?viewkey=abc', 'TARGET_INVALID', /Kennung \(viewkey\) des Pornhub-Videos ist ungültig/],
       ['https://www.instagram.com/stories/someprofile/', 'TARGET_UNSUPPORTED', /Stories sind zurzeit nicht unterstützt/],
       ['https://www.instagram.com/someprofile/highlights/', 'TARGET_UNSUPPORTED', /Highlights sind zurzeit nicht unterstützt/],
       ['https://www.instagram.com/explore/', 'TARGET_UNSUPPORTED', /kein Profil, kein Beitrag und kein Reel/],
@@ -104,7 +106,7 @@ describe('source validation, adapters, run-now, history and kill switches (API o
       expect(response.statusCode).toBe(200);
       const adapters = response.json().adapters as Array<Record<string, unknown>>;
       expect(adapters.map((adapter) => [adapter.id, adapter.availability])).toEqual([['gallery-dl', 'available'], ['yt-dlp', 'unavailable'], ['direct-url', 'available']]);
-      expect(adapters.find((adapter) => adapter.id === 'gallery-dl')).toMatchObject({ version: '1.32.2', label: expect.stringContaining('gallery-dl'), sourceTypes: [{ id: 'pixiv', label: 'Pixiv' }, { id: 'instagram', label: 'Instagram' }, { id: 'patreon', label: 'Patreon' }] });
+      expect(adapters.find((adapter) => adapter.id === 'gallery-dl')).toMatchObject({ version: '1.32.2', label: expect.stringContaining('gallery-dl'), sourceTypes: [{ id: 'pixiv', label: 'Pixiv' }, { id: 'instagram', label: 'Instagram' }, { id: 'patreon', label: 'Patreon' }, { id: 'pornhub', label: 'Pornhub' }] });
       expect(adapters.find((adapter) => adapter.id === 'yt-dlp')!.message).toMatch(/nicht installiert/);
       expect([401, 403]).toContain((await api.call(null, 'GET', '/api/v1/adapters')).statusCode);
     });
@@ -157,7 +159,7 @@ describe('source validation, adapters, run-now, history and kill switches (API o
     it('validates the stored target and records the result on the subscription', async () => {
       const { api, alice, bob } = await start();
       const good = await subscribe(api, alice, 'https://www.pixiv.net/artworks/98765');
-      const bad = await subscribe(api, alice, 'https://www.youtube.com/playlist?list=PL12345');
+      const bad = await subscribe(api, alice, 'https://www.youtube.com/feed/subscriptions');
 
       const valid = await api.call(alice, 'POST', `/api/v1/subscriptions/${good.id}/validate`);
       expect(valid.json()).toMatchObject({ targetState: 'valid', validation: { supported: true, platform: 'pixiv' } });

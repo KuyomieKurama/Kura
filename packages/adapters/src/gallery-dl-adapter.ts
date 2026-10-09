@@ -3,8 +3,11 @@ import { AdapterError } from './errors.js';
 import {
   buildToolArguments,
   checkedCredentialPath,
+  checkedMaxPosts,
   CliTool,
   compareVersions,
+  FEED_DEFAULT_MAX_POSTS_PER_RUN,
+  FEED_MAX_POSTS_PER_RUN_LIMIT,
   labelFromName,
   parseVersion,
   type CliToolOptions
@@ -22,6 +25,7 @@ import { canonicalInstagramUrl, instagramToolUrl, parseInstagramPath, type Insta
 import { mediaTypeForExtension } from './media.js';
 import { canonicalPatreonUrl, parsePatreonPath } from './patreon-target.js';
 import { canonicalPixivUrl, parsePixivPath, pixivScopeFilter, pixivToolUrl, type PixivTarget } from './pixiv-target.js';
+import { canonicalPornhubUrl, isPornhubFamilyHost, parsePornhubUrl } from './pornhub-target.js';
 import { stageGeneratedFile } from './staging.js';
 import { parseHttpsTarget } from './target-url.js';
 import type { ProcessResult } from './process-runner.js';
@@ -69,9 +73,6 @@ export interface GalleryDlAdapterOptions extends CliToolOptions {
   readonly pixivMaxPostsPerRun?: number;
 }
 
-/** Posts read from a creator feed per run when the administrator sets nothing else. */
-export const FEED_DEFAULT_MAX_POSTS_PER_RUN = 50;
-export const FEED_MAX_POSTS_PER_RUN_LIMIT = 500;
 export const INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN = FEED_DEFAULT_MAX_POSTS_PER_RUN;
 export const INSTAGRAM_MAX_POSTS_PER_RUN_LIMIT = FEED_MAX_POSTS_PER_RUN_LIMIT;
 
@@ -117,7 +118,7 @@ interface PlatformSettings {
   readonly fixedOptions: readonly string[];
 }
 
-const PLATFORM_SETTINGS: Readonly<Record<'instagram' | 'patreon' | 'pixiv', PlatformSettings>> = {
+const PLATFORM_SETTINGS: Readonly<Partial<Record<SourceType, PlatformSettings>>> = {
   instagram: {
     requestSleep: '8-15',
     extractorSleep: '8-15',
@@ -135,6 +136,13 @@ const PLATFORM_SETTINGS: Readonly<Record<'instagram' | 'patreon' | 'pixiv', Plat
     extractorSleep: '2-4',
     downloadSleep: '1-3',
     fixedOptions: ['-o', 'extractor.pixiv.sanity=false', '-o', 'extractor.pixiv.ugoira=true']
+  },
+  // Pornhub photo albums: Kura's own pacing, as for the other sites (extractor/pornhub.py sets the age cookie itself).
+  pornhub: {
+    requestSleep: '2-4',
+    extractorSleep: '2-4',
+    downloadSleep: '1-3',
+    fixedOptions: []
   }
 };
 
@@ -202,7 +210,7 @@ export class GalleryDlAdapter implements SourceAdapter {
     return {
       adapterId: GALLERY_DL_ADAPTER_ID,
       adapterVersion: this.version,
-      sourceTypes: ['pixiv', 'instagram', 'patreon'],
+      sourceTypes: ['pixiv', 'instagram', 'patreon', 'pornhub'],
       single_post: true,
       creator_feed: true,
       pagination: true,
@@ -215,7 +223,9 @@ export class GalleryDlAdapter implements SourceAdapter {
       presets: ['BEST_AVAILABLE', 'SOURCE_BYTES'],
       bySourceType: {
         pixiv: { creator_feed: true, pagination: true, videos: false, auth_kind: 'token' },
-        patreon: { creator_feed: true, pagination: true, videos: true, auth_kind: 'cookies' }
+        patreon: { creator_feed: true, pagination: true, videos: true, auth_kind: 'cookies' },
+        // Pornhub: one photo album as a post (/album/<number>); videos and video lists are yt-dlp's.
+        pornhub: { single_post: true, creator_feed: false, pagination: false, images: true, videos: false, auth_kind: 'none' }
       }
     };
   }
@@ -228,6 +238,7 @@ export class GalleryDlAdapter implements SourceAdapter {
     if (PIXIV_HOSTS.has(host)) return this.pixivTarget(segments);
     if (INSTAGRAM_HOSTS.has(host)) return this.instagramTarget(segments);
     if (PATREON_HOSTS.has(host)) return this.patreonTarget(segments);
+    if (isPornhubFamilyHost(host)) return this.pornhubTarget(parsed, host, segments);
     throw new AdapterError('TARGET_UNSUPPORTED', 'This host is not enabled for gallery-dl');
   }
 
@@ -532,6 +543,13 @@ export class GalleryDlAdapter implements SourceAdapter {
     );
   }
 
+  private pornhubTarget(parsed: URL, host: string, segments: string[]): CanonicalTarget {
+    const target = parsePornhubUrl(host, segments, parsed.searchParams);
+    // Videos and video lists are yt-dlp's; this adapter answers for photo albums only.
+    if (target.kind !== 'album') throw new AdapterError('TARGET_UNSUPPORTED', 'Pornhub videos and video lists are handled by yt-dlp');
+    return this.targetOf('pornhub', 'post', canonicalPornhubUrl(target), target.albumId);
+  }
+
   private targetOf(sourceType: SourceType, kind: TargetKind, canonicalUrl: string, platformId: string): CanonicalTarget {
     return { adapterId: GALLERY_DL_ADAPTER_ID, sourceType, kind, canonicalUrl, platformId };
   }
@@ -540,14 +558,6 @@ export class GalleryDlAdapter implements SourceAdapter {
 const PLATFORM_LABELS: Readonly<Record<SourceType, string>> = {
   direct_media: 'Direkte Medien-URL', youtube: 'YouTube', instagram: 'Instagram', patreon: 'Patreon', pixiv: 'Pixiv', pornhub: 'Pornhub'
 };
-
-function checkedMaxPosts(name: string, value: number | undefined): number {
-  const maxPosts = value ?? FEED_DEFAULT_MAX_POSTS_PER_RUN;
-  if (!Number.isInteger(maxPosts) || maxPosts < 1 || maxPosts > FEED_MAX_POSTS_PER_RUN_LIMIT) {
-    throw new AdapterError('BINARY_NOT_CONFIGURED', `${name} must be an integer between 1 and ${FEED_MAX_POSTS_PER_RUN_LIMIT}`);
-  }
-  return maxPosts;
-}
 
 function assertPresetSupported(policy: QualityPolicy): void {
   if (policy.preset !== 'BEST_AVAILABLE' && policy.preset !== 'SOURCE_BYTES') {
@@ -637,8 +647,8 @@ function loginOptionOf(sourceType: SourceType, credentials: RunCredentials | und
  */
 function sourceOptions(target: CanonicalTarget, credentials: RunCredentials | undefined, phase: 'list' | 'download'): string[] {
   const sourceType = target.sourceType;
-  if (sourceType !== 'instagram' && sourceType !== 'patreon' && sourceType !== 'pixiv') return [];
   const settings = PLATFORM_SETTINGS[sourceType];
+  if (!settings) return [];
   const options = [
     '--sleep-request', settings.requestSleep,
     '--sleep-extractor', settings.extractorSleep,
@@ -649,7 +659,7 @@ function sourceOptions(target: CanonicalTarget, credentials: RunCredentials | un
   return [...options, ...loginOptions(sourceType, credentials)];
 }
 
-function loginOptions(sourceType: FeedSourceType, credentials: RunCredentials | undefined): string[] {
+function loginOptions(sourceType: SourceType, credentials: RunCredentials | undefined): string[] {
   const login = loginOptionOf(sourceType, credentials);
   if (!login) return [];
   const path = checkedCredentialPath(login.path);

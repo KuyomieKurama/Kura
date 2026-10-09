@@ -5,6 +5,7 @@ import {
   AdapterRegistry,
   YtDlpAdapter,
   YT_DLP_MINIMUM_VERSION,
+  capabilitiesForSourceType,
   type DownloadContext,
   type ResolvedAsset,
   type SourcePost
@@ -93,12 +94,17 @@ describe('YtDlpAdapter version and binary checks', () => {
 });
 
 describe('YtDlpAdapter capabilities', () => {
-  it('declares single videos only and nothing it cannot prove', async () => {
+  it('declares videos, YouTube and Pornhub lists, and nothing it cannot prove', async () => {
     const { adapter } = await setup();
     expect(adapter.capabilities()).toMatchObject({
-      adapterId: 'yt-dlp', sourceTypes: ['youtube', 'instagram'], single_post: true, creator_feed: false, pagination: false,
+      adapterId: 'yt-dlp', sourceTypes: ['youtube', 'pornhub', 'instagram'], single_post: true, creator_feed: true, pagination: true,
       resume: false, images: false, videos: true, page_snapshot: false, quality_variants: false, auth_kind: 'none', presets: ['BEST_AVAILABLE']
     });
+    const forType = (sourceType: 'youtube' | 'pornhub' | 'instagram') => capabilitiesForSourceType(adapter.capabilities(), sourceType);
+    expect(forType('youtube')).toMatchObject({ creator_feed: true, pagination: true, videos: true, images: false, auth_kind: 'cookies' });
+    expect(forType('pornhub')).toMatchObject({ creator_feed: true, pagination: true, videos: true, images: false, auth_kind: 'none' });
+    // Instagram profiles are gallery-dl's; yt-dlp only serves single posts as a fallback.
+    expect(forType('instagram')).toMatchObject({ creator_feed: false, pagination: false, auth_kind: 'none' });
   });
 });
 
@@ -133,8 +139,7 @@ describe('YtDlpAdapter.validateTarget', () => {
   });
 
   it.each([
-    ['a playlist', 'https://www.youtube.com/playlist?list=PL123'],
-    ['a channel', 'https://www.youtube.com/@owntest'],
+    ['a YouTube feed page', 'https://www.youtube.com/feed/subscriptions'],
     ['a look-alike host', 'https://www.youtube.com.evil.example.test/watch?v=dQw4w9WgXcQ'],
     ['the URL inside another URL', 'https://evil.example.test/?u=https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
     ['Pixiv, which is gallery-dl only (D-008)', 'https://www.pixiv.net/artworks/98765'],
@@ -243,8 +248,11 @@ describe('YtDlpAdapter metadata', () => {
     }
     const download = calls[2]!;
     expect(download).toEqual([
-      '--ignore-config', '--no-update', '--no-cache-dir', '--no-playlist', '--no-warnings', '--no-progress', '--no-mtime',
-      '--max-filesize', String(10 * 1024 * 1024), '-f', 'bestvideo*+bestaudio/best', '-o', 'asset.%(ext)s', '--', VIDEO_URL
+      '--ignore-config', '--no-update', '--no-cache-dir', '--no-warnings', '--no-playlist',
+      '--extractor-retries', '0', '--sleep-requests', '1', '--sleep-interval', '3', '--max-sleep-interval', '8',
+      '--no-progress', '--no-mtime', '--max-filesize', String(10 * 1024 * 1024),
+      '-f', 'bestvideo*+bestaudio/best', '--merge-output-format', 'mp4/webm/mkv', '--abort-on-unavailable-fragments',
+      '-o', 'asset.%(ext)s', '--', VIDEO_URL
     ]);
   });
 
@@ -323,7 +331,7 @@ describe('YtDlpAdapter downloads', () => {
   });
 
   it.each([
-    ['the tool fails', 'fail', 'PROCESS_FAILED'],
+    ['the tool asks for a sign in', 'fail', 'AUTH_REQUIRED'],
     ['it leaves extra files behind', 'extra-file', 'STAGING_REJECTED'],
     ['it writes something that is not a video', 'html', 'STAGING_REJECTED'],
     ['it leaves a symlink', 'symlink', 'STAGING_REJECTED'],

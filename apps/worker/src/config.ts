@@ -46,6 +46,10 @@ export interface DownloadConfig {
   patreonMaxPostsPerRun: number;
   /** The same bound for a Pixiv artist (KURA_PIXIV_MAX_POSTS_PER_RUN, 1-500, default 50). */
   pixivMaxPostsPerRun: number;
+  /** Videos read from a YouTube channel or playlist per run (KURA_YOUTUBE_MAX_POSTS_PER_RUN, 1-500, default 50). */
+  youtubeMaxPostsPerRun: number;
+  /** The same bound for a Pornhub video list (KURA_PORNHUB_MAX_POSTS_PER_RUN, 1-500, default 50). */
+  pornhubMaxPostsPerRun: number;
 }
 
 export interface WorkerConfig {
@@ -128,6 +132,8 @@ export function loadDownloadConfig(environment: NodeJS.ProcessEnv = process.env)
     adapterRecheckMs: integerInRange('WORKER_ADAPTER_RECHECK_SECONDS', environment.WORKER_ADAPTER_RECHECK_SECONDS, 600, 30, 86_400) * 1000,
     instagramMaxPostsPerRun: integerInRange('KURA_INSTAGRAM_MAX_POSTS_PER_RUN', environment.KURA_INSTAGRAM_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT),
     patreonMaxPostsPerRun: integerInRange('KURA_PATREON_MAX_POSTS_PER_RUN', environment.KURA_PATREON_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT),
-    pixivMaxPostsPerRun: integerInRange('KURA_PIXIV_MAX_POSTS_PER_RUN', environment.KURA_PIXIV_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT)
+    pixivMaxPostsPerRun: integerInRange('KURA_PIXIV_MAX_POSTS_PER_RUN', environment.KURA_PIXIV_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT),
+    youtubeMaxPostsPerRun: integerInRange('KURA_YOUTUBE_MAX_POSTS_PER_RUN', environment.KURA_YOUTUBE_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT),
+    pornhubMaxPostsPerRun: integerInRange('KURA_PORNHUB_MAX_POSTS_PER_RUN', environment.KURA_PORNHUB_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT)
   };
 }

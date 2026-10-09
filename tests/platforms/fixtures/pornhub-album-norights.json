@@ -1,0 +1,27 @@
+[
+  [
+    2,
+    {
+      "category": "pornhub",
+      "gallery": {
+        "id": 4243,
+        "score": 96,
+        "tags": [
+          "own",
+          "test"
+        ],
+        "title": "Own test album",
+        "views": 0
+      },
+      "subcategory": "gallery",
+      "user": "owntestuser's Photos"
+    }
+  ],
+  [
+    -1,
+    {
+      "error": "AuthorizationError",
+      "message": "Insufficient privileges to access this resource"
+    }
+  ]
+]
