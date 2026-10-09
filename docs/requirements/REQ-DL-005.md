@@ -1,0 +1,3 @@
+Bring alles was du hast auf die VM. Es soll instagram, patreon alles funktionieren. Wie soll ich sonst testen? Also wirklich. Ein Test funktioniert , nur wenn auch alle Funktionalitäten ausgeprägt sind
+
+Kontext (Asuna, nicht Teil des Hash-Textes der Nutzerworte): Stand 2026-10-09. Auf der VM läuft lane/instagram fb874f9 (IG-A). Lücken laut Code: Patreon nur einzelne Beiträge, Pixiv nur einzelne Werke, YouTube nur einzelne Videos (keine Playlists/Kanäle), Pornhub von keinem Adapter abgedeckt, Anmeldedaten nur für Instagram in Arbeit (IG-B). Plattformumfang laut docs/planning/04 Abschnitt 2 (Plattformmatrix): YouTube, Instagram inkl. Reels, Patreon, Pixiv, Pornhub, direkte Medien-URL. Allgemeine Webseiten (HTML-Snapshot) sind nicht Teil dieses Auftrags.
