@@ -25,7 +25,7 @@ import {
 import type { Pool } from 'pg';
 import { EGRESS_NOT_CONFIRMED, loadKillSwitches, type AdapterCatalog } from './catalog.js';
 import { importStagedFile } from './blob-import.js';
-import { classifyFailure, sourceGoneDisposition, type Disposition } from './failure.js';
+import { classifyFailure, sourceGoneDisposition, stopsWholeRun, type Disposition } from './failure.js';
 import type { ImmichHandover } from './handover.js';
 import {
   emptyStats,
@@ -184,6 +184,8 @@ export class JobExecutor {
         if (signal.aborted) throw error;
         const failure = classifyFailure(error);
         this.logUnexpected(lease, failure, error);
+        // Resolving a post can hit the login wall or the rate limit just like a download; the next post would too.
+        if (stopsWholeRun(failure)) throw new RunStop(failure);
         outcome = { status: 'failed', discoveryComplete: false, failure };
       }
       outcomes.push(outcome);
@@ -214,7 +216,8 @@ export class JobExecutor {
       return selectSource(catalog.registry, sourceUrl);
     } catch (error) {
       if (!(error instanceof AdapterError)) throw error;
-      if (error.code === 'TARGET_UNSUPPORTED') {
+      // TARGET_BROKEN: yt-dlp refuses an Instagram profile; the real answer may be that gallery-dl is not installed.
+      if (error.code === 'TARGET_UNSUPPORTED' || error.code === 'TARGET_BROKEN') {
         const wanted = this.recognizedButNotRunnable(sourceUrl);
         if (wanted) {
           // The address is fine; this server just cannot run the tool for it.
@@ -278,7 +281,7 @@ export class JobExecutor {
     }
 
     catalog.registry.assertEnabled(adapter, post.sourceType);
-    const manifest = await adapter.resolveAssets(post, { preset: this.preset });
+    const manifest = await adapter.resolveAssets(post, { preset: this.preset }, { signal });
     const records = await history.upsertAssets(saved.id, lease.userId, manifest.assets.map(toPersistableAsset));
     await history.setPostState(saved.id, 'downloading', manifest.discoveryComplete);
 
@@ -298,7 +301,7 @@ export class JobExecutor {
           stats.assetsFailed += 1;
           failure ??= disposition;
           // Login, throttling and a full quota affect every further asset: stop here.
-          if (disposition.runState === 'waiting_auth' || disposition.runState === 'waiting_rate_limit' || disposition.runState === 'paused') {
+          if (stopsWholeRun(disposition)) {
             await this.finishPost(saved.id, manifest);
             throw new RunStop(disposition);
           }

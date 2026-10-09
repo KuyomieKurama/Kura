@@ -2,6 +2,9 @@ export type AdapterErrorCode =
   | 'TARGET_INVALID'
   | 'TARGET_UNSUPPORTED'
   | 'TARGET_BROKEN'
+  | 'TARGET_NOT_FOUND'
+  | 'AUTH_REQUIRED'
+  | 'RATE_LIMITED'
   | 'POLICY_UNSUPPORTED'
   | 'ADAPTER_DISABLED'
   | 'ADAPTER_UNKNOWN'
@@ -33,7 +36,17 @@ export type AdapterErrorCode =
 export class AdapterError extends Error {
   readonly untrustedDiagnostics: string | undefined;
 
-  constructor(readonly code: AdapterErrorCode, message: string, untrustedDiagnostics?: string) {
+  /**
+   * `userMessage` is a fixed German sentence written by Kura for the person who typed the address or owns the
+   * subscription (for example "Stories are not supported yet"). It never contains tool or server output, so
+   * the API and the worker may show it as is. Without it they use their own text for the error code.
+   */
+  constructor(
+    readonly code: AdapterErrorCode,
+    message: string,
+    untrustedDiagnostics?: string,
+    readonly userMessage?: string
+  ) {
     super(message);
     this.name = 'AdapterError';
     this.untrustedDiagnostics = untrustedDiagnostics === undefined ? undefined : sanitizeDiagnostics(untrustedDiagnostics);

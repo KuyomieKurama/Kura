@@ -50,10 +50,18 @@ const egressNotConfirmed = fail(
   'Externe Werkzeuge gesperrt: Egress-Schutz nicht bestätigt. Der Administrator muss die Netzwerksperre für den Worker einrichten und bestätigen.'
 );
 
+const targetNotFound = fail(
+  'TARGET_NOT_FOUND',
+  'Das Ziel wurde nicht gefunden, zum Beispiel ein Profil, das nicht existiert, oder ein gelöschter Beitrag. Bereits archivierte Dateien bleiben erhalten.'
+);
+
 const byAdapterCode: Record<AdapterErrorCode, Disposition> = {
   TARGET_INVALID: fail('TARGET_INVALID', 'Die Adresse ist ungültig oder nicht erlaubt.'),
   TARGET_UNSUPPORTED: fail('TARGET_UNSUPPORTED', 'Diese Adresse wird von keinem Adapter unterstützt.'),
   TARGET_BROKEN: fail('TARGET_BROKEN', 'Für diese Art von Adresse ist die Unterstützung zurzeit defekt.'),
+  TARGET_NOT_FOUND: targetNotFound,
+  AUTH_REQUIRED: authFailure,
+  RATE_LIMITED: rateLimited,
   POLICY_UNSUPPORTED: fail('POLICY_UNSUPPORTED', 'Das Qualitätsprofil wird von diesem Adapter nicht unterstützt.'),
   ADAPTER_DISABLED: fail('ADAPTER_DISABLED', 'Der Adapter wurde vom Administrator abgeschaltet.'),
   ADAPTER_UNKNOWN: toolUnavailable,
@@ -118,6 +126,13 @@ export function classifyFailure(error: unknown): Disposition {
   }
   if (!(error instanceof AdapterError)) return unexpected;
 
+  const general = byAdapterCode[error.code];
+  // A fixed German sentence of the adapter (for example "this profile is private") is more precise than the
+  // general text. It replaces the text only; it never changes what happens to the run.
+  if (error.userMessage && (error.code === 'AUTH_REQUIRED' || error.code === 'RATE_LIMITED' || error.code === 'TARGET_NOT_FOUND')) {
+    return { ...general, message: error.userMessage };
+  }
+
   if (error.code === 'DOWNLOAD_FAILED') {
     const status = httpStatusOf(error);
     if (status !== undefined) return byHttpStatus(status) ?? byAdapterCode.DOWNLOAD_FAILED;
@@ -127,5 +142,13 @@ export function classifyFailure(error: unknown): Disposition {
     if (TOOL_RATE_LIMIT.test(error.untrustedDiagnostics)) return rateLimited;
     if (TOOL_GONE.test(error.untrustedDiagnostics)) return sourceGoneDisposition;
   }
-  return byAdapterCode[error.code] ?? unexpected;
+  return general ?? unexpected;
+}
+
+/**
+ * A failure that affects every further post of the run: continuing would only repeat the login attempt or
+ * make the throttling worse. The run stops and the "checked through" mark stays where it was.
+ */
+export function stopsWholeRun(disposition: Disposition): boolean {
+  return disposition.runState === 'waiting_auth' || disposition.runState === 'waiting_rate_limit' || disposition.runState === 'paused';
 }

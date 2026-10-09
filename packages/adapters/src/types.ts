@@ -28,6 +28,23 @@ export interface AdapterCapabilities {
   readonly quality_variants: boolean;
   readonly auth_kind: AuthKind;
   readonly presets: readonly QualityPreset[];
+  /**
+   * One adapter can serve platforms that differ in what it can do (gallery-dl: Instagram profiles yes, Pixiv
+   * profiles no). The flat fields above are the union over all source types; an entry here narrows or widens
+   * single fields for one source type. Read it through capabilitiesForSourceType().
+   */
+  readonly bySourceType?: Partial<Record<SourceType, SourceTypeCapabilities>>;
+}
+
+export type SourceTypeCapabilities = Partial<Pick<
+  AdapterCapabilities,
+  'single_post' | 'creator_feed' | 'pagination' | 'resume' | 'images' | 'videos' | 'auth_kind'
+>>;
+
+/** What the adapter can do for one source type: the flat declaration with that type's entry applied. */
+export function capabilitiesForSourceType(capabilities: AdapterCapabilities, sourceType: SourceType): AdapterCapabilities {
+  const { bySourceType, ...flat } = capabilities;
+  return { ...flat, ...bySourceType?.[sourceType] };
 }
 
 /** A target that passed validation. `canonicalUrl` is rebuilt from parsed parts, never the raw input. */
@@ -40,11 +57,27 @@ export interface CanonicalTarget {
   readonly platformId: string;
 }
 
+/**
+ * Credentials the worker provides for exactly one run. The adapter only hands them to the tool; it never reads,
+ * copies, logs or stores what is behind them.
+ */
+export interface RunCredentials {
+  /**
+   * Absolute path of a Netscape-format cookies file that the worker created for this run (mode 0600, inside the
+   * private run directory) and removes afterwards. Used for Instagram targets.
+   */
+  readonly cookiesFilePath?: string;
+}
+
 export interface JobContext {
   readonly jobId: string;
   readonly leaseGeneration: number;
   readonly signal?: AbortSignal;
+  readonly credentials?: RunCredentials;
 }
+
+/** What resolveAssets() gets besides the post: it has no job of its own, but needs the same signal and credentials. */
+export type ResolveContext = Pick<JobContext, 'signal' | 'credentials'>;
 
 export interface ProbeContext extends JobContext {
   readonly target: CanonicalTarget;
@@ -168,7 +201,7 @@ export interface SourceAdapter {
   validateTarget(url: string): CanonicalTarget;
   probe(context: ProbeContext): Promise<SourceSummary>;
   discover(context: DiscoveryContext): AsyncIterable<SourcePost>;
-  resolveAssets(post: SourcePost, policy: QualityPolicy): Promise<AssetManifest>;
+  resolveAssets(post: SourcePost, policy: QualityPolicy, context?: ResolveContext): Promise<AssetManifest>;
   download(asset: ResolvedAsset, context: DownloadContext): AsyncIterable<Uint8Array>;
   /**
    * Optional alternative delivery for CLI adapters (plan 04, section 3): the
