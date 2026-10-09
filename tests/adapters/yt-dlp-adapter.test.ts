@@ -361,3 +361,22 @@ describe('YtDlpAdapter downloads', () => {
     expect(await workspace.usedBytes()).toBe(0);
   });
 });
+
+describe('YtDlpAdapter YouTube cookies (P1)', () => {
+  it('hands an optional cookies file over with --cookies, for YouTube only', async () => {
+    const { adapter, tool } = await setup();
+    const credentials = { cookiesFilePath: '/run/kura/private/cookies.txt' };
+    const target = adapter.validateTarget(VIDEO_URL);
+    for await (const post of adapter.discover({ ...jobContext, target, credentials })) expect(post.platformPostId).toBeTruthy();
+    const call = (await tool.calls()).find((args) => args.includes('--dump-single-json'))!;
+    expect(call[call.indexOf('--cookies') + 1]).toBe('/run/kura/private/cookies.txt');
+  });
+
+  it('runs without --cookies when nothing was stored, and refuses a path that is not absolute', async () => {
+    const { adapter, tool } = await setup();
+    const target = adapter.validateTarget(VIDEO_URL);
+    for await (const post of adapter.discover({ ...jobContext, target })) expect(post).toBeTruthy();
+    expect((await tool.calls()).flat()).not.toContain('--cookies');
+    expect(await codeOf((async () => { for await (const post of adapter.discover({ ...jobContext, target, credentials: { cookiesFilePath: '--evil' } })) void post; })())).toBe('PROCESS_SPAWN_FAILED');
+  });
+});

@@ -135,6 +135,29 @@ account. Each Kura user stores the cookies of their own account; nothing is shar
   requests and fetches at most `KURA_INSTAGRAM_MAX_POSTS_PER_RUN` posts per run.
 - Test steps for the operator are in the report `.claude/team/reports/IG-B-implementer.md`, section "Betrieb auf der VM".
 
+## Patreon, Pixiv and YouTube access
+
+The account page has one row per platform. All logins are stored like the Instagram cookies above (same table, same
+encryption, additional authenticated data per user and platform, same 0600 file in a private directory that is
+deleted at the end of the run). What differs:
+
+| Platform | Login | How the tool gets it | Without a login |
+| --- | --- | --- | --- |
+| Patreon | cookies.txt, needs the cookie `session_id` of patreon.com | `gallery-dl -C <file>` | public posts may work, feeds are paused at the first run |
+| Pixiv | OAuth refresh token (created once with `gallery-dl oauth:pixiv` on the user's own computer) | `gallery-dl -c <gallery-dl.conf>`; the token is only inside that file (`extractor.pixiv.refresh-token`), never in an argument. The file also sets `cache.file` into the private directory | every run is paused (the Pixiv API wants a token) |
+| YouTube | optional cookies.txt, needs `LOGIN_INFO` and an `*APISID` cookie | `yt-dlp --cookies <file>` | public videos work |
+
+- Migration `0053` adds the platforms and a `kind` column (cookies or token). Nothing else is needed on the VM.
+- Pacing (Kura's own choice, not tool defaults): Patreon waits 3-6 s between requests and before each process, 2-5 s
+  before each file; Pixiv 2-4 s and 1-3 s. At most `KURA_PATREON_MAX_POSTS_PER_RUN` / `KURA_PIXIV_MAX_POSTS_PER_RUN`
+  posts (default 50 each, 1-500) are read per run.
+- Not fetched, shown as "nicht abrufbar" with the reason: videos embedded from other sites, Patreon HLS streams
+  (gallery-dl would load its own yt-dlp module, which Kura cannot check), file types outside the allowlist and posts
+  the account may not view. Ugoira are kept as the original zip next to a small JSON file with the frame timing; no
+  conversion happens.
+- Account risk: all three platforms can restrict accounts that fetch a lot or quickly. Use your own account.
+- Test steps are in `.claude/team/reports/P1-implementer.md`.
+
 ## Limits of this setup
 
 - No TLS: passwords cross the network unencrypted. Use only on a trusted LAN with test data.
