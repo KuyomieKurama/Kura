@@ -5,7 +5,6 @@ import {
   AdapterError,
   YtDlpAdapter,
   type AssetManifest,
-  type ResolvedAsset,
   type RunCredentials,
   type SourcePost
 } from '../../packages/adapters/src/index.js';
