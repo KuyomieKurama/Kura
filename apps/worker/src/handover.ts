@@ -38,8 +38,10 @@ export class PostgresEndpointApprovals implements EndpointApprovals {
   }
 }
 
-function decryptSecret(key: Buffer, ciphertext: Buffer, nonce: Buffer): string {
+/** Same scheme as the API's encryptSecret (apps/api/src/immich-routes.ts); keep the two in step. */
+export function decryptSecret(key: Buffer, ciphertext: Buffer, nonce: Buffer, aad?: string): string {
   const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+  if (aad !== undefined) decipher.setAAD(Buffer.from(aad, 'utf8'));
   decipher.setAuthTag(ciphertext.subarray(-16));
   return Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]).toString('utf8');
 }

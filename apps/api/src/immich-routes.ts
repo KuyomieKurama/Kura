@@ -33,15 +33,21 @@ function requiredString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function encryptSecret(key: Buffer, value: string): { ciphertext: Buffer; nonce: Buffer } {
+/**
+ * AES-256-GCM with a fresh 12-byte nonce; the 16-byte tag is appended to the ciphertext. The optional additional
+ * authenticated data binds a ciphertext to its owner: a blob copied to another row no longer decrypts.
+ */
+export function encryptSecret(key: Buffer, value: string, aad?: string): { ciphertext: Buffer; nonce: Buffer } {
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, nonce);
+  if (aad !== undefined) cipher.setAAD(Buffer.from(aad, 'utf8'));
   return { nonce, ciphertext: Buffer.concat([cipher.update(value, 'utf8'), cipher.final(), cipher.getAuthTag()]) };
 }
 
-function decryptSecret(key: Buffer, ciphertext: Buffer, nonce: Buffer): string {
+export function decryptSecret(key: Buffer, ciphertext: Buffer, nonce: Buffer, aad?: string): string {
   const tag = ciphertext.subarray(-16);
   const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+  if (aad !== undefined) decipher.setAAD(Buffer.from(aad, 'utf8'));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]).toString('utf8');
 }
