@@ -17,6 +17,8 @@ import type { ExternalBinary } from '../../packages/adapters/src/index.js';
  * prove that the file existed with the right mode and that nothing else carried the secret).
  */
 export interface FakeResponse {
+  /** A listing that ignores --playlist-items and returns all of its entries (to test that Kura applies the cap itself). */
+  ignorePlaylistItems?: boolean;
   stdout?: string;
   stderr?: string;
   exitCode?: number;
@@ -54,6 +56,8 @@ export interface FakeYtDlp {
   calls(): Promise<string[][]>;
   /** What the tool saw in the file given with --cookies, one entry per call that had the option. */
   cookies(): Promise<CookieObservation[]>;
+  /** The environment variables of every call except `--version` (PATH with ffmpeg and deno, HOME ...). */
+  environments(): Promise<Record<string, string>[]>;
 }
 
 const SCRIPT = String.raw`
@@ -63,6 +67,7 @@ let control = {};
 try { control = JSON.parse(fs.readFileSync(process.env.FAKE_TOOL_CONTROL, 'utf8')); } catch {}
 if (args.includes('--version')) { console.log(control.version ?? '2026.08.19'); process.exit(0); }
 if (process.env.FAKE_TOOL_LOG) fs.appendFileSync(process.env.FAKE_TOOL_LOG, JSON.stringify(args) + '\n');
+if (process.env.FAKE_TOOL_ENV_LOG) fs.appendFileSync(process.env.FAKE_TOOL_ENV_LOG, JSON.stringify(process.env) + '\n');
 
 const cookiesAt = args.indexOf('--cookies');
 if (cookiesAt >= 0 && process.env.FAKE_TOOL_COOKIE_LOG) {
@@ -84,11 +89,13 @@ if (args.includes('--flat-playlist')) {
   if (!response) { process.stderr.write('ERROR: [generic] Unsupported URL: ' + url + '\n'); process.exit(1); }
   let stdout = response.stdout;
   const itemsAt = args.indexOf('--playlist-items');
-  if (stdout !== undefined && itemsAt >= 0 && (response.exitCode ?? 0) === 0) {
+  if (stdout !== undefined && itemsAt >= 0 && (response.exitCode ?? 0) === 0 && !response.ignorePlaylistItems) {
     const last = Number(args[itemsAt + 1].split(':')[1]);
-    const playlist = JSON.parse(stdout);
-    if (Array.isArray(playlist.entries)) playlist.entries = playlist.entries.slice(0, last);
-    stdout = JSON.stringify(playlist);
+    try {
+      const playlist = JSON.parse(stdout);
+      if (playlist && Array.isArray(playlist.entries)) playlist.entries = playlist.entries.slice(0, last);
+      stdout = JSON.stringify(playlist);
+    } catch {} // not JSON: the tool printed something else, and so does the stand-in
   }
   answer({ ...response, stdout });
 } else if (args.includes('--dump-single-json')) {
@@ -110,6 +117,7 @@ export async function fakeYtDlpTool(initial: YtDlpControl = {}): Promise<FakeYtD
   const dir = await tempDir('kura-ytdlp-tool-');
   const logFile = join(dir, 'calls.jsonl');
   const cookieLog = join(dir, 'cookies.jsonl');
+  const environmentLog = join(dir, 'environments.jsonl');
   const controlFile = join(dir, 'control.json');
   await writeFile(controlFile, JSON.stringify(initial));
   const readLines = async <T>(file: string): Promise<T[]> => {
@@ -121,10 +129,11 @@ export async function fakeYtDlpTool(initial: YtDlpControl = {}): Promise<FakeYtD
   };
   return {
     binary,
-    env: { FAKE_TOOL_LOG: logFile, FAKE_TOOL_CONTROL: controlFile, FAKE_TOOL_COOKIE_LOG: cookieLog },
+    env: { FAKE_TOOL_LOG: logFile, FAKE_TOOL_CONTROL: controlFile, FAKE_TOOL_COOKIE_LOG: cookieLog, FAKE_TOOL_ENV_LOG: environmentLog },
     control: (next) => writeFile(controlFile, JSON.stringify(next)),
     calls: () => readLines<string[]>(logFile),
-    cookies: () => readLines<CookieObservation>(cookieLog)
+    cookies: () => readLines<CookieObservation>(cookieLog),
+    environments: () => readLines<Record<string, string>>(environmentLog)
   };
 }
 
