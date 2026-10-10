@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransaction, type OidcProviderConfig } from '@kura/identity';
 import type { ApiConfig } from './config.js';
+import { resolveBuildInfo } from './build-info.js';
 import { registerImmichRoutes } from './immich-routes.js';
 import { registerCredentialRoutes } from './credential-routes.js';
 import { registerMediaRoutes } from './media-routes.js';
@@ -70,6 +71,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   // An idle connection that the database closes (restart, failover) is reported on the pool.
   // Without a listener Node would treat the event as an unhandled error and end the process.
   pool.on('error', (poolError) => app.log.error({ message: poolError.message }, 'database pool error'));
+  const buildInfo = config.build ?? resolveBuildInfo();
   const storageConfig = config.storage ?? { backend: 'filesystem' as const, root: './data/blobstore', quotaBytes: 10 * 1024 * 1024 * 1024, layout: 'cas' as const };
   const blobstore: RangeReadBackend = storageConfig.backend === 'database' ? new DatabaseBlobStore(pool, { quotaBytes: storageConfig.quotaBytes }) : new FilesystemBlobStore(storageConfig.root, storageConfig.layout, { quotaBytes: storageConfig.quotaBytes });
   void app.register(fastifyCookie);
@@ -133,7 +135,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     await audit(pool, null, action, `login:${subject || 'invalid'}`, source, 'failure');
   }
   app.get('/healthz', async () => { await pool.query('SELECT 1'); return { status: 'ok' }; });
-  app.get('/api/v1/status', async () => { const migrations = await pool.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version'); return { version: '0.1.0', database: 'ok', migrations: { appliedCount: migrations.rowCount, latestVersion: migrations.rows.at(-1)?.version ?? null } }; });
+  app.get('/api/v1/status', async () => { const migrations = await pool.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version'); return { version: buildInfo.version, commit: buildInfo.commit, database: 'ok', migrations: { appliedCount: migrations.rowCount, latestVersion: migrations.rows.at(-1)?.version ?? null } }; });
   app.get('/api/v1/auth/config', async () => ({ oidcEnabled: Boolean(oidcProvider) }));
   app.get('/api/v1/auth/state', async (request) => { const count = await pool.query('SELECT 1 FROM users LIMIT 1'); const session = await getSession(request); return { configured: count.rowCount !== 0, authenticated: Boolean(session), role: session?.role ?? null, csrfToken: session?.csrf ?? null, passwordChangeRequired: session?.mustChangePassword ?? false, cookieSecure: config.cookieSecure ?? true, oidcEnabled: Boolean(oidcProvider) }; });
   app.get('/api/v1/auth/oidc/start', async (_request, reply) => {
