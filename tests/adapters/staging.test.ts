@@ -136,6 +136,40 @@ describe('stageByteStream', () => {
     const workspace = await testWorkspace();
     expect((await rejectionOf(stageByteStream(chunksOf(JPEG_BYTES), workspace, 0, 'text/html', 1024))).code).toBe('MIME_REJECTED');
   });
+
+  // Regression for the intermittent ERR_STREAM_DESTROYED that failed the full gate: when the source failed
+  // (abort, lost lease, connection reset) while a write to the staging file was still in flight, destroying
+  // the file stream made Node emit 'error' on it. Nothing listened, so the worker process would have crashed.
+  it('survives a source that fails while a write is still in flight: no unhandled error, no partial file', async () => {
+    const workspace = await testWorkspace();
+    const uncaught: unknown[] = [];
+    const collect = (error: unknown): void => { uncaught.push(error); };
+    // Vitest reports an uncaught exception as a failed run; take its listeners out for the duration of the
+    // scenario so that the test itself can assert that none happens.
+    const vitestListeners = process.listeners('uncaughtException');
+    process.removeAllListeners('uncaughtException');
+    process.on('uncaughtException', collect);
+    try {
+      for (let assetIndex = 0; assetIndex < 10; assetIndex += 1) {
+        // The first chunk makes the file open; the second is written right before the source fails, so that the
+        // write is still running in the thread pool when the stream is torn down.
+        async function* failingAfterWrite(): AsyncIterable<Uint8Array> {
+          yield JPEG_BYTES;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          yield JPEG_BYTES;
+          throw new Error('connection reset');
+        }
+        await expect(stageByteStream(failingAfterWrite(), workspace, assetIndex, 'image/jpeg', 1024)).rejects.toThrow('connection reset');
+        expect(existsSync(join(workspace.mediaDir, `item-${String(assetIndex).padStart(4, '0')}.jpg`))).toBe(false);
+      }
+      // The error event of a destroyed stream is emitted asynchronously; give it the chance to show up.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally {
+      process.off('uncaughtException', collect);
+      for (const listener of vitestListeners) process.on('uncaughtException', listener);
+    }
+    expect(uncaught).toEqual([]);
+  });
 });
 
 describe('bytesMatchMediaType', () => {

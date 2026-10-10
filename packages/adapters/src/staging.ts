@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { lstat, open, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { once } from 'node:events';
+import { pipeline } from 'node:stream/promises';
 import { AdapterError } from './errors.js';
 import { bytesMatchMediaType, extensionForMediaType, mediaTypeForExtension, SNIFF_BYTES } from './media.js';
 import type { StagedFile } from './types.js';
@@ -100,18 +100,21 @@ export async function stageByteStream(
   const hash = createHash('sha256');
   const output = createWriteStream(absolutePath, { flags: 'wx', mode: 0o600 });
   let byteLength = 0;
-  try {
+  async function* measured(): AsyncGenerator<Uint8Array> {
     for await (const chunk of chunks) {
       byteLength += chunk.length;
       if (byteLength > maxBytes) throw new AdapterError('SIZE_LIMIT', `Download is larger than the limit of ${maxBytes} bytes`);
       hash.update(chunk);
-      if (!output.write(chunk)) await once(output, 'drain');
+      yield chunk;
     }
-    output.end();
-    await once(output, 'close');
+  }
+  try {
+    // `pipeline` keeps an error listener on the file stream for as long as it can emit one and settles only
+    // after the file is closed. A manual `output.destroy()` while a write is in flight makes Node emit
+    // ERR_STREAM_DESTROYED on the file stream; with no listener that crashed the process.
+    await pipeline(measured(), output);
     if (byteLength === 0) throw new AdapterError('DOWNLOAD_FAILED', 'Download was empty');
   } catch (error) {
-    output.destroy();
     await rm(absolutePath, { force: true });
     throw error;
   }
