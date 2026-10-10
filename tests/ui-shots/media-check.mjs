@@ -1,4 +1,4 @@
-/* global process, console, fetch, document, window, URL */
+/* global process, console, fetch, document, Buffer */
 // Real-browser check of the media content route and the viewer: node tests/ui-shots/media-check.mjs [--skip-build]
 // - the content route in a browser tab: a picture is shown (under the sandbox policy), SVG and HTML are downloaded and
 //   never rendered, and the security headers are on the responses; a video seeks with Range requests in the viewer
