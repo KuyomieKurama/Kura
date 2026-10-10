@@ -27,6 +27,8 @@ plain HTTP, no reverse proxy, no TLS (see risk R-11). Do not expose it to untrus
 ~/bin/kura-deploy.sh m1-core
 ```
 
+The argument is a branch or a release tag (`~/bin/kura-deploy.sh v0.3.0`, see "Version und Update").
+
 The script (`deploy/kura-deploy.sh` in this repository) fetches the ref, builds the image, recreates
 `kura-app`, waits for `/healthz`, then recreates `kura-worker` and waits until it is running and has logged
 `worker started`. Migrations run when the API process starts (guarded by a PostgreSQL advisory lock), which is why
@@ -201,6 +203,112 @@ Pornhub works without it as long as the site does not ask for it.
 - Not checked on a real VM: the real merge with ffmpeg, YouTube with deno and `yt-dlp-ejs`, Pornhub behind Cloudflare,
   the real wording of YouTube's error texts. Test steps are in `.claude/team/reports/P2-implementer.md`, section
   "Betrieb auf der VM".
+
+## Version und Update
+
+Requirement REQ-DL-007: an instance knows its own version, checks regularly whether a newer one exists, and tells its
+people how to upgrade. It never upgrades itself.
+
+### How versions are tagged
+
+- A release is an annotated git tag `vMAJOR.MINOR.PATCH` (semantic versioning, for example `v0.3.0`; a pre-release
+  carries a suffix such as `v0.3.0-rc.1`). The first one is `v0.2.0`. The milestone tags (`m3`, `m5`, `platforms-1`) are
+  not versions and are ignored by the check.
+- The single source of truth for the number is the `version` of the **root** `package.json`. The orchestrator
+  raises it in the commit that is tagged, so that the tag `v0.3.0` points at a tree whose `package.json` says `0.3.0`.
+  `kura-deploy.sh` warns when the two disagree.
+- A GitHub release for a tag is optional. If one exists, its text is shown as release notes in "Über Kura".
+  Mention there when `deploy/kura-deploy.sh` changed.
+
+### What a running instance reports
+
+`deploy/kura-deploy.sh` reads the version from `package.json` (with `sed`, the host has no Node) and the short commit from
+git, and passes both to `podman build` as `--build-arg KURA_VERSION=... --build-arg KURA_COMMIT=...`. The Containerfile
+stores them as the environment variables `KURA_VERSION` and `KURA_COMMIT` of the image. They appear in
+`GET /api/v1/status`, in the sidebar footer ("Kura 0.2.0") and on the page "Über Kura" (menu footer or account page).
+A build by hand without the build arguments reports the version of the root `package.json` and the commit `unbekannt`.
+Do not set `KURA_VERSION` in `kura.env`: an environment file overrides the image and would make the instance lie.
+
+### The update check
+
+The API process (not the browser, not the worker) asks the GitHub REST API for the tags of the repository
+(`GET https://api.github.com/repos/KuyomieKurama/Kura/tags`, unauthenticated, 10 s timeout, answer size capped at
+1 MiB) and for the latest release (`.../releases/latest`, a 404 means that there is no release). The highest stable
+`vX.Y.Z` tag is compared with the running version by semver rules. The first check runs 60 seconds after the start, then
+every 12 hours (one hour after a failed check); an administrator can check at once with "Jetzt prüfen". The last result
+is kept in the database (`update_check_state`), so a restart does not forget it. Conditional requests (ETag) keep it
+within GitHub's rate limit; after a 403 or 429 the check pauses until the time GitHub names. A failed check never breaks
+anything: the status is "unbekannt" and the page shows the reason.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `KURA_UPDATE_CHECK` | `true` | `false` switches the check off: no request is ever sent, the status is "deaktiviert". |
+| `KURA_UPDATE_REPO` | `KuyomieKurama/Kura` | `owner/name` of the repository whose tags are read (for a fork). |
+| `KURA_UPDATE_CHANNEL` | `stable` | `prerelease` also offers pre-release tags such as `v0.3.0-rc.1`. |
+| `KURA_UPDATE_API_BASE` | `https://api.github.com` | API base URL. Only tests and GitHub Enterprise change it. The release links in the UI always point to github.com. |
+
+Privacy: the check connects from the server to `api.github.com`, so GitHub sees the IP address of this server and the
+repository that is asked for. Nothing else is sent (no version, no user data, no identifier; the User-Agent contains the
+running version and the repository). Set `KURA_UPDATE_CHECK=false` in `~/.config/kura/kura.env` and run `kura-deploy.sh`
+again to switch it off. Redirects are not followed; a renamed repository needs a new `KURA_UPDATE_REPO`.
+
+What people see: everybody sees the version in the sidebar footer, with "Neue Version X" when the instance is outdated.
+Administrators additionally get a strip above the page ("Kura 0.3.0 ist verfügbar. Du nutzt 0.2.0.", button "Details",
+button "Ausblenden"; hidden per user and per offered version, a newer version shows it again). The page "Über Kura"
+shows version, commit, status, last check, release notes and these upgrade instructions.
+
+### Upgrading
+
+There is deliberately no button and no API route that updates Kura: an application that can rebuild and restart its own
+host is an attack path. The administrator upgrades on the VM:
+
+1. **Back up first.** The data live in the PostgreSQL volume `kura-pgdata`. A dump that can be restored on its own:
+
+   ```
+   podman exec kura-postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > ~/kura-backup-$(date +%F).sql
+   ```
+
+   Also keep `~/.config/kura/kura.env`: the key `KURA_SECRET_KEY` decrypts the stored Immich and platform
+   credentials; a database backup without it leaves them unusable (plan 10, sections 4 and 5).
+2. **Only if `deploy/kura-deploy.sh` changed** in the new release (the release notes say so; the first upgrade to
+   `v0.2.0` always needs it, because the old script cannot deploy a tag), fetch the new script:
+
+   ```
+   git -C ~/work/Kura fetch --tags
+   git -C ~/work/Kura checkout v0.3.0
+   cp ~/work/Kura/deploy/kura-deploy.sh ~/bin/
+   ```
+3. **Deploy the tag:**
+
+   ```
+   ~/bin/kura-deploy.sh v0.3.0
+   ```
+
+   The script checks out the tag (a branch name works as before), builds the image with version and commit,
+   replaces `kura-app` and `kura-worker`, and prints `kura <commit> (version 0.3.0) is up`. It can be run again at any time.
+4. **Check:** open "Über Kura": version `0.3.0`, status "Aktuell". `podman logs --tail 20 kura-app` shows no errors.
+
+### Rolling back
+
+Deploy the previous tag the same way: `~/bin/kura-deploy.sh v0.2.0`. Migrations are additive and there are no down
+migrations, and an older program must not be started against an incompatibly migrated schema (plan 10, section 4). If the
+new release applied a migration, restore the backup of step 1 **before** you start the older version. This **deletes the
+current database** and replaces it by the backup, including everything that was written after the backup; do it only
+with a fresh dump at hand:
+
+```
+podman stop kura-app kura-worker
+podman exec kura-postgres sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+podman exec -i kura-postgres sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' < ~/kura-backup-YYYY-MM-DD.sql
+~/bin/kura-deploy.sh v0.2.0
+```
+
+The dump and restore commands are standard PostgreSQL tools but were not run on a real VM (see the report VER).
+
+### Switching the check off
+
+Add `KURA_UPDATE_CHECK=false` to `~/.config/kura/kura.env` and run `~/bin/kura-deploy.sh <ref>` again. "Über Kura" then
+says "Deaktiviert" and offers no check button; nothing is sent to GitHub.
 
 ## Limits of this setup
 

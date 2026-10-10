@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build and (re)start the Kura test stand on this VM. Usage: kura-deploy.sh [git-ref]
-# The ref is a branch (e.g. main) or a release tag (e.g. v0.3.0, see docs/vm-setup.md, "Version and update").
+# The ref is a branch (e.g. main) or a release tag (e.g. v0.3.0, see docs/vm-setup.md, "Version und Update").
 #
 # Containers (all on the Podman network kura-net, all from the same env file):
 #   kura-postgres  PostgreSQL, volume kura-pgdata
