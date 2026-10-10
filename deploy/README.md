@@ -21,6 +21,18 @@ It reports `worker started` as a JSON log line. `kura-deploy.sh` does all of thi
 Immich handover, the same `KURA_SECRET_KEY` as the API. See `docs/vm-setup.md` for every setting, the storage
 rules (`KURA_STORAGE_BACKEND=database`) and the external tools.
 
+### Version and commit
+
+The image carries the version and the git commit of its build in `KURA_VERSION` and `KURA_COMMIT`. A build by hand:
+
+    podman build -f deploy/Containerfile -t kura:local \
+      --build-arg KURA_VERSION="$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' package.json | head -n 1)" \
+      --build-arg KURA_COMMIT="$(git rev-parse --short HEAD)" .
+
+`kura-deploy.sh` does this itself and accepts a branch or a release tag (`kura-deploy.sh v0.3.0`). Without the build
+arguments the API reports the version of the root `package.json` and the commit `unbekannt`. See `docs/vm-setup.md`,
+"Version und Update", for the update check, the upgrade steps and the rollback.
+
 ### External tools and the egress barrier
 
 yt-dlp and gallery-dl are not in the image and stay blocked (`EGRESS_NOT_CONFIRMED`) until the operator sets

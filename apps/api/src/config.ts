@@ -1,3 +1,20 @@
+import { resolveBuildInfo, type BuildInfo } from './build-info.js';
+
+export type UpdateChannel = 'stable' | 'prerelease';
+
+/** Settings of the update check (REQ-DL-007). The check is a server-side request to the GitHub REST API. */
+export interface UpdateCheckConfig {
+  enabled: boolean;
+  /** "owner/name" on GitHub. */
+  repository: string;
+  /** Base URL of the GitHub REST API, without trailing slash. Only tests and GitHub Enterprise change it. */
+  apiBase: string;
+  channel: UpdateChannel;
+}
+
+export const DEFAULT_UPDATE_REPOSITORY = 'KuyomieKurama/Kura';
+export const DEFAULT_UPDATE_API_BASE = 'https://api.github.com';
+
 export interface ApiConfig {
   databaseUrl: string;
   host: string;
@@ -7,6 +24,10 @@ export interface ApiConfig {
   setupToken?: string;
   storage?: { backend: 'filesystem' | 'database'; root: string; quotaBytes: number; layout: 'cas' | 'template' };
   secretKey?: Buffer;
+  /** Version and commit of this build. Without it the API resolves them itself. */
+  build?: BuildInfo;
+  /** Without it the update check is off: an app built in a test makes no request to GitHub. */
+  update?: UpdateCheckConfig;
   oidc?: {
     issuer: string;
     clientId: string;
@@ -58,6 +79,18 @@ function parseSecretKey(value: string | undefined): Buffer | undefined {
   return key;
 }
 
+function updateCheckConfig(environment: NodeJS.ProcessEnv): UpdateCheckConfig {
+  const repository = (environment.KURA_UPDATE_REPO ?? '').trim() || DEFAULT_UPDATE_REPOSITORY;
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || repository.split('/').some((part) => /^\.+$/.test(part))) throw new Error('KURA_UPDATE_REPO must look like owner/name');
+  const apiBase = ((environment.KURA_UPDATE_API_BASE ?? '').trim() || DEFAULT_UPDATE_API_BASE).replace(/\/+$/, '');
+  let parsedBase: URL;
+  try { parsedBase = new URL(apiBase); } catch { throw new Error('KURA_UPDATE_API_BASE must be a URL'); }
+  if (parsedBase.protocol !== 'https:' && parsedBase.protocol !== 'http:') throw new Error('KURA_UPDATE_API_BASE must be an http(s) URL');
+  const channel = (environment.KURA_UPDATE_CHANNEL ?? '').trim() || 'stable';
+  if (channel !== 'stable' && channel !== 'prerelease') throw new Error('KURA_UPDATE_CHANNEL must be stable or prerelease');
+  return { enabled: parseBoolean('KURA_UPDATE_CHECK', environment.KURA_UPDATE_CHECK, true), repository, apiBase, channel };
+}
+
 function oidcConfig(environment: NodeJS.ProcessEnv): ApiConfig['oidc'] {
   const values = [environment.OIDC_ISSUER_URL, environment.OIDC_CLIENT_ID, environment.OIDC_CLIENT_SECRET, environment.OIDC_REDIRECT_URL];
   if (values.every((value) => value === undefined || value === '')) return undefined;
@@ -85,6 +118,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
       layout: environment.KURA_STORAGE_LAYOUT === 'template' ? 'template' : 'cas'
     },
     secretKey: parseSecretKey(environment.KURA_SECRET_KEY),
+    build: resolveBuildInfo(environment),
+    update: updateCheckConfig(environment),
     oidc: oidcConfig(environment)
   };
 }
