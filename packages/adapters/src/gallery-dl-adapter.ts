@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { AdapterError } from './errors.js';
 import {
   buildToolArguments,
@@ -14,6 +13,7 @@ import {
 } from './cli-support.js';
 import { failureFromProcess, type FailureContext } from './gallery-dl-output.js';
 import {
+  endOfNewPosts,
   MAX_FILES_PER_POST,
   readFeedListing,
   readPostListing,
@@ -23,6 +23,7 @@ import {
 } from './gallery-dl-listing.js';
 import { canonicalInstagramUrl, instagramToolUrl, parseInstagramPath, type InstagramTarget } from './instagram-target.js';
 import { mediaTypeForExtension } from './media.js';
+import { galleryDlRevisionKey } from './revision.js';
 import { canonicalPatreonUrl, parsePatreonPath } from './patreon-target.js';
 import { canonicalPixivUrl, parsePixivPath, pixivScopeFilter, pixivToolUrl, type PixivTarget } from './pixiv-target.js';
 import { canonicalPornhubUrl, isPornhubFamilyHost, parsePornhubUrl } from './pornhub-target.js';
@@ -148,6 +149,8 @@ const PLATFORM_SETTINGS: Readonly<Partial<Record<SourceType, PlatformSettings>>>
 
 /** Reading a feed is slow by design (pacing between requests, extra requests per post). */
 const FEED_LISTING_TIMEOUT_MS = 30 * 60_000;
+/** Posts in the first listing of an incremental feed run (Instagram delivers about this many per page). */
+const FIRST_FEED_WINDOW = 12;
 
 const PIXIV_HOSTS = new Set(['pixiv.net', 'www.pixiv.net']);
 const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com']);
@@ -272,7 +275,7 @@ export class GalleryDlAdapter implements SourceAdapter {
   async *discover(context: DiscoveryContext): AsyncIterable<SourcePost> {
     const target = this.recheck(context.target);
     if (target.kind === 'creator_feed') {
-      const feed = await this.listFeed(target, this.maxPostsPerFeed[feedTypeOf(target)], context.signal, context.credentials);
+      const feed = await this.listNewPosts(target, context);
       for (const listing of feed.posts) yield this.feedPostFrom(target.sourceType, listing);
       // Posts that were listed before the tool stopped are delivered first; the run then ends with the error
       // (login, throttling) instead of looking like a complete, quiet feed.
@@ -444,6 +447,29 @@ export class GalleryDlAdapter implements SourceAdapter {
   }
 
   /**
+   * The new posts of a feed. Without known posts, or when the worker does not trust its record of the previous run,
+   * this is the newest `maxPostsPerRun` posts. With known posts the feed is read in growing windows of the newest
+   * posts (FIRST_FEED_WINDOW, then twice as many ...) and the reading ends with the first window that reaches a run
+   * of known posts (endOfNewPosts), so a repeat run over an unchanged feed asks for one short window instead of
+   * the whole range. Each window is a new listing from the top of the feed, which costs at most about twice the
+   * requests of the last window; reading the whole range at once stays the choice when nothing is known.
+   */
+  private async listNewPosts(target: CanonicalTarget, context: DiscoveryContext): Promise<FeedListing> {
+    const bound = this.maxPostsPerFeed[feedTypeOf(target)];
+    const known = context.knownPostIds;
+    if (!known || known.size === 0) return this.listFeed(target, bound, context.signal, context.credentials);
+
+    let window = Math.min(FIRST_FEED_WINDOW, bound);
+    for (;;) {
+      const feed = await this.listFeed(target, window, context.signal, context.credentials);
+      const enough = endOfNewPosts(feed.inToolOrder, known) !== null;
+      // A tool error ends the reading, a feed shorter than the window has no more posts, and the bound is the bound.
+      if (enough || feed.stoppedBy || feed.inToolOrder.length < window || window >= bound) return feed;
+      window = Math.min(window * 2, bound);
+    }
+  }
+
+  /**
    * Runs a metadata process. A process that gallery-dl itself made wait for a rate limit (Pixiv sleeps five minutes
    * after "rate limit", extractor/pixiv.py `_call`) is killed by the timeout; its log says why, and that is a
    * rate limit for Kura, not a defect.
@@ -484,10 +510,8 @@ export class GalleryDlAdapter implements SourceAdapter {
       creator: { platformId: listing.creatorId, displayName: listing.creatorName },
       title: listing.title,
       publishedAt: listing.date,
-      // No revision field is known for these sites; the key changes when the date or the file list changes.
-      revisionKey: `l-${createHash('sha256')
-        .update(`${identity.platformPostId}|${listing.date ?? ''}|${listing.files.map((file) => file.extension ?? '?').join(',')}|${listing.locked ? 'locked' : ''}`)
-        .digest('hex').slice(0, 24)}`,
+      // No platform reports an edit field for these sites (see revision.ts): the key is the post and its set of files.
+      revisionKey: galleryDlRevisionKey(identity.platformPostId, listing.files.map((file) => file.sourceAssetId)),
       canonicalUrl: identity.canonicalUrl
     };
   }

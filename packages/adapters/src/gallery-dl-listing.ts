@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { AdapterError } from './errors.js';
 import { asRecord, cleanText, identifierText, positiveInteger } from './cli-support.js';
 import {
@@ -23,6 +24,7 @@ import type { CanonicalTarget, SourceType } from './types.js';
 export const MAX_FILES_PER_POST = 1_000;
 const NUMERIC_ID = /^\d{1,12}$/;
 const MEDIA_ID = /^\d{1,25}$/;
+const FILE_HASH = /^[0-9a-f]{32}$/;
 const MAX_UGOIRA_FRAMES = 5_000;
 const MAX_FRAME_DELAY_MS = 600_000;
 
@@ -77,6 +79,8 @@ export interface PostListing {
 export interface FeedListing {
   /** Newest first, without duplicates. */
   readonly posts: readonly PostListing[];
+  /** The same posts in the order the tool printed them (pinned posts come first there), for the stop rule. */
+  readonly inToolOrder: readonly PostListing[];
   /** The tool stopped with an error after these posts (for example throttled on page 2). */
   readonly stoppedBy: AdapterError | null;
 }
@@ -158,7 +162,32 @@ export function readFeedListing(result: ProcessResult, context: FailureContext, 
     // Instagram answers a missing session with empty pages. Patreon and Pixiv list an empty feed as empty.
     if (context.sourceType === 'instagram') throw failureOfEmptyProfileListing(result.untrustedStderr, context);
   }
-  return { posts: newestFirst(listings).slice(0, maxPosts), stoppedBy };
+  return { posts: newestFirst(listings).slice(0, maxPosts), inToolOrder: listings.slice(0, maxPosts), stoppedBy };
+}
+
+/** This many known posts in a row, with nothing newer behind them, mark the end of what is new in a feed. */
+export const KNOWN_POSTS_TO_STOP = 3;
+
+/**
+ * The stop rule of an incremental feed run. A feed is walked newest first; the walk can end as soon as it has
+ * reached the posts that are already completely archived. That is only believed when
+ *  - KNOWN_POSTS_TO_STOP consecutive posts are known (the overlap window of plan 04: a late or changed post
+ *    shortly behind the newest ones is still seen), and
+ *  - no post that comes after them is newer than the first of them. Pinned posts (Instagram, Patreon) are printed
+ *    first although they are old; they are known, but newer posts follow them, so they are no frontier.
+ * A post without a date cannot be placed in time, so such a listing never ends early. Returns how many posts of
+ * `listings` are needed (up to the end of the known run), or null if the walk has to go on.
+ */
+export function endOfNewPosts(listings: readonly PostListing[], known: ReadonlySet<string>): number | null {
+  for (let start = 0; start + KNOWN_POSTS_TO_STOP <= listings.length; start += 1) {
+    const run = listings.slice(start, start + KNOWN_POSTS_TO_STOP);
+    if (!run.every((listing) => listing.postId !== null && known.has(listing.postId))) continue;
+    const frontierDate = run[0]!.date;
+    const rest = listings.slice(start);
+    if (frontierDate === null || rest.some((listing) => listing.date === null || listing.date > frontierDate)) continue;
+    return start + KNOWN_POSTS_TO_STOP;
+  }
+  return null;
 }
 
 /**
@@ -231,22 +260,47 @@ export function listingOfPost(post: ParsedPost, sourceType: SourceType): PostLis
 }
 
 /**
- * A stable id for a file, so that a changed order or a new file in a post does not make an old file look new.
- * Instagram: the media id. Pornhub: the photo id. Pixiv: the single ugoira archive is "ugoira". Everything else is identified by its
- * position in the tool's file list ("file-N"), which is how single posts of these sites were identified before feeds
- * existed; keeping it means that already archived posts are not downloaded again.
+ * A stable id for a file, so that a changed order or a new file in a post does not make an old file look new, and
+ * so that the revision key of a post (see revisionKeyOf) depends on which files it has and on nothing else.
+ *  - Instagram: the media id. Pornhub: the photo id.
+ *  - Patreon: the MD5 that Patreon puts into the path of the file URL (gallery-dl: `hash`, the same file keeps it).
+ *  - Pixiv: the page number and a digest of the original image URL without query and file extension. The path of
+ *    an original holds the upload time, so a replaced page gets another id. The single ugoira archive is "ugoira".
+ * Anything the tool does not give an id for is identified by its position in the tool's file list ("file-N"),
+ * which is how single posts of these sites were identified before feeds existed. A position says nothing about
+ * the content, so such an id is never used to recognise an already stored file (see isContentStableAssetId).
  */
 function preferredAssetId(sourceType: SourceType, metadata: Record<string, unknown>, workType: string | null, index: number): string {
   if (sourceType === 'instagram') {
     const mediaId = identifierText(metadata.media_id, MEDIA_ID);
     return mediaId ? `media-${mediaId}` : `file-${index}`;
   }
-  if (sourceType === 'pixiv' && workType === 'ugoira') return 'ugoira';
+  if (sourceType === 'patreon') {
+    const hash = typeof metadata.hash === 'string' && FILE_HASH.test(metadata.hash) ? metadata.hash : undefined;
+    return hash ? `hash-${hash}` : `file-${index}`;
+  }
+  if (sourceType === 'pixiv') {
+    if (workType === 'ugoira') return 'ugoira';
+    const page = pixivPageId(metadata);
+    return page ?? `file-${index}`;
+  }
   if (sourceType === 'pornhub') {
     const photoId = identifierText(metadata.id, MEDIA_ID);
     return photoId ? `photo-${photoId}` : `file-${index}`;
   }
   return `file-${index}`;
+}
+
+/** `page-<number>-<digest>` from the original image URL of a Pixiv page; null if there is no usable URL. */
+function pixivPageId(metadata: Record<string, unknown>): string | null {
+  const number = typeof metadata.num === 'number' && Number.isInteger(metadata.num) && metadata.num >= 0 ? metadata.num : undefined;
+  if (number === undefined || typeof metadata.url !== 'string') return null;
+  try {
+    const path = new URL(metadata.url).pathname.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+    return `page-${number}-${createHash('sha256').update(path).digest('hex').slice(0, 12)}`;
+  } catch {
+    return null;
+  }
 }
 
 /** The frame list of an ugoira, or null if it is missing or not usable (a wrong timing would be worse than none). */

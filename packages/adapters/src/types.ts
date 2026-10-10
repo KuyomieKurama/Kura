@@ -93,6 +93,14 @@ export interface ProbeContext extends JobContext {
 
 export interface DiscoveryContext extends JobContext {
   readonly target: CanonicalTarget;
+  /**
+   * Platform ids of posts of this feed that are completely archived, handed over only when the worker knows that
+   * the previous run read the feed through to this point. A feed adapter may stop walking a feed (newest first)
+   * once it reaches a run of these posts (the stop rule is documented at endOfNewPosts); it must still list
+   * everything newer. Absent or empty: read the feed up to the usual bound. The hint changes nothing about which
+   * posts are archived, only how far back the listing goes.
+   */
+  readonly knownPostIds?: ReadonlySet<string>;
 }
 
 export interface SourceSummary {

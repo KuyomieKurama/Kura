@@ -159,7 +159,7 @@ describe('profile discovery', () => {
     ]);
     for (const post of posts) {
       expect(post).toMatchObject({ adapterId: 'gallery-dl', sourceType: 'instagram', creator: { platformId: '4242424242', displayName: 'Own Test Account' } });
-      expect(post.revisionKey).toMatch(/^l-[0-9a-f]{24}$/);
+      expect(post.revisionKey).toMatch(/^g-[0-9a-f]{24}$/);
     }
     // Ids and revision keys are stable between two runs over the same data.
     expect((await discover(adapter, PROFILE)).map((post) => [post.platformPostId, post.revisionKey])).toEqual(posts.map((post) => [post.platformPostId, post.revisionKey]));

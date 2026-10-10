@@ -204,7 +204,7 @@ describe('assets that cannot be fetched (Patreon, fake gallery-dl, real PostgreS
       ['1002', 'embed-0', 'failed', 'ASSET_UNSUPPORTED'],
       ['1003', 'locked', 'failed', 'ASSET_NOT_ACCESSIBLE'],
       ['1004', 'file-0', 'failed', 'ASSET_UNSUPPORTED'],
-      ['1005', 'file-0', 'stored', null]
+      ['1005', 'hash-0000000000000000000000000000000d', 'stored', null]
     ]);
     expect((await subject.rows('SELECT 1 FROM blobstore_objects')).length).toBe(1);
 

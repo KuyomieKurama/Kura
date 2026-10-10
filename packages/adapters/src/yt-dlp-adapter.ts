@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { AdapterError } from './errors.js';
 import {
   asRecord,
@@ -18,6 +17,7 @@ import {
 import { INSTAGRAM_RESERVED_PATHS } from './instagram-target.js';
 import { extensionForMediaType, mediaTypeForExtension } from './media.js';
 import { canonicalPornhubUrl, isPornhubFamilyHost, parsePornhubUrl, pornhubPlatformId, type PornhubTarget } from './pornhub-target.js';
+import { videoRevisionKey } from './revision.js';
 import { parseHttpsTarget } from './target-url.js';
 import {
   classifyYtDlpFailure,
@@ -424,16 +424,17 @@ export class YtDlpAdapter implements SourceAdapter {
       creator: { platformId: info.creatorId, displayName: info.creatorName },
       title: info.title,
       publishedAt: isoDate(info.uploadDate),
-      // yt-dlp reports no revision. Title edits are deliberately not part of the key: they must not trigger a re-download.
-      revisionKey: `d-${createHash('sha256').update(`${info.id}|${info.uploadDate ?? ''}|${info.duration ?? ''}`).digest('hex').slice(0, 24)}`,
+      // yt-dlp reports no revision. Title edits, upload date and duration are deliberately not part of the key: they
+      // must not trigger a re-download, and the same video must get the same key as a single video and in a list.
+      revisionKey: videoRevisionKey(info.id),
       canonicalUrl: target.canonicalUrl
     };
   }
 
   /**
-   * A video found in a list: addressed by its own canonical URL from here on. A list reports no upload date, so the
-   * revision depends on the id only: a video that is already stored is never downloaded again because of a title edit
-   * or a changed view count.
+   * A video found in a list: addressed by its own canonical URL from here on. The revision depends on the id only
+   * (as for a single video): a video that is already stored is never downloaded again because of a title edit or
+   * a changed view count.
    */
   private feedPost(target: CanonicalTarget, listing: FlatListing, entry: ListedEntry): SourcePost {
     const canonicalUrl = target.sourceType === 'youtube'
@@ -447,7 +448,7 @@ export class YtDlpAdapter implements SourceAdapter {
       creator: { platformId: entry.channelId ?? owner.platformId, displayName: entry.channelName ?? owner.displayName },
       title: entry.title,
       publishedAt: entry.publishedAt,
-      revisionKey: `f-${createHash('sha256').update(entry.id).digest('hex').slice(0, 24)}`,
+      revisionKey: videoRevisionKey(entry.id),
       canonicalUrl
     };
   }

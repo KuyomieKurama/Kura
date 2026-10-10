@@ -14,3 +14,5 @@ export { INSTAGRAM_RESERVED_PATHS } from './instagram-target.js';
 export * from './credential-platforms.js';
 export * from './delivery.js';
 export * from './source-selection.js';
+
+export { galleryDlRevisionKey, isContentStableAssetId, isLegacyRevisionKey, videoRevisionKey } from './revision.js';
