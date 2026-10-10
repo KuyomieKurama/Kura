@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { DatabaseBlobStore, FilesystemBlobStore, type StorageBackend } from '@kura/blobstore';
+import { DatabaseBlobStore, FilesystemBlobStore, type RangeReadBackend } from '@kura/blobstore';
 import type { Writable } from 'node:stream';
 import { promisify } from 'node:util';
 import fastifyCookie from '@fastify/cookie';
@@ -11,6 +11,7 @@ import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransactio
 import type { ApiConfig } from './config.js';
 import { registerImmichRoutes } from './immich-routes.js';
 import { registerCredentialRoutes } from './credential-routes.js';
+import { registerMediaRoutes } from './media-routes.js';
 import { loggerOptions } from './logging.js';
 import { registerRuntimePolicyRoutes } from './runtime-policy-routes.js';
 import { registerScheduleRoutes } from './schedule-routes.js';
@@ -70,7 +71,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   // Without a listener Node would treat the event as an unhandled error and end the process.
   pool.on('error', (poolError) => app.log.error({ message: poolError.message }, 'database pool error'));
   const storageConfig = config.storage ?? { backend: 'filesystem' as const, root: './data/blobstore', quotaBytes: 10 * 1024 * 1024 * 1024, layout: 'cas' as const };
-  const blobstore: StorageBackend = storageConfig.backend === 'database' ? new DatabaseBlobStore(pool, { quotaBytes: storageConfig.quotaBytes }) : new FilesystemBlobStore(storageConfig.root, storageConfig.layout, { quotaBytes: storageConfig.quotaBytes });
+  const blobstore: RangeReadBackend = storageConfig.backend === 'database' ? new DatabaseBlobStore(pool, { quotaBytes: storageConfig.quotaBytes }) : new FilesystemBlobStore(storageConfig.root, storageConfig.layout, { quotaBytes: storageConfig.quotaBytes });
   void app.register(fastifyCookie);
   const oidcProvider: OidcProviderConfig | undefined = config.oidc ? {
     id: 'configured', kind: 'generic', issuer: config.oidc.issuer, clientId: config.oidc.clientId, clientSecretRef: 'secret://oidc/configured', redirectUri: config.oidc.redirectUri,
@@ -86,10 +87,12 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   }, { resolve: async () => config.oidc!.clientSecret }, clock) : undefined);
   const oidcTransactions = new Map<string, LoginTransaction>();
   app.addHook('onSend', async (_request, reply, payload) => {
-    reply.header('Content-Security-Policy', "default-src 'self'"); reply.header('X-Content-Type-Options', 'nosniff'); reply.header('Referrer-Policy', 'no-referrer'); return payload;
+    // A route may set a stricter policy of its own (the media content route does); the default must not replace it.
+    if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', "default-src 'self'");
+    reply.header('X-Content-Type-Options', 'nosniff'); reply.header('Referrer-Policy', 'no-referrer'); return payload;
   });
   app.addHook('preHandler', async (request, reply) => {
-    if (!request.url.startsWith('/api/v1/') || request.method === 'GET' || request.url.startsWith('/api/v1/auth/login') || request.url.startsWith('/api/v1/auth/setup')) return;
+    if (!request.url.startsWith('/api/v1/') || request.method === 'GET' || request.method === 'HEAD' || request.url.startsWith('/api/v1/auth/login') || request.url.startsWith('/api/v1/auth/setup')) return;
     if (!originIsValid(request)) return reply.code(403).send(error('CSRF_REJECTED', 'Die Herkunft der Anfrage ist ungültig.'));
     const session = await getSession(request);
     if (!session || request.headers['x-kura-csrf'] !== session.csrf) return reply.code(403).send(error('CSRF_REJECTED', 'CSRF-Token fehlt oder ist ungültig.'));
@@ -192,6 +195,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   registerCredentialRoutes({ app, pool, config, clock, requireSession, audit: auditRoute });
   registerRuntimePolicyRoutes({ app, pool, requireSession, audit: auditRoute });
   registerSourceRoutes({ app, pool, clock, requireSession, audit: auditRoute });
+  registerMediaRoutes({ app, pool, blobstore, requireSession });
   if (webDirectory && existsSync(webDirectory)) { void app.register(fastifyStatic, { root: webDirectory, index: ['index.html'], cacheControl: false, setHeaders: (reply, filePath) => reply.header('Cache-Control', filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable') }); app.setNotFoundHandler((request, reply) => request.url.startsWith('/api/') || request.url === '/healthz' ? reply.code(404).send({ statusCode: 404, ...error('NOT_FOUND', 'Nicht gefunden.') }) : reply.type('text/html').sendFile('index.html')); }
   app.addHook('onClose', async () => { await pool.end(); }); return app;
 }

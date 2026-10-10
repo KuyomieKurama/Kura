@@ -23,6 +23,14 @@ export interface StorageBackend {
   abort(session: WriteSession): Promise<void>;
 }
 
+/**
+ * Read access to a byte range of an object, both ends inclusive. The reader lease is held exactly like
+ * in openRead() and released when the iteration ends or is abandoned. Used for HTTP Range requests.
+ */
+export interface RangeReadBackend extends StorageBackend {
+  openReadRange(object: ObjectRef, start: number, endInclusive: number): AsyncIterable<Uint8Array>;
+}
+
 export type StorageLayout = 'cas' | 'template';
 export interface OwnedObjectRef extends ObjectRef { ownerUserId: string; }
 export interface OwnedStoredObject extends StoredObject { ownerUserId: string; digest: Digest; size: number; }
@@ -36,6 +44,9 @@ const digestBytes = (value: Buffer) => new Uint8Array(value);
 const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest();
 const assertDigest = (digest: Digest): void => {
   if (digest.algorithm !== 'sha256' || digest.value.length !== 32) throw new Error('Only 32-byte SHA-256 digests are accepted');
+};
+const assertRange = (start: number, endInclusive: number): void => {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(endInclusive) || start < 0 || endInclusive < start) throw new Error('Invalid byte range');
 };
 const assertChunk = (chunk: Uint8Array, chunkSize: number): void => {
   if (chunk.length === 0 || chunk.length > chunkSize) throw new Error(`Chunk must be between 1 and ${chunkSize} bytes`);
@@ -55,7 +66,7 @@ interface FsWrite { ownerUserId: string; path: string; hash: ReturnType<typeof c
 interface FsObject { ownerUserId: string; path: string; size: number; digest: string; leases: number; refs: number; deletePending: boolean; }
 
 /** Filesystem backend with per-owner CAS or sanitized template paths. */
-export class FilesystemBlobStore implements StorageBackend {
+export class FilesystemBlobStore implements RangeReadBackend {
   private readonly writes = new Map<string, FsWrite>();
   private readonly objects = new Map<string, FsObject>();
   private readonly usedBytes = new Map<string, number>();
@@ -128,6 +139,29 @@ export class FilesystemBlobStore implements StorageBackend {
     finally { await handle.close(); entry.leases--; }
   }
 
+  async *openReadRange(object: ObjectRef, start: number, endInclusive: number): AsyncIterable<Uint8Array> {
+    assertRange(start, endInclusive);
+    const owned = object as OwnedObjectRef;
+    const entry = this.objects.get(owned.id);
+    if (!entry || entry.ownerUserId !== owned.ownerUserId || entry.deletePending) throw new Error('Object not found');
+    entry.leases++;
+    const handle = await open(entry.path, 'r');
+    try {
+      const buffer = Buffer.allocUnsafe(this.chunkSize);
+      let position = start;
+      while (position <= endInclusive) {
+        const wanted = Math.min(buffer.length, endInclusive - position + 1);
+        const { bytesRead } = await handle.read(buffer, 0, wanted, position);
+        if (!bytesRead) break;
+        position += bytesRead;
+        yield new Uint8Array(buffer.subarray(0, bytesRead));
+      }
+    } finally {
+      await handle.close();
+      entry.leases--;
+    }
+  }
+
   async stat(object: ObjectRef): Promise<ObjectStat> { const owned = object as OwnedObjectRef; const entry = this.objects.get(owned.id); if (!entry || entry.ownerUserId !== owned.ownerUserId || entry.deletePending) throw new Error('Object not found'); return { size: entry.size }; }
   async remove(object: ObjectRef, permit: DeletionPermit): Promise<RemovalResult> { const owned = object as OwnedObjectRef; const entry = this.objects.get(owned.id); if (!entry || entry.ownerUserId !== owned.ownerUserId || !permit.id) throw new Error('Object not found'); entry.deletePending = true; if (entry.leases || entry.refs > 1) return { removed: false }; await rm(entry.path, { force: false }); this.objects.delete(owned.id); this.usedBytes.set(entry.ownerUserId, (this.usedBytes.get(entry.ownerUserId) ?? 0) - entry.size); return { removed: true }; }
   async abort(session: WriteSession): Promise<void> { const write = this.writes.get(session.id); if (!write) return; await rm(write.path, { force: true }); this.writes.delete(session.id); }
@@ -135,13 +169,45 @@ export class FilesystemBlobStore implements StorageBackend {
 }
 
 /** PostgreSQL chunk backend. Tables are created by migration 0020_blobstore.sql. */
-export class DatabaseBlobStore implements StorageBackend {
+export class DatabaseBlobStore implements RangeReadBackend {
   private readonly chunkSize: number;
   constructor(private readonly pool: Pool, private readonly options: BlobstoreOptions) { this.chunkSize = options.chunkSize ?? 4 * 1024 * 1024; }
   async beginWrite(context: WriteContext): Promise<BlobstoreWriteSession> { const id = randomUUID(); await this.pool.query('INSERT INTO blobstore_writes (id, owner_id, quota_bytes) VALUES ($1, $2, $3)', [id, context.ownerUserId, this.options.quotaBytes]); return { id, ownerUserId: context.ownerUserId }; }
   async append(session: WriteSession, chunk: Uint8Array): Promise<void> { assertChunk(chunk, this.chunkSize); const client = await this.pool.connect(); try { await client.query('BEGIN'); const write = await client.query<{owner_id:string; quota_bytes:string; state:string}>('SELECT owner_id, quota_bytes, state FROM blobstore_writes WHERE id=$1 FOR UPDATE', [session.id]); if (!write.rowCount || write.rows[0].state !== 'writing') throw new Error('Unknown or finalized write session'); const row = write.rows[0]; await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [row.owner_id]); const usage = await client.query<{used:string}>("SELECT COALESCE((SELECT SUM(bytes_written) FROM blobstore_writes WHERE owner_id=$1), 0) + COALESCE((SELECT SUM(byte_size) FROM blobstore_objects WHERE owner_id=$1 AND state='available'), 0) AS used", [row.owner_id]); if (BigInt(usage.rows[0].used) + BigInt(chunk.length) > BigInt(row.quota_bytes)) throw new Error('Owner quota exceeded'); const seq = await client.query<{sequence_no:string}>('SELECT COALESCE(MAX(sequence_no), -1) + 1 AS sequence_no FROM blobstore_chunks WHERE write_id=$1', [session.id]); await client.query('INSERT INTO blobstore_chunks (write_id, sequence_no, payload, chunk_sha256) VALUES ($1,$2,$3,$4)', [session.id, seq.rows[0].sequence_no, Buffer.from(chunk), sha256(chunk)]); await client.query('UPDATE blobstore_writes SET bytes_written=bytes_written+$2 WHERE id=$1', [session.id, chunk.length]); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
   async finalize(session: WriteSession, digest: Digest): Promise<OwnedStoredObject> { assertDigest(digest); const client = await this.pool.connect(); try { await client.query('BEGIN'); const write = await client.query<{owner_id:string;bytes_written:string;state:string}>('SELECT owner_id, bytes_written, state FROM blobstore_writes WHERE id=$1 FOR UPDATE', [session.id]); if (!write.rowCount || write.rows[0].state !== 'writing') throw new Error('Unknown or finalized write session'); const hash = createHash('sha256'); let sequence = -1; for (;;) { const chunk = await client.query<{sequence_no:string;payload:Buffer}>('SELECT sequence_no, payload FROM blobstore_chunks WHERE write_id=$1 AND sequence_no>$2 ORDER BY sequence_no LIMIT 1', [session.id, sequence]); if (!chunk.rowCount) break; sequence = Number(chunk.rows[0].sequence_no); hash.update(chunk.rows[0].payload); } if (!hash.digest().equals(Buffer.from(digest.value))) throw new Error('Digest mismatch'); const existing = await client.query<{id:string;byte_size:string}>('SELECT id, byte_size FROM blobstore_objects WHERE owner_id=$1 AND sha256=$2 AND state=$3 FOR UPDATE', [write.rows[0].owner_id, Buffer.from(digest.value), 'available']); if (existing.rowCount) { await client.query('UPDATE blobstore_objects SET reference_count=reference_count+1 WHERE id=$1', [existing.rows[0].id]); await client.query('DELETE FROM blobstore_writes WHERE id=$1', [session.id]); await client.query('COMMIT'); return { id: existing.rows[0].id, ownerUserId: write.rows[0].owner_id, digest, size: Number(existing.rows[0].byte_size) }; } const id = randomUUID(); await client.query('INSERT INTO blobstore_objects (id, owner_id, sha256, byte_size, state, reference_count) VALUES ($1,$2,$3,$4,$5,1)', [id, write.rows[0].owner_id, Buffer.from(digest.value), write.rows[0].bytes_written, 'available']); await client.query('INSERT INTO blobstore_object_chunks (object_id, sequence_no, payload, chunk_sha256) SELECT $1, sequence_no, payload, chunk_sha256 FROM blobstore_chunks WHERE write_id=$2 ORDER BY sequence_no', [id, session.id]); await client.query('DELETE FROM blobstore_writes WHERE id=$1', [session.id]); await client.query('COMMIT'); return { id, ownerUserId: write.rows[0].owner_id, digest, size: Number(write.rows[0].bytes_written) }; } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
   async *openRead(object: ObjectRef): AsyncIterable<Uint8Array> { const owned = object as OwnedObjectRef; const acquired = await this.pool.query('UPDATE blobstore_objects SET leases=leases+1 WHERE id=$1 AND owner_id=$2 AND state=$3 RETURNING id', [owned.id, owned.ownerUserId, 'available']); if (!acquired.rowCount) throw new Error('Object not found'); try { let sequence = -1; for (;;) { const result = await this.pool.query<{sequence_no:string;payload:Buffer}>('SELECT sequence_no, payload FROM blobstore_object_chunks WHERE object_id=$1 AND sequence_no>$2 ORDER BY sequence_no LIMIT 1', [owned.id, sequence]); if (!result.rowCount) break; sequence = Number(result.rows[0].sequence_no); yield new Uint8Array(result.rows[0].payload); } } finally { await this.pool.query('UPDATE blobstore_objects SET leases=GREATEST(leases-1,0) WHERE id=$1', [owned.id]); } }
+  /**
+   * Reads only the chunks that overlap the range. The chunk sizes are looked up first (no payload), so a seek
+   * near the end of a large object does not read everything before it.
+   */
+  async *openReadRange(object: ObjectRef, start: number, endInclusive: number): AsyncIterable<Uint8Array> {
+    assertRange(start, endInclusive);
+    const owned = object as OwnedObjectRef;
+    const acquired = await this.pool.query('UPDATE blobstore_objects SET leases=leases+1 WHERE id=$1 AND owner_id=$2 AND state=$3 RETURNING id', [owned.id, owned.ownerUserId, 'available']);
+    if (!acquired.rowCount) throw new Error('Object not found');
+    try {
+      const overlapping = await this.pool.query<{ sequence_no: string; chunk_start: string }>(
+        `SELECT sequence_no, chunk_start FROM (
+           SELECT sequence_no, octet_length(payload) AS length,
+                  COALESCE(SUM(octet_length(payload)) OVER (ORDER BY sequence_no ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS chunk_start
+             FROM blobstore_object_chunks WHERE object_id=$1
+         ) chunks
+          WHERE chunk_start + length > $2 AND chunk_start <= $3
+          ORDER BY sequence_no`,
+        [owned.id, start, endInclusive]
+      );
+      for (const row of overlapping.rows) {
+        const chunk = await this.pool.query<{ payload: Buffer }>('SELECT payload FROM blobstore_object_chunks WHERE object_id=$1 AND sequence_no=$2', [owned.id, row.sequence_no]);
+        if (!chunk.rowCount) throw new Error('Object chunk missing');
+        const chunkStart = Number(row.chunk_start);
+        const from = Math.max(start - chunkStart, 0);
+        const to = Math.min(endInclusive - chunkStart + 1, chunk.rows[0].payload.length);
+        yield new Uint8Array(chunk.rows[0].payload.subarray(from, to));
+      }
+    } finally {
+      await this.pool.query('UPDATE blobstore_objects SET leases=GREATEST(leases-1,0) WHERE id=$1', [owned.id]);
+    }
+  }
   async stat(object: ObjectRef): Promise<ObjectStat> { const owned = object as OwnedObjectRef; const result = await this.pool.query<{byte_size:string}>('SELECT byte_size FROM blobstore_objects WHERE id=$1 AND owner_id=$2 AND state=$3', [owned.id, owned.ownerUserId, 'available']); if (!result.rowCount) throw new Error('Object not found'); return { size: Number(result.rows[0].byte_size) }; }
   async remove(object: ObjectRef, permit: DeletionPermit): Promise<RemovalResult> { const owned = object as OwnedObjectRef; if (!permit.id) throw new Error('Deletion permit required'); const result = await this.pool.query<{leases:string;reference_count:string}>('UPDATE blobstore_objects SET state=$3 WHERE id=$1 AND owner_id=$2 AND state IN ($4,$3) RETURNING leases,reference_count', [owned.id, owned.ownerUserId, 'delete_pending', 'available']); if (!result.rowCount || Number(result.rows[0].leases) || Number(result.rows[0].reference_count) > 1) return { removed: false }; await this.pool.query('DELETE FROM blobstore_objects WHERE id=$1 AND owner_id=$2 AND state=$3', [owned.id, owned.ownerUserId, 'delete_pending']); return { removed: true }; }
   async abort(session: WriteSession): Promise<void> { await this.pool.query('DELETE FROM blobstore_writes WHERE id=$1', [session.id]); }
