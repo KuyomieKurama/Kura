@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { AdapterError } from './errors.js';
 import {
   buildToolArguments,
@@ -12,8 +11,16 @@ import {
   parseVersion,
   type CliToolOptions
 } from './cli-support.js';
-import { failureFromProcess, type FailureContext } from './gallery-dl-output.js';
 import {
+  failureFromProcess,
+  failureFromToolError,
+  failureOfEmptyProfileListing,
+  parseDumpJson,
+  type FailureContext
+} from './gallery-dl-output.js';
+import {
+  endOfNewPosts,
+  FeedStreamReader,
   MAX_FILES_PER_POST,
   readFeedListing,
   readPostListing,
@@ -23,12 +30,13 @@ import {
 } from './gallery-dl-listing.js';
 import { canonicalInstagramUrl, instagramToolUrl, parseInstagramPath, type InstagramTarget } from './instagram-target.js';
 import { mediaTypeForExtension } from './media.js';
+import { galleryDlRevisionKey } from './revision.js';
 import { canonicalPatreonUrl, parsePatreonPath } from './patreon-target.js';
 import { canonicalPixivUrl, parsePixivPath, pixivScopeFilter, pixivToolUrl, type PixivTarget } from './pixiv-target.js';
 import { canonicalPornhubUrl, isPornhubFamilyHost, parsePornhubUrl } from './pornhub-target.js';
 import { stageGeneratedFile } from './staging.js';
 import { parseHttpsTarget } from './target-url.js';
-import type { ProcessResult } from './process-runner.js';
+import type { ProcessResult, StreamEnd } from './process-runner.js';
 import type {
   AdapterCapabilities,
   AssetManifest,
@@ -71,6 +79,10 @@ export interface GalleryDlAdapterOptions extends CliToolOptions {
   readonly patreonMaxPostsPerRun?: number;
   /** The same bound for a Pixiv artist (1-500). */
   readonly pixivMaxPostsPerRun?: number;
+  /** Time for reading one feed in all, default 2 h. A feed is read at a polite request rate and can take many minutes. */
+  readonly feedListingTimeoutMs?: number;
+  /** Time a feed listing may print nothing, default 15 min. The time the worker needs for a post does not count. */
+  readonly feedListingIdleTimeoutMs?: number;
 }
 
 export const INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN = FEED_DEFAULT_MAX_POSTS_PER_RUN;
@@ -105,7 +117,18 @@ const FILENAME_TEMPLATE = 'asset.{extension}';
  *                         cookies of the logged-in session, and do not write the session back into that file.
  *  -c <file>              the configuration file that holds the Pixiv refresh token (extractor.pixiv.refresh-token)
  *                         and the location of the cache file, so that the token never appears in an argument.
- *  --post-range 1-N       stop the feed listing after N posts.
+ *  --post-range 1-N       stop the feed listing after N posts. `--post-range N` (one post) is used to ask whether a feed
+ *                         goes on after post N-1 (see confirmEndOfFeed). Syntax: option.py "--range" help, util.py
+ *                         predicate_range_parse.
+ *  -o output.jsonl=true   print the messages of a feed listing one per line as they are produced, instead of one
+ *                         array when the extraction has finished (job.py DataJob, docs: "output.jsonl"). That is what
+ *                         lets Kura read a listing of tens of megabytes message by message and record posts while the
+ *                         tool is still working. -o KEY=VALUE with a dotted key sets that config path
+ *                         (option.py ConfigParseAction), the value is read as JSON.
+ *  -o extractor.patreon.files=[]
+ *                         only in confirmEndOfFeed: no files per post. Without it gallery-dl asks Patreon for the
+ *                         file names of every post it skips on the way to the requested position (patreon.py items(),
+ *                         _build_file_generators: a list of file kinds; an empty list builds no generator).
  *  --post-filter EXPR     Pixiv "illustrations" / "manga": a fixed expression (see pixivScopeFilter).
  *
  * The delays are Kura's own choice, not gallery-dl defaults (which are 6-12 s for Instagram and none for Patreon
@@ -146,8 +169,18 @@ const PLATFORM_SETTINGS: Readonly<Partial<Record<SourceType, PlatformSettings>>>
   }
 };
 
-/** Reading a feed is slow by design (pacing between requests, extra requests per post). */
-const FEED_LISTING_TIMEOUT_MS = 30 * 60_000;
+/**
+ * A feed is read at least this far before the stop rule may end the reading: a post that changed or arrived late a few
+ * places behind the newest ones is still seen (the overlap window of plan 04). Instagram delivers about this many posts
+ * per page.
+ */
+const MIN_POSTS_READ_BEFORE_STOP = 12;
+/** A feed listing is printed as JSON lines (see the option notes above). */
+const STREAMED_LISTING_OPTIONS = ['-o', 'output.jsonl=true'] as const;
+/** The check whether a feed has more posts must not ask for the file names of the posts it skips (Patreon only). */
+const END_CHECK_OPTIONS: Readonly<Partial<Record<SourceType, readonly string[]>>> = {
+  patreon: ['-o', 'extractor.patreon.files=[]']
+};
 
 const PIXIV_HOSTS = new Set(['pixiv.net', 'www.pixiv.net']);
 const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com']);
@@ -169,9 +202,11 @@ type FeedSourceType = 'instagram' | 'patreon' | 'pixiv';
 export class GalleryDlAdapter implements SourceAdapter {
   private readonly tool: CliTool;
   private readonly maxPostsPerFeed: Readonly<Record<FeedSourceType, number>>;
+  private readonly feedTimeouts: { readonly totalMs: number; readonly idleMs: number };
 
   private constructor(options: GalleryDlAdapterOptions, private readonly version: string) {
     this.tool = new CliTool(options);
+    this.feedTimeouts = { totalMs: options.feedListingTimeoutMs ?? 2 * 60 * 60_000, idleMs: options.feedListingIdleTimeoutMs ?? 15 * 60_000 };
     this.maxPostsPerFeed = {
       instagram: checkedMaxPosts('instagramMaxPostsPerRun', options.instagramMaxPostsPerRun),
       patreon: checkedMaxPosts('patreonMaxPostsPerRun', options.patreonMaxPostsPerRun),
@@ -272,11 +307,7 @@ export class GalleryDlAdapter implements SourceAdapter {
   async *discover(context: DiscoveryContext): AsyncIterable<SourcePost> {
     const target = this.recheck(context.target);
     if (target.kind === 'creator_feed') {
-      const feed = await this.listFeed(target, this.maxPostsPerFeed[feedTypeOf(target)], context.signal, context.credentials);
-      for (const listing of feed.posts) yield this.feedPostFrom(target.sourceType, listing);
-      // Posts that were listed before the tool stopped are delivered first; the run then ends with the error
-      // (login, throttling) instead of looking like a complete, quiet feed.
-      if (feed.stoppedBy) throw feed.stoppedBy;
+      yield* this.discoverFeed(target, context);
       return;
     }
     const listing = await this.listPost(target, context.signal, context.credentials);
@@ -334,8 +365,8 @@ export class GalleryDlAdapter implements SourceAdapter {
     }
     if (listing.locked) {
       assets.push(unavailableAsset(nextIndex, 'locked', 'Beitrag nicht zugänglich', 'application/octet-stream', policy, {
-        code: 'ASSET_NOT_ACCESSIBLE',
-        message: 'Der Beitrag ist für das hinterlegte Patreon-Konto nicht zugänglich (zum Beispiel nur für Mitglieder einer höheren Stufe). Er wird erneut geprüft, sobald sich der Beitrag ändert.'
+        code: 'ASSET_LOCKED',
+        message: 'Nicht zugänglich: Der Beitrag ist für das hinterlegte Patreon-Konto gesperrt (zum Beispiel nur für Mitglieder einer höheren Stufe). Das ist kein Fehler. Sobald Patreon den Beitrag für dieses Konto freigibt, lädt Kura ihn automatisch.'
       }));
       nextIndex += 1;
     }
@@ -426,11 +457,14 @@ export class GalleryDlAdapter implements SourceAdapter {
       ...COMMON_OPTIONS,
       '--dump-json',
       ...sourceOptions(target, credentials, 'list')
-    ], [toolUrlOf(target)]), signal);
+    ], [toolUrlOf(target)]), signal, undefined, target.sourceType);
     return readPostListing(result, target, failureContext);
   }
 
-  /** The newest `maxPosts` posts of a feed (Instagram profile or reels tab, Patreon creator, Pixiv artist), newest first. */
+  /**
+   * The newest `maxPosts` posts of a feed (Instagram profile or reels tab, Patreon creator, Pixiv artist), newest first,
+   * read as one array. Only for a handful of posts (the probe): a long listing is streamed, see discoverFeed.
+   */
   private async listFeed(target: CanonicalTarget, maxPosts: number, signal?: AbortSignal, credentials?: RunCredentials): Promise<FeedListing> {
     const failureContext = failureContextOf(target, credentials);
     const result = await this.runMetadata(buildToolArguments([
@@ -439,8 +473,104 @@ export class GalleryDlAdapter implements SourceAdapter {
       ...sourceOptions(target, credentials, 'list'),
       ...feedFilterOptions(target),
       '--post-range', `1-${maxPosts}`
-    ], [toolUrlOf(target)]), signal, FEED_LISTING_TIMEOUT_MS);
+    ], [toolUrlOf(target)]), signal, this.feedTimeouts.totalMs, target.sourceType);
     return readFeedListing(result, failureContext, maxPosts);
+  }
+
+  /**
+   * The posts of a feed, newest first as the tool prints them, handed over one by one while the tool is still
+   * reading the feed (posts are not collected here: each is yielded as soon as the tool has printed the next one).
+   * One process reads up to the bound for the platform. With known posts (DiscoveryContext.knownPostIds) the reading
+   * ends, and the tool is stopped, as soon as at least MIN_POSTS_READ_BEFORE_STOP posts were read and they reach a run
+   * of known posts (endOfNewPosts), so a repeat run over an unchanged feed costs a dozen posts instead of the whole range.
+   *
+   * gallery-dl does not say, in this output mode, whether a listing ended because the feed is over or because the
+   * extraction failed (DataJob does not print its error entry as a line). So a listing that ends before the bound is
+   * checked: confirmEndOfFeed asks for the next post. A failure of any kind is thrown after the posts that were
+   * handed over, which the caller keeps.
+   */
+  private async *discoverFeed(target: CanonicalTarget, context: DiscoveryContext): AsyncGenerator<SourcePost> {
+    const sourceType = feedTypeOf(target);
+    const bound = this.maxPostsPerFeed[sourceType];
+    const known = context.knownPostIds && context.knownPostIds.size > 0 ? context.knownPostIds : undefined;
+    const failureContext = failureContextOf(target, context.credentials);
+    const reader = new FeedStreamReader(sourceType);
+    // All the stop rule needs of a post it has seen.
+    const seen: Pick<PostListing, 'postId' | 'date'>[] = [];
+    const lines = this.tool.streamMetadata(buildToolArguments([
+      ...COMMON_OPTIONS,
+      '--dump-json',
+      ...STREAMED_LISTING_OPTIONS,
+      ...sourceOptions(target, context.credentials, 'list'),
+      ...feedFilterOptions(target),
+      '--post-range', `1-${bound}`
+    ], [toolUrlOf(target)]), context.signal, this.feedTimeouts);
+
+    // The bound is also kept here in case the tool prints more than it was asked for.
+    let stoppedEarly = false;
+    try {
+      let end: StreamEnd | undefined;
+      while (!stoppedEarly) {
+        const step = await lines.next();
+        if (step.done) {
+          end = step.value;
+          break;
+        }
+        const listing = reader.push(step.value);
+        if (!listing) continue;
+        seen.push({ postId: listing.postId, date: listing.date });
+        yield this.feedPostFrom(sourceType, listing);
+        stoppedEarly = seen.length >= bound
+          || (known !== undefined && seen.length >= MIN_POSTS_READ_BEFORE_STOP && endOfNewPosts(seen, known) !== null);
+      }
+      if (stoppedEarly) return;
+
+      // A tool that failed may have been in the middle of the last post: its list of files cannot be trusted, so the
+      // post is left for the next run. After a normal end the last post is complete.
+      const result = { exitCode: end!.exitCode, terminatedBySignal: end!.terminatedBySignal, untrustedStdout: '', untrustedStderr: end!.untrustedStderr };
+      if (result.exitCode !== 0) throw failureFromProcess(result, failureContext, 'listing posts');
+      const last = reader.finish();
+      if (last) yield this.feedPostFrom(sourceType, last);
+      // A message that was too large to read cost Kura a post it cannot name. Everything else has been handed over; the
+      // run must not look complete, and the count of posts is uncertain, so the next position cannot be named either.
+      if (reader.oversizeLines > 0) {
+        throw new AdapterError('PROCESS_OUTPUT_LIMIT', 'A message of the feed listing was over the size limit and was dropped', undefined,
+          `Ein Beitrag von ${PLATFORM_LABELS[sourceType]} ist zu groß, um gelesen zu werden. Die übrigen Beiträge wurden verarbeitet. Wenn der Fehler bleibt, ist dieser Beitrag nicht abrufbar.`);
+      }
+      if (reader.postsBegun < bound) await this.confirmEndOfFeed(target, reader.postsBegun, context);
+      // Instagram answers a missing or expired session with empty pages: an empty profile is a login problem there.
+      if (reader.postsBegun === 0 && sourceType === 'instagram') throw failureOfEmptyProfileListing(result.untrustedStderr, failureContext);
+    } catch (error) {
+      throw describeToolFailure(error, sourceType);
+    } finally {
+      // Stopping early (known posts, a consumer that has enough) must not leave the tool running.
+      await lines.return({ exitCode: null, terminatedBySignal: null, untrustedStderr: '' });
+    }
+  }
+
+  /**
+   * Asks the tool for the post after the last one it printed, as one array (which carries the error entry that a
+   * line listing leaves out). No post and no error: the feed really ended. A post: the listing stopped short without
+   * saying why, which is a failure to be retried, and it must not look like a feed without news. An error entry is
+   * classified like any other (login, throttling ...).
+   */
+  private async confirmEndOfFeed(target: CanonicalTarget, postsRead: number, context: DiscoveryContext): Promise<void> {
+    const failureContext = failureContextOf(target, context.credentials);
+    const result = await this.runMetadata(buildToolArguments([
+      ...COMMON_OPTIONS,
+      '--dump-json',
+      ...sourceOptions(target, context.credentials, 'list'),
+      ...feedFilterOptions(target),
+      ...(END_CHECK_OPTIONS[target.sourceType] ?? []),
+      '--post-range', String(postsRead + 1)
+    ], [toolUrlOf(target)]), context.signal, this.feedTimeouts.totalMs, target.sourceType);
+    if (result.exitCode !== 0 && result.untrustedStdout.trim().length === 0) throw failureFromProcess(result, failureContext, 'listing posts');
+    const output = parseDumpJson(result.untrustedStdout);
+    if (output.error) throw failureFromToolError(output.error, failureContext, result.untrustedStderr);
+    if (output.posts.length > 0) {
+      throw new AdapterError('NETWORK_FAILED', 'The listing ended before the feed did', undefined,
+        `Die Liste der Beiträge von ${PLATFORM_LABELS[target.sourceType]} brach unvollständig ab. Bereits gefundene Beiträge bleiben erhalten; Kura versucht es später automatisch erneut.`);
+    }
   }
 
   /**
@@ -448,14 +578,11 @@ export class GalleryDlAdapter implements SourceAdapter {
    * after "rate limit", extractor/pixiv.py `_call`) is killed by the timeout; its log says why, and that is a
    * rate limit for Kura, not a defect.
    */
-  private async runMetadata(args: string[], signal?: AbortSignal, timeoutMs?: number): Promise<ProcessResult> {
+  private async runMetadata(args: string[], signal?: AbortSignal, timeoutMs?: number, sourceType?: SourceType): Promise<ProcessResult> {
     try {
       return await this.tool.runMetadata(args, signal, timeoutMs);
     } catch (error) {
-      if (error instanceof AdapterError && error.code === 'PROCESS_TIMEOUT' && /Waiting for .{1,40} \(rate limit\)/.test(error.untrustedDiagnostics ?? '')) {
-        throw new AdapterError('RATE_LIMITED', 'The source reported a rate limit and the tool was waiting for it', error.untrustedDiagnostics);
-      }
-      throw error;
+      throw describeToolFailure(error, sourceType);
     }
   }
 
@@ -484,10 +611,8 @@ export class GalleryDlAdapter implements SourceAdapter {
       creator: { platformId: listing.creatorId, displayName: listing.creatorName },
       title: listing.title,
       publishedAt: listing.date,
-      // No revision field is known for these sites; the key changes when the date or the file list changes.
-      revisionKey: `l-${createHash('sha256')
-        .update(`${identity.platformPostId}|${listing.date ?? ''}|${listing.files.map((file) => file.extension ?? '?').join(',')}|${listing.locked ? 'locked' : ''}`)
-        .digest('hex').slice(0, 24)}`,
+      // No platform reports an edit field for these sites (see revision.ts): the key is the post and its set of files.
+      revisionKey: galleryDlRevisionKey(identity.platformPostId, listing.files.map((file) => file.sourceAssetId)),
       canonicalUrl: identity.canonicalUrl
     };
   }
@@ -558,6 +683,29 @@ export class GalleryDlAdapter implements SourceAdapter {
 const PLATFORM_LABELS: Readonly<Record<SourceType, string>> = {
   direct_media: 'Direkte Medien-URL', youtube: 'YouTube', instagram: 'Instagram', patreon: 'Patreon', pixiv: 'Pixiv', pornhub: 'Pornhub'
 };
+
+/**
+ * Timeouts and the output limit of a metadata process, worded for the person who owns the subscription: which
+ * platform, what happened, and that Kura tries again. A timeout during which gallery-dl was waiting for a rate limit is
+ * a rate limit. Every other error passes unchanged.
+ */
+function describeToolFailure(error: unknown, sourceType: SourceType | undefined): unknown {
+  if (!(error instanceof AdapterError)) return error;
+  if (error.code === 'PROCESS_TIMEOUT' && /Waiting for .{1,40} \(rate limit\)/.test(error.untrustedDiagnostics ?? '')) {
+    return new AdapterError('RATE_LIMITED', 'The source reported a rate limit and the tool was waiting for it', error.untrustedDiagnostics);
+  }
+  if (error.userMessage !== undefined || sourceType === undefined) return error;
+  const platform = PLATFORM_LABELS[sourceType];
+  if (error.code === 'PROCESS_TIMEOUT') {
+    return new AdapterError(error.code, error.message, error.untrustedDiagnostics,
+      `${platform} hat nicht rechtzeitig geantwortet; die Abfrage hat zu lange gedauert. Bereits gefundene Beiträge bleiben erhalten; Kura versucht es später automatisch erneut.`);
+  }
+  if (error.code === 'PROCESS_OUTPUT_LIMIT') {
+    return new AdapterError(error.code, error.message, error.untrustedDiagnostics,
+      `Die Antwort von ${platform} war ungewöhnlich groß und wurde abgebrochen. Bereits gefundene Beiträge bleiben erhalten; Kura versucht es später automatisch erneut.`);
+  }
+  return error;
+}
 
 function assertPresetSupported(policy: QualityPolicy): void {
   if (policy.preset !== 'BEST_AVAILABLE' && policy.preset !== 'SOURCE_BYTES') {

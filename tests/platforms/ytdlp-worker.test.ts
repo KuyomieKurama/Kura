@@ -109,6 +109,7 @@ describe('YouTube and Pornhub lists through the worker (fake yt-dlp, real Postgr
     expect(await downloadCalls(tool)).toHaveLength(2);
 
     // Second run: the two stored videos are skipped without a request, the other three are looked at again.
+    subject.advance(60); // the runs are listed by their start time
     const second = await subject.runOnce(userId, subscription.id);
     expect(second.outcome).toEqual({ result: 'stored' });
     expect(await downloadCalls(tool)).toHaveLength(2);
@@ -183,8 +184,11 @@ describe('YouTube and Pornhub lists through the worker (fake yt-dlp, real Postgr
     expect(run!.error_message).toMatch(/Sicherheitsprüfung/);
     expect(run!.error_message).toMatch(/YouTube-Cookies|Cookies/);
     expect(await subject.rows('SELECT status FROM subscriptions WHERE id = $1', [subscription.id])).toEqual([{ status: 'paused' }]);
-    // The run stopped at the first video: the others were not even looked at.
-    expect(await posts(subject)).toEqual([expect.objectContaining({ platform_post_id: 'aaaaaaaaaa1' })]);
+    // The run stopped at the first video: the others were found, and are recorded as found, but not looked at.
+    expect((await posts(subject)).map((post) => [post.platform_post_id, post.state])).toEqual(
+      ['aaaaaaaaaa1', 'aaaaaaaaaa2', 'aaaaaaaaaa3', 'aaaaaaaaaa4', 'aaaaaaaaaa5', 'aaaaaaaaaa6'].map((id) => [id, 'discovered'])
+    );
+    expect(await assets(subject)).toEqual([]);
   });
 
   it('hands stored YouTube cookies to the tool as a 0600 file, deletes it afterwards and never logs them', async () => {

@@ -54,6 +54,9 @@ interface CatalogOptions {
   /** Posts per Patreon creator run, and per Pixiv artist run; absent = the adapter's default. */
   patreonMaxPostsPerRun?: number;
   pixivMaxPostsPerRun?: number;
+  /** Time a gallery-dl feed listing may print nothing / take in all; absent = the adapter's defaults (15 min / 2 h). Tests only. */
+  feedListingIdleTimeoutMs?: number;
+  feedListingTimeoutMs?: number;
   /** Videos per YouTube channel or playlist run, and per Pornhub list run; absent = the adapter's default. */
   youtubeMaxPostsPerRun?: number;
   pornhubMaxPostsPerRun?: number;
@@ -127,7 +130,9 @@ export class AdapterCatalog {
         extraEnv: environmentFor(this.options.toolEnvironment?.galleryDl),
         instagramMaxPostsPerRun: this.options.instagramMaxPostsPerRun,
         patreonMaxPostsPerRun: this.options.patreonMaxPostsPerRun,
-        pixivMaxPostsPerRun: this.options.pixivMaxPostsPerRun
+        pixivMaxPostsPerRun: this.options.pixivMaxPostsPerRun,
+        feedListingIdleTimeoutMs: this.options.feedListingIdleTimeoutMs,
+        feedListingTimeoutMs: this.options.feedListingTimeoutMs
       })));
     availability.push(await this.registerCli(registry, 'yt-dlp', tools.ytDlp, (binary) =>
       YtDlpAdapter.create({

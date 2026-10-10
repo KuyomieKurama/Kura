@@ -93,6 +93,14 @@ export interface ProbeContext extends JobContext {
 
 export interface DiscoveryContext extends JobContext {
   readonly target: CanonicalTarget;
+  /**
+   * Platform ids of posts of this feed that are completely archived, handed over only when the worker knows that
+   * the previous run read the feed through to this point. A feed adapter may stop walking a feed (newest first)
+   * once it reaches a run of these posts (the stop rule is documented at endOfNewPosts); it must still list
+   * everything newer. Absent or empty: read the feed up to the usual bound. The hint changes nothing about which
+   * posts are archived, only how far back the listing goes.
+   */
+  readonly knownPostIds?: ReadonlySet<string>;
 }
 
 export interface SourceSummary {
@@ -152,8 +160,14 @@ export interface ManifestAsset {
    * sentence and the code, instead of being downloaded or silently left out. Never contains tool output.
    * ASSET_NOT_YET_AVAILABLE is the same for something that is expected to become available (a livestream that is
    * running, a premiere): it is recorded for the entry, is not a failure of the run, and is checked again next time.
+   * ASSET_LOCKED is a post that the account may not view (Patreon: a higher tier): recorded with its reason, no failure
+   * of the run, and not read again as long as the post's list of files stays empty (the revision key changes when
+   * Patreon lists files for it).
    */
-  readonly unavailable?: { readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE' | 'ASSET_NOT_YET_AVAILABLE'; readonly message: string };
+  readonly unavailable?: {
+    readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE' | 'ASSET_NOT_YET_AVAILABLE' | 'ASSET_LOCKED';
+    readonly message: string;
+  };
 }
 
 /** Volatile access data. Lives only in the job context and must never be persisted or logged. */

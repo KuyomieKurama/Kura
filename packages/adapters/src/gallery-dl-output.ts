@@ -13,6 +13,12 @@ import type { SourceType } from './types.js';
  *    raised an exception, `[-1, {"error": "<ExceptionClassName>", "message": "<text>"}]`.
  *  - In that mode the process exit code is 0 even if the extraction failed (DataJob.run returns 0), so the exit
  *    code says nothing and the `-1` entry is the only reliable sign of a failure.
+ *  - With the option `output.jsonl=true` (job.py DataJob.__init__ reads it; docs: "output.jsonl, Output
+ *    -j/--dump-json data in JSON Lines format") the same messages are printed one per line, each as soon as the
+ *    extractor has produced it (DataJob.out), and the array is NOT printed at the end. The `-1` entry is not printed
+ *    in that mode (DataJob.run appends it to its own list only), so a stream that ends says nothing about whether
+ *    the feed ended or the extraction failed; the adapter checks that separately (see GalleryDlAdapter).
+ *    Feed listings use this mode; a single post is small and is still read as one array (parseDumpJson).
  *  - Without `--dump-json` (download runs) errors are logged to stderr and the exit code is a bit mask:
  *    1 other, 4 extraction/HTTP error, 8 challenge, 16 authentication/authorization, 32 input, 64 no extractor, 128 OS.
  */
@@ -45,6 +51,68 @@ export interface ParsedOutput {
 const MAX_FILES_PER_POST = 1_000;
 const MAX_FILES_IN_OUTPUT = 20_000;
 
+// --- Reducing a message to what Kura reads ---------------------------------------------------------
+
+const MAX_KEPT_TEXT = 2_000;
+const MAX_KEPT_URL = 4_096;
+const MAX_UGOIRA_FRAMES = 5_000;
+/** Fields read from the metadata of a message (the post's own entry or a file's). Everything else is dropped on arrival. */
+const KEPT_PRIMITIVES = [
+  'id', 'post_shortcode', 'type', 'owner_id', 'username', 'fullname', 'description', 'date', 'post_date', 'title',
+  'extension', 'filename', 'width', 'height', 'media_id', 'hash', 'num', 'current_user_can_view'
+] as const;
+/** Persons and albums: only the fields that listingOfPost reads. */
+const KEPT_OBJECTS: Readonly<Record<string, readonly string[]>> = {
+  user: ['id', 'name', 'full_name'],
+  creator: ['id', 'name', 'full_name'],
+  owner: ['id', 'name', 'full_name'],
+  gallery: ['id', 'title']
+};
+
+function keptPrimitive(value: unknown, maxText = MAX_KEPT_TEXT): string | number | boolean | undefined {
+  if (typeof value === 'string') return value.slice(0, maxText);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  return undefined;
+}
+
+function pickPrimitives(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  for (const key of keys) {
+    const value = keptPrimitive(source[key]);
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
+}
+
+/**
+ * One message's metadata, reduced to the fields the listing reads. A Patreon post carries its text as HTML, the
+ * campaign, embeds and a map of image URLs, and gallery-dl repeats all of it for every file of the post; keeping that
+ * for a whole feed is what filled 32 MiB. Nothing but this small record is kept of a message once it was read.
+ */
+export function slimMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const slim = pickPrimitives(metadata, KEPT_PRIMITIVES);
+  const url = keptPrimitive(metadata.url, MAX_KEPT_URL);
+  if (typeof url === 'string') slim.url = url;
+
+  for (const [key, fields] of Object.entries(KEPT_OBJECTS)) {
+    const value = metadata[key];
+    const record = asRecord(value);
+    // Pornhub prints the user as plain text.
+    if (record) slim[key] = pickPrimitives(record, fields);
+    else if (typeof value === 'string') slim[key] = value.slice(0, MAX_KEPT_TEXT);
+  }
+
+  const embed = asRecord(metadata.embed);
+  if (embed && Object.keys(embed).length > 0) {
+    slim.embed = { present: true, ...pickPrimitives(embed, ['url', 'provider_url']) };
+  }
+
+  if (Array.isArray(metadata.frames) && metadata.frames.length <= MAX_UGOIRA_FRAMES) {
+    slim.frames = metadata.frames.map((frame) => ({ ...pickPrimitives(asRecord(frame) ?? {}, ['file', 'delay']) }));
+  }
+  return slim;
+}
+
 /** Parses the `--dump-json` array defensively; entries of an unknown shape are skipped. */
 export function parseDumpJson(stdout: string): ParsedOutput {
   const raw = parseUntrustedJson(stdout);
@@ -57,9 +125,9 @@ export function parseDumpJson(stdout: string): ParsedOutput {
   for (const entry of raw) {
     if (!Array.isArray(entry)) continue;
     if (entry[0] === 2) {
-      posts.push({ directory: asRecord(entry[1]), files: [], filesTruncated: false, ytdlFiles: new Set() });
+      posts.push({ directory: slimOf(entry[1]), files: [], filesTruncated: false, ytdlFiles: new Set() });
     } else if (entry[0] === 3) {
-      const metadata = asRecord(entry[2]);
+      const metadata = slimOf(entry[2]);
       if (typeof entry[1] !== 'string' || !metadata) continue;
       if (totalFiles >= MAX_FILES_IN_OUTPUT) throw new AdapterError('OUTPUT_INVALID', 'gallery-dl listing has more files than supported');
       if (posts.length === 0) posts.push({ directory: undefined, files: [], filesTruncated: false, ytdlFiles: new Set() });
@@ -72,14 +140,88 @@ export function parseDumpJson(stdout: string): ParsedOutput {
         totalFiles += 1;
       }
     } else if (entry[0] === -1) {
-      const record = asRecord(entry[1]);
-      error ??= {
-        name: cleanText(record?.error, 100) ?? 'UnknownError',
-        message: cleanText(record?.message, 500) ?? ''
-      };
+      error ??= toolErrorOf(entry[1]);
     }
   }
   return { posts, error };
+}
+
+function slimOf(value: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  return record ? slimMetadata(record) : undefined;
+}
+
+function toolErrorOf(value: unknown): ToolMessageError {
+  const record = asRecord(value);
+  return {
+    name: cleanText(record?.error, 100) ?? 'UnknownError',
+    message: cleanText(record?.message, 500) ?? ''
+  };
+}
+
+/**
+ * Reads the messages of a `output.jsonl` listing one at a time and hands over each post as soon as the next one
+ * begins. Of each message only the reduced metadata is kept (slimMetadata), so what this holds at any time is the
+ * post being collected: its own entry and, per file, a few fields. A post starts at a `[2, ...]` entry and ends
+ * where the next one starts or the stream ends.
+ */
+export class FeedMessageReader {
+  /** Posts begun so far: the numbering of gallery-dl's --post-range counts exactly these. */
+  postsBegun = 0;
+  /** Messages dropped because one line was over the limit. */
+  oversizeLines = 0;
+  private current: { directory: Record<string, unknown> | undefined; files: Record<string, unknown>[]; filesTruncated: boolean; ytdlFiles: Set<number> } | undefined;
+  /** After a dropped message it is unknown whom the following file messages belong to, until the next post begins. */
+  private lostSync = false;
+
+  /** One line of the listing; returns the post that this line completed, if any. */
+  push(line: Buffer): ParsedPost | undefined {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line.toString('utf8'));
+    } catch {
+      throw new AdapterError('OUTPUT_INVALID', 'Tool output is not valid JSON');
+    }
+    if (!Array.isArray(entry)) return undefined;
+    if (entry[0] === 2) return this.beginPost(slimOf(entry[1]));
+    if (entry[0] === 3) {
+      const metadata = slimOf(entry[2]);
+      if (typeof entry[1] !== 'string' || !metadata || this.lostSync) return undefined;
+      if (!this.current) this.beginPost(undefined);
+      const current = this.current!;
+      if (current.files.length >= MAX_FILES_PER_POST) {
+        current.filesTruncated = true;
+      } else {
+        if (entry[1].startsWith('ytdl:')) current.ytdlFiles.add(current.files.length);
+        current.files.push(metadata);
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * A line over the limit was dropped. It may have been the start of a post or one of its files, so the messages that
+   * follow cannot be assigned to a post until the next post begins. The caller reports the loss (oversizeLines).
+   */
+  dropped(): void {
+    this.oversizeLines += 1;
+    this.lostSync = true;
+  }
+
+  /** The end of the stream completes the last post. */
+  finish(): ParsedPost | undefined {
+    const last = this.current;
+    this.current = undefined;
+    return last;
+  }
+
+  private beginPost(directory: Record<string, unknown> | undefined): ParsedPost | undefined {
+    const completed = this.current;
+    this.lostSync = false;
+    this.postsBegun += 1;
+    this.current = { directory, files: [], filesTruncated: false, ytdlFiles: new Set() };
+    return completed;
+  }
 }
 
 // --- Failure classification -------------------------------------------------------------------

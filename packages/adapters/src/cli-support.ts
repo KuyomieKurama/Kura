@@ -1,7 +1,15 @@
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { AdapterError } from './errors.js';
-import { runExternalProcess, type ExternalBinary, type ProcessLimits, type ProcessResult } from './process-runner.js';
+import {
+  runExternalProcess,
+  streamStdoutLines,
+  type ExternalBinary,
+  type ProcessLimits,
+  type ProcessResult,
+  type StdoutLine,
+  type StreamEnd
+} from './process-runner.js';
 import { adoptToolOutput } from './staging.js';
 import type { StagedFile } from './types.js';
 import { createRunWorkspace, type RunWorkspace } from './workspace.js';
@@ -29,6 +37,15 @@ const DEFAULT_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 60_000;
 const MAX_METADATA_STDOUT_BYTES = 32 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
 const MAX_METADATA_TEMP_BYTES = 256 * 1024 * 1024;
+/**
+ * A streamed listing (a creator feed) is read message by message. One message is the metadata of one post or one file;
+ * the biggest seen are a few hundred KiB. The limit is for ONE message, not for the listing: the whole listing of 50
+ * Patreon posts is tens of megabytes. The total is a safety net against a tool that never stops.
+ */
+const MAX_STREAMED_MESSAGE_BYTES = 8 * 1024 * 1024;
+const MAX_STREAMED_TOTAL_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_STREAM_TIMEOUT_MS = 2 * 60 * 60_000;
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 15 * 60_000;
 const SMALL_STDOUT_BYTES = 1024 * 1024;
 /** Space for partial streams and the muxed result next to the final file. */
 const DOWNLOAD_TEMP_HEADROOM_BYTES = 64 * 1024 * 1024;
@@ -113,6 +130,40 @@ export class CliTool {
       maxStderrBytes: MAX_STDERR_BYTES,
       maxTempBytes: MAX_METADATA_TEMP_BYTES
     }, signal);
+  }
+
+  /**
+   * Runs a metadata command whose output is read line by line while the tool runs (a feed listing). The lines are
+   * handed over as they arrive; the generator returns how the process ended. A limit that is hit is thrown after the
+   * lines read before it. Ending the iteration early kills the tool.
+   */
+  async *streamMetadata(
+    args: readonly string[],
+    signal?: AbortSignal,
+    timeouts: { readonly totalMs?: number; readonly idleMs?: number } = {}
+  ): AsyncGenerator<StdoutLine, StreamEnd, void> {
+    this.assertUsable();
+    const workspace = await createRunWorkspace(this.options.workRoot);
+    try {
+      return yield* streamStdoutLines({
+        binary: this.options.binary,
+        args,
+        workspace,
+        cwd: await workspace.createScratchDir(),
+        extraEnv: this.options.extraEnv,
+        signal,
+        limits: {
+          timeoutMs: timeouts.totalMs ?? DEFAULT_STREAM_TIMEOUT_MS,
+          idleTimeoutMs: timeouts.idleMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+          maxLineBytes: MAX_STREAMED_MESSAGE_BYTES,
+          maxTotalStdoutBytes: MAX_STREAMED_TOTAL_BYTES,
+          maxStderrBytes: MAX_STDERR_BYTES,
+          maxTempBytes: MAX_METADATA_TEMP_BYTES
+        }
+      });
+    } finally {
+      await workspace.dispose();
+    }
   }
 
   /**

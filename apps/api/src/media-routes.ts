@@ -36,6 +36,17 @@ const ASSET_JOINS = `
   JOIN download_posts p ON p.id = a.post_id AND p.user_id = a.user_id
   LEFT JOIN immich_transfers t ON t.id = a.transfer_id AND t.user_id = a.user_id`;
 
+/**
+ * One entry per stored file in a subscription: rows with the same checksum are copies of the same file (the same
+ * post archived again under another revision, or the same file in two posts). The newest post row wins for the
+ * metadata shown; `copies` says how many rows there are. Nothing is deleted: the copies stay in the history.
+ */
+const DISTINCT_FILES = `
+  SELECT ${ASSET_SELECT},
+         row_number() OVER (PARTITION BY a.sha256 ORDER BY p.discovered_at DESC, a.stored_at DESC, a.id DESC) AS copy_rank,
+         (count(*) OVER (PARTITION BY a.sha256))::int AS copies`;
+
+
 interface AssetRow {
   id: string;
   post_id: string;
@@ -60,6 +71,7 @@ interface AssetRow {
   creator_name: string | null;
   published_at: Date | null;
   immich_verified_at: Date | null;
+  copies?: number;
 }
 
 function presentAsset(row: AssetRow) {
@@ -75,6 +87,7 @@ function presentAsset(row: AssetRow) {
     creatorName: row.creator_name,
     runId: row.run_id,
     originalName: row.original_name,
+    copies: row.copies ?? 1,
     mediaKind: mediaKindOf(row.media_type),
     mimeType: row.media_type,
     byteSize: row.byte_size === null ? null : Number(row.byte_size),
@@ -172,11 +185,13 @@ export function registerMediaRoutes(input: {
     if (!owned.rowCount) return reply.code(404).send(NOT_FOUND());
 
     const rows = await pool.query<AssetRow>(
-      `SELECT ${ASSET_SELECT} ${ASSET_JOINS}
-        WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.state = 'stored'
-          AND ($3::text IS NULL OR a.media_type LIKE $3)
-          AND ($4::timestamptz IS NULL OR (a.stored_at, a.id) < ($4::timestamptz, $5::uuid))
-        ORDER BY a.stored_at DESC, a.id DESC
+      `SELECT * FROM (
+         ${DISTINCT_FILES} ${ASSET_JOINS}
+          WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.state = 'stored' AND a.sha256 IS NOT NULL
+            AND ($3::text IS NULL OR a.media_type LIKE $3)
+       ) files
+        WHERE copy_rank = 1 AND ($4::timestamptz IS NULL OR (stored_at, id) < ($4::timestamptz, $5::uuid))
+        ORDER BY stored_at DESC, id DESC
         LIMIT $6`,
       [userId, subscriptionId, likePattern, cursor?.storedAt ?? null, cursor?.id ?? null, pageSize + 1]
     );
@@ -186,11 +201,11 @@ export function registerMediaRoutes(input: {
 
     // The totals belong to the subscription, not to the filter, so the filter chips can show them.
     const counts = cursor ? null : (await pool.query<{ total: number; images: number; videos: number }>(
-      `SELECT count(*)::int AS total,
-              (count(*) FILTER (WHERE a.media_type LIKE 'image/%'))::int AS images,
-              (count(*) FILTER (WHERE a.media_type LIKE 'video/%'))::int AS videos
+      `SELECT count(DISTINCT a.sha256)::int AS total,
+              (count(DISTINCT a.sha256) FILTER (WHERE a.media_type LIKE 'image/%'))::int AS images,
+              (count(DISTINCT a.sha256) FILTER (WHERE a.media_type LIKE 'video/%'))::int AS videos
          FROM download_assets a JOIN download_posts p ON p.id = a.post_id AND p.user_id = a.user_id
-        WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.state = 'stored'`,
+        WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.state = 'stored' AND a.sha256 IS NOT NULL`,
       [userId, subscriptionId]
     )).rows[0]!;
 

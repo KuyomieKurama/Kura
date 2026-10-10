@@ -91,6 +91,28 @@ export interface StoredAssetFacts {
   blobObjectId: string;
 }
 
+/** A revision of a post that is already in the history, and whether it is completely archived. */
+export interface KnownRevision {
+  revisionKey: string;
+  settled: boolean;
+}
+
+/** A post of a subscription that is not completely archived and should be looked at again. */
+export interface OpenPost {
+  platformPostId: string;
+  sourceUrl: string;
+}
+
+/** An already stored asset whose stored file a new asset row can point to instead of fetching the file again. */
+export interface StoredTwin {
+  sha256: string;
+  sha1: string | null;
+  byteSize: number;
+  blobObjectId: string;
+  handoverState: HandoverState;
+  transferId: string | null;
+}
+
 export interface SyncState {
   targetHash: string;
   lastSeenPostId: string | null;
@@ -118,6 +140,28 @@ interface AssetRow {
 
 const ASSET_COLUMNS = `id, asset_index, source_asset_id, original_name, media_type, state, attempts, byte_size,
   sha256, sha1, blob_object_id, handover_state, transfer_id, error_code`;
+
+interface TwinRow {
+  sha256: string;
+  sha1: string | null;
+  byte_size: string;
+  blob_object_id: string;
+  handover_state: HandoverState;
+  transfer_id: string | null;
+}
+
+const TWIN_COLUMNS = 'a.sha256, a.sha1, a.byte_size, a.blob_object_id, a.handover_state, a.transfer_id';
+
+function toTwin(row: TwinRow): StoredTwin {
+  return {
+    sha256: row.sha256,
+    sha1: row.sha1,
+    byteSize: Number(row.byte_size),
+    blobObjectId: row.blob_object_id,
+    handoverState: row.handover_state,
+    transferId: row.transfer_id
+  };
+}
 
 function toAsset(row: AssetRow): AssetRecord {
   return {
@@ -147,6 +191,24 @@ export function sanitizedSourceUrl(url: string): string | null {
     return null;
   }
 }
+
+/**
+ * "Completely archived", for a row of download_posts aliased `alias`: stored, or finished with nothing left to try.
+ * A post whose remaining assets can never be fetched (an embedded video of another site, a file type that is not
+ * allowed) is settled too, and so is a post that the account may not view (ASSET_LOCKED): when that changes, the
+ * platform lists files for the post, which gives it another revision key. A post with a failed download, a pending
+ * asset, an enumeration that was not complete or an asset that is not accessible now (private: that can change without
+ * the revision key changing) is not settled, and is looked at again.
+ */
+const settledPost = (alias: string): string => `(${alias}.state = 'stored' OR (
+  ${alias}.state IN ('partially_completed', 'failed') AND ${alias}.discovery_complete
+  AND EXISTS (SELECT 1 FROM download_assets s WHERE s.post_id = ${alias}.id)
+  AND NOT EXISTS (
+    SELECT 1 FROM download_assets s
+     WHERE s.post_id = ${alias}.id AND s.state <> 'stored'
+       AND NOT (s.state = 'failed' AND s.error_code IN ('ASSET_UNSUPPORTED', 'ASSET_LOCKED'))
+  )
+))`;
 
 const ORPHANED_RUN_MESSAGE = 'Der Worker wurde unterbrochen; der Lauf wird erneut versucht oder ist beendet.';
 
@@ -344,6 +406,103 @@ export class HistoryRepository {
       createdAt: row.published_at ?? row.stored_at,
       modifiedAt: row.stored_at
     }));
+  }
+
+  // --- what is already archived (incremental runs, asset-level safety net) ---------------------
+
+  /** Every revision of one post in the history, whatever subscription found it. */
+  async revisionsOf(userId: string, platform: string, platformPostId: string): Promise<KnownRevision[]> {
+    const result = await this.pool.query<{ revision_key: string; settled: boolean }>(
+      `SELECT p.revision_key, ${settledPost('p')} AS settled
+         FROM download_posts p WHERE p.user_id = $1 AND p.platform = $2 AND p.platform_post_id = $3`,
+      [userId, platform, platformPostId]
+    );
+    return result.rows.map((row) => ({ revisionKey: row.revision_key, settled: row.settled }));
+  }
+
+  /** The ids of all posts of the user on one platform that have a completely archived revision. */
+  async settledPostIds(userId: string, platform: string): Promise<Set<string>> {
+    const result = await this.pool.query<{ platform_post_id: string }>(
+      `SELECT DISTINCT p.platform_post_id FROM download_posts p
+        WHERE p.user_id = $1 AND p.platform = $2 AND ${settledPost('p')}`,
+      [userId, platform]
+    );
+    return new Set(result.rows.map((row) => row.platform_post_id));
+  }
+
+  /**
+   * Posts of a subscription whose newest revision is not completely archived (failed downloads, pending assets,
+   * an enumeration that was not complete). Newest first, at most `limit`.
+   */
+  async openPosts(userId: string, subscriptionId: string, platform: string, limit: number): Promise<OpenPost[]> {
+    const result = await this.pool.query<{ platform_post_id: string; source_url: string }>(
+      `SELECT platform_post_id, source_url FROM (
+         SELECT DISTINCT ON (p.platform_post_id) p.platform_post_id, p.source_url, p.discovered_at, ${settledPost('p')} AS settled
+           FROM download_posts p
+          WHERE p.user_id = $1 AND p.subscription_id = $2 AND p.platform = $3 AND p.source_url IS NOT NULL
+          ORDER BY p.platform_post_id, p.discovered_at DESC, p.id DESC
+       ) newest WHERE NOT settled ORDER BY discovered_at DESC LIMIT $4`,
+      [userId, subscriptionId, platform, limit]
+    );
+    return result.rows.map((row) => ({ platformPostId: row.platform_post_id, sourceUrl: row.source_url }));
+  }
+
+  /** The state of the most recent finished run of a subscription, other than `exceptRunId`; null if there is none. */
+  async lastFinishedRunState(userId: string, subscriptionId: string, exceptRunId: string): Promise<RunState | null> {
+    const result = await this.pool.query<{ state: RunState }>(
+      `SELECT state FROM download_runs
+        WHERE user_id = $1 AND subscription_id = $2 AND id <> $3 AND finished_at IS NOT NULL
+        ORDER BY started_at DESC LIMIT 1`,
+      [userId, subscriptionId, exceptRunId]
+    );
+    return result.rows[0]?.state ?? null;
+  }
+
+  /** A stored asset with the same id in another revision of the same post (the id must identify the content). */
+  async findStoredByAssetId(userId: string, platform: string, platformPostId: string, sourceAssetId: string, exceptAssetId: string): Promise<StoredTwin | null> {
+    const result = await this.pool.query<TwinRow>(
+      `SELECT ${TWIN_COLUMNS} FROM download_assets a JOIN download_posts p ON p.id = a.post_id
+        WHERE a.user_id = $1 AND p.platform = $2 AND p.platform_post_id = $3 AND a.source_asset_id = $4
+          AND a.state = 'stored' AND a.id <> $5
+        ORDER BY a.stored_at DESC, a.id DESC LIMIT 1`,
+      [userId, platform, platformPostId, sourceAssetId, exceptAssetId]
+    );
+    return result.rows[0] ? toTwin(result.rows[0]) : null;
+  }
+
+  /** A stored asset of the same subscription with exactly these bytes. */
+  async findStoredBySha256(userId: string, subscriptionId: string, sha256: string, exceptAssetId: string): Promise<StoredTwin | null> {
+    const result = await this.pool.query<TwinRow>(
+      `SELECT ${TWIN_COLUMNS} FROM download_assets a JOIN download_posts p ON p.id = a.post_id
+        WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.sha256 = $3 AND a.state = 'stored' AND a.id <> $4
+        ORDER BY a.stored_at DESC, a.id DESC LIMIT 1`,
+      [userId, subscriptionId, sha256, exceptAssetId]
+    );
+    return result.rows[0] ? toTwin(result.rows[0]) : null;
+  }
+
+  /**
+   * Marks an asset as stored by pointing it at the file another asset row already holds, instead of storing the
+   * file again. The blob store keeps one object per owner and checksum and counts how many stored files refer
+   * to it (blobstore_objects.reference_count, which a removal checks); this count goes up by one here, exactly as
+   * importing the same bytes again would raise it. The handover state is the twin's: it is the same file for the
+   * same Immich target, and that transfer is found again by its object id.
+   */
+  async referenceStoredAsset(assetId: string, userId: string, twin: StoredTwin): Promise<void> {
+    await this.pool.query(
+      `WITH counted AS (
+         UPDATE blobstore_objects SET reference_count = reference_count + 1
+          WHERE id::text = $5 AND owner_id = $6
+            AND EXISTS (SELECT 1 FROM download_assets WHERE id = $1 AND state <> 'stored')
+        RETURNING id
+       )
+       UPDATE download_assets
+          SET state = 'stored', sha256 = $2, sha1 = $3, byte_size = $4, blob_object_id = $5,
+              stored_at = $7, error_code = NULL, error_message = NULL,
+              handover_state = $8, transfer_id = $9::uuid, handover_at = $7, updated_at = now()
+        WHERE id = $1 AND state <> 'stored'`,
+      [assetId, twin.sha256, twin.sha1, twin.byteSize, twin.blobObjectId, userId, this.clock.now(), twin.handoverState, twin.transferId]
+    );
   }
 
   async getSyncState(subscriptionId: string, userId: string): Promise<SyncState | null> {

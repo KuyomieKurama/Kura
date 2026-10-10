@@ -99,7 +99,7 @@ describe('flat listings of channels, playlists and Pornhub lists', () => {
       adapterId: 'yt-dlp', sourceType: 'youtube', title: 'Newest upload', canonicalUrl: watch('aaaaaaaaaa1'),
       creator: { platformId: 'UC1234567890abcdefghijkl', displayName: 'Own Test Channel' }, publishedAt: null
     });
-    expect(posts[0]!.revisionKey).toMatch(/^f-[0-9a-f]{24}$/);
+    expect(posts[0]!.revisionKey).toMatch(/^v-[0-9a-f]{24}$/);
 
     expect(await calls(tool)).toEqual([[
       '--ignore-config', '--no-update', '--no-cache-dir', '--no-warnings', '--yes-playlist',
@@ -308,11 +308,11 @@ describe('single videos: format selection, merge and the extension of the result
     expect(staged).toMatchObject({ mediaType: 'video/webm', relativePath: 'media/item-0000.webm' });
   });
 
-  it('keeps the revision of a video archived before lists existed (id, upload date and duration)', async () => {
+  it('derives the revision of a single video from its id alone, like a video of a list', async () => {
     const id = 'dQw4w9WgXcQ';
     const { adapter } = await setup({ videos: { [watch(id)]: await videoMetadata('ytdlp-youtube-video-h264.json', id) } });
     const [post] = await discover(adapter, watch(id));
-    expect(post!.revisionKey).toMatch(/^d-[0-9a-f]{24}$/);
+    expect(post!.revisionKey).toMatch(/^v-[0-9a-f]{24}$/);
     expect(post).toMatchObject({ publishedAt: '2026-01-05T00:00:00.000Z', title: 'Own test video' });
   });
 });

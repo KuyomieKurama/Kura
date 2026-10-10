@@ -118,7 +118,7 @@ describe('GalleryDlAdapter metadata', () => {
       adapterId: 'gallery-dl', sourceType: 'pixiv', platformPostId: '98765', canonicalUrl: PIXIV_URL, title: 'Own test artwork',
       creator: { platformId: '12345', displayName: 'own_artist' }, publishedAt: '2026-01-01T00:00:00.000Z'
     });
-    expect(post.revisionKey).toMatch(/^l-[0-9a-f]{24}$/);
+    expect(post.revisionKey).toMatch(/^g-[0-9a-f]{24}$/);
     expect(manifest).toMatchObject({ schemaVersion: 1, platformPostId: '98765', creatorId: '12345', discoveryComplete: true, errors: [] });
     expect(manifest.assets.map((asset) => [asset.assetIndex, asset.sourceAssetId, asset.originalName, asset.mediaType])).toEqual([
       [0, 'file-0', '98765_p0.png', 'image/png'],

@@ -174,7 +174,7 @@ describe('YtDlpAdapter metadata', () => {
       creator: { platformId: 'UC1234567890abcdefghijkl', displayName: 'Own Test Channel' },
       publishedAt: '2026-01-05T00:00:00.000Z'
     });
-    expect(post.revisionKey).toMatch(/^d-[0-9a-f]{24}$/);
+    expect(post.revisionKey).toMatch(/^v-[0-9a-f]{24}$/);
 
     const manifest = await adapter.resolveAssets(post, { preset: 'BEST_AVAILABLE' });
     expect(manifest).toMatchObject({

@@ -9,6 +9,8 @@ export interface InstagramToolControl {
   listings?: Record<string, unknown>;
   /** Raw stdout of a listing, overrides `listings`. */
   rawOutput?: string;
+  /** The tool prints every post of the listing although --post-range asked for fewer (a tool that ignores the range). */
+  ignoreRange?: boolean;
   /** Text written to stderr by a listing that succeeds (for example gallery-dl's warnings). */
   listingStderr?: string;
   /** Makes every listing fail with this stderr and exit code, without any output. */
@@ -48,16 +50,22 @@ if (args.includes('--dump-json')) {
   if (control.listingStderr) process.stderr.write(control.listingStderr);
   if (control.rawOutput !== undefined) { process.stdout.write(control.rawOutput, () => process.exit(0)); return; }
   if (listing === undefined) { process.stderr.write('[gallery-dl][error] Unsupported URL ' + url); process.exit(64); }
-  // --post-range 1-N keeps the first N posts (a post starts at a [2, ...] entry), like the real tool.
+  // --post-range keeps the posts of that range (a post starts at a [2, ...] entry), like the real tool: "1-N" or "N".
   const rangeAt = args.indexOf('--post-range');
-  const limit = rangeAt >= 0 ? Number(args[rangeAt + 1].split('-')[1]) : Infinity;
+  const [first, last] = rangeAt >= 0 && !control.ignoreRange ? (args[rangeAt + 1].includes('-') ? args[rangeAt + 1].split('-').map(Number) : [Number(args[rangeAt + 1]), Number(args[rangeAt + 1])]) : [1, Infinity];
   const out = [];
   let posts = 0;
   for (const entry of listing) {
     if (entry[0] === 2) posts += 1;
-    if (entry[0] === -1 || posts <= limit) out.push(entry);
+    if (entry[0] === -1 || (posts >= first && posts <= last)) out.push(entry);
   }
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n', () => process.exit(0));
+  // With "-o output.jsonl=true" the real tool prints one message per line and no error entry (job.py DataJob).
+  if (args.includes('output.jsonl=true')) {
+    const lines = out.filter((entry) => entry[0] !== -1).map((entry) => JSON.stringify(entry) + '\n').join('');
+    process.stdout.write(lines, () => process.exit(0));
+  } else {
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n', () => process.exit(0));
+  }
 } else {
   if (control.downloadFailure) { process.stderr.write(control.downloadFailure.stderr); process.exit(control.downloadFailure.exitCode); }
   const position = Number(args[args.indexOf('--range') + 1]) - 1;

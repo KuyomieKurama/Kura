@@ -3,7 +3,9 @@ import { rm } from 'node:fs/promises';
 import {
   AdapterError,
   createRunWorkspace,
+  isContentStableAssetId,
   isCredentialPlatform,
+  isLegacyRevisionKey,
   selectSource,
   stageByteStream,
   toPersistableAsset,
@@ -27,7 +29,7 @@ import {
 } from '@kura/scheduler';
 import type { Pool } from 'pg';
 import { EGRESS_NOT_CONFIRMED, loadKillSwitches, type AdapterCatalog } from './catalog.js';
-import { importStagedFile } from './blob-import.js';
+import { checkedDigestOfStagedFile, importStagedFile, type ImportedBlob } from './blob-import.js';
 import {
   CREDENTIAL_MESSAGES,
   isSpecificAuthMessage,
@@ -48,6 +50,8 @@ import type { Logger } from './scheduler-loop.js';
 const MAX_POSTS_PER_RUN = 500;
 /** Earlier uncertain handovers retried per run. */
 const HANDOVER_RETRIES_PER_RUN = 10;
+/** Posts of a feed that are not completely archived and lie behind the part of the feed this run read, looked at again per run. */
+const OPEN_POSTS_RETRIED_PER_RUN = 10;
 const PAUSED_RETRY_SECONDS = 60;
 
 export interface ExecutorDependencies {
@@ -208,28 +212,38 @@ export class JobExecutor {
     // A profile listing can stop half way (login wall, throttling). What was listed before is still worth
     // archiving, but the run must end with that error and the "checked through" mark must not advance.
     let discoveryStop: Disposition | undefined;
+    const knownPostIds = await this.knownPostsOfFeed(lease, runId, candidate);
     try {
-      for await (const post of adapter.discover({ ...jobContext, target })) {
+      for await (const post of adapter.discover({ ...jobContext, target, ...(knownPostIds ? { knownPostIds } : {}) })) {
         if (posts.length >= MAX_POSTS_PER_RUN) {
           truncated = true;
           break;
         }
         posts.push(post);
+        // Each post is recorded when it is found: the run's counters and the history move while a long feed is still
+        // being read, and a failure further down the feed does not take back what was found before it.
+        await this.recordDiscovered({ lease, runId, candidate, post, stats });
       }
     } catch (error) {
       if (error instanceof LeaseLostError || signal.aborted) throw error;
-      const failure = classifyFailure(error);
-      if (posts.length === 0 || !stopsWholeRun(failure)) throw error;
-      discoveryStop = failure;
+      // Nothing found yet: the failure is the result of the run. Otherwise the posts found so far are worked on first
+      // and the run ends with this failure afterwards (and is retried or paused according to what it was).
+      if (posts.length === 0) throw error;
+      discoveryStop = classifyFailure(error);
     }
     if (posts.length === 0 && target.kind === 'post') {
       // A single post that cannot be listed is a failure, not "nothing new".
       throw new RunStop({ runState: 'retry_wait', code: 'SOURCE_EMPTY', message: 'Die Quelle hat keinen Beitrag geliefert. Der Lauf wird wiederholt.', retryable: true });
     }
 
+    // A feed that was read only as far as the archived posts still owes the posts behind that point which failed earlier.
+    const reread = discoveryStop ? [] : await this.rediscoverOpenPosts({ lease, candidate, jobContext, listed: posts });
+    for (const post of reread) await this.recordDiscovered({ lease, runId, candidate, post, stats });
     const outcomes: PostOutcome[] = [];
     let firstFailure: Disposition | undefined;
-    for (const post of posts) {
+    // The tool prints a feed in its own order (pinned posts first); the newest posts are worked on first.
+    const ordered = newestFirst(posts);
+    for (const post of [...ordered, ...reread]) {
       this.throwIfAborted(signal);
       let outcome: PostOutcome;
       try {
@@ -250,12 +264,12 @@ export class JobExecutor {
 
     if (discoveryStop) throw new RunStop(discoveryStop);
 
-    const last = posts.at(-1);
+    const last = ordered.at(-1);
     const enumerationComplete = !truncated && outcomes.every((outcome) => outcome.discoveryComplete);
     await history.saveSyncState({
       subscriptionId: lease.subscriptionId,
       userId: lease.userId,
-      targetHash: createHash('sha256').update(target.canonicalUrl).digest('hex'),
+      targetHash: targetHashOf(target.canonicalUrl),
       lastSeenPostId: last?.platformPostId ?? null,
       lastSeenRevisionKey: last?.revisionKey ?? null,
       enumerationComplete
@@ -264,6 +278,61 @@ export class JobExecutor {
     await this.retryEarlierHandovers(lease.userId);
     if (firstFailure) return { disposition: firstFailure, partial: stats.assetsStored > 0 || outcomes.some((o) => o.status === 'partially_completed') };
     return undefined;
+  }
+
+  /**
+   * The posts of a feed that a listing may stop at (the stop rule of endOfNewPosts), or undefined when the feed has
+   * to be read in full. Stopping at archived posts is only right if everything behind them was archived by an
+   * earlier run, so it needs all of this: the sync state belongs to this target, the feed was once read to its
+   * end ("checked through"), and the run before this one ended without a problem. After a crashed or failed run
+   * the posts that were stored are a part of the feed, not its tail, and the next run reads the whole range again.
+   */
+  private async knownPostsOfFeed(lease: JobLease, runId: string, candidate: AdapterCandidate): Promise<ReadonlySet<string> | undefined> {
+    const { history } = this.deps;
+    const { target } = candidate;
+    if (target.kind !== 'creator_feed') return undefined;
+    const state = await history.getSyncState(lease.subscriptionId, lease.userId);
+    if (!state || state.checkedThrough === null || state.targetHash !== targetHashOf(target.canonicalUrl)) return undefined;
+    if ((await history.lastFinishedRunState(lease.userId, lease.subscriptionId, runId)) !== 'stored') return undefined;
+    const known = await history.settledPostIds(lease.userId, target.sourceType);
+    return known.size > 0 ? known : undefined;
+  }
+
+  /**
+   * Posts of this subscription that are not completely archived (a download failed, an asset is pending) and that the
+   * feed listing of this run did not reach because it stopped at the archived posts. Each is read again as a single
+   * post, so a partially failed post is retried and a completed one is not. A post that cannot be read now is left
+   * for the next run; it already has its own record of what went wrong.
+   */
+  private async rediscoverOpenPosts(input: {
+    lease: JobLease;
+    candidate: AdapterCandidate;
+    jobContext: { jobId: string; leaseGeneration: number; signal: AbortSignal; credentials?: RunCredentials };
+    listed: readonly SourcePost[];
+  }): Promise<SourcePost[]> {
+    const { lease, candidate, jobContext, listed } = input;
+    const { adapter, target } = candidate;
+    if (target.kind !== 'creator_feed') return [];
+    const alreadyListed = new Set(listed.map((post) => post.platformPostId));
+    const open = (await this.deps.history.openPosts(lease.userId, lease.subscriptionId, target.sourceType, OPEN_POSTS_RETRIED_PER_RUN * 4))
+      .filter((post) => !alreadyListed.has(post.platformPostId))
+      .slice(0, OPEN_POSTS_RETRIED_PER_RUN);
+
+    const posts: SourcePost[] = [];
+    for (const entry of open) {
+      this.throwIfAborted(jobContext.signal);
+      try {
+        const single = adapter.validateTarget(entry.sourceUrl);
+        if (single.kind !== 'post' || single.platformId !== entry.platformPostId) continue;
+        for await (const post of adapter.discover({ ...jobContext, target: single })) posts.push(post);
+      } catch (error) {
+        if (error instanceof LeaseLostError || jobContext.signal.aborted) throw error;
+        const failure = classifyFailure(error);
+        if (stopsWholeRun(failure)) throw new RunStop(failure);
+        this.logUnexpected(lease, failure, error);
+      }
+    }
+    return posts;
   }
 
   /**
@@ -368,21 +437,26 @@ export class JobExecutor {
     }
   }
 
-  private async processPost(input: {
+  /**
+   * A post that was found: counted, and entered in the history as "discovered" unless it is archived and unchanged
+   * (then nothing is written, as in processPost). Writing it again later, when it is worked on, changes nothing.
+   */
+  private async recordDiscovered(input: {
     lease: JobLease;
     runId: string;
     candidate: AdapterCandidate;
     post: SourcePost;
     stats: RunStats;
-    signal: AbortSignal;
-    credentials?: RunCredentials;
-  }): Promise<PostOutcome> {
-    const { lease, runId, candidate, post, stats, signal, credentials } = input;
-    const { history, catalog } = this.deps;
-    const { adapter } = candidate;
-    const { adapterId, adapterVersion } = adapter.capabilities();
+  }): Promise<void> {
+    const { lease, runId, candidate, post, stats } = input;
+    stats.postsFound += 1;
+    if (!(await this.isArchivedUnchanged(lease.userId, post))) await this.upsertDiscoveredPost(lease, runId, candidate, post);
+    await this.deps.history.updateRun(runId, { state: 'discovering', stats });
+  }
 
-    const saved = await history.upsertPost({
+  private upsertDiscoveredPost(lease: JobLease, runId: string, candidate: AdapterCandidate, post: SourcePost) {
+    const { adapterId, adapterVersion } = candidate.adapter.capabilities();
+    return this.deps.history.upsertPost({
       userId: lease.userId,
       runId,
       subscriptionId: lease.subscriptionId,
@@ -397,9 +471,33 @@ export class JobExecutor {
       sourceUrl: post.canonicalUrl,
       publishedAt: post.publishedAt
     });
-    stats.postsFound += 1;
+  }
+
+  private async processPost(input: {
+    lease: JobLease;
+    runId: string;
+    candidate: AdapterCandidate;
+    post: SourcePost;
+    stats: RunStats;
+    signal: AbortSignal;
+    credentials?: RunCredentials;
+  }): Promise<PostOutcome> {
+    const { lease, runId, candidate, post, stats, signal, credentials } = input;
+    const { history, catalog } = this.deps;
+    const { adapter } = candidate;
+
+    // Unchanged and archived: skipped, also if the local copy has meanwhile gone to Immich, and without asking the
+    // platform for anything. A post archived before the revision key was derived from stable ids only (old format)
+    // counts as unchanged: its old key says nothing about the content and cannot be compared with the new one.
+    // (The post was counted when it was found, see recordDiscovered.)
+    if (await this.isArchivedUnchanged(lease.userId, post)) {
+      stats.postsSkipped += 1;
+      return { status: 'skipped', discoveryComplete: true };
+    }
+
+    const saved = await this.upsertDiscoveredPost(lease, runId, candidate, post);
     if (saved.state === 'stored') {
-      // Unchanged and archived: skipped, also if the local copy has meanwhile gone to Immich.
+      // Stored between the check above and now (another run of the same user): nothing to do.
       stats.postsSkipped += 1;
       return { status: 'skipped', discoveryComplete: true };
     }
@@ -421,14 +519,16 @@ export class JobExecutor {
           // as failed with its reason, once as a problem of the run; later runs repeat nothing and only keep the record.
           await history.markAssetFailed(record.id, asset.unavailable.code, asset.unavailable.message);
           // Something that is expected to appear later (a running livestream, a premiere) is recorded for the entry
-          // but is no failure of the run; the post is looked at again on the next run.
-          if (asset.unavailable.code !== 'ASSET_NOT_YET_AVAILABLE' && record.errorCode !== asset.unavailable.code) {
+          // but is no failure of the run; the post is looked at again on the next run. A post that the account may
+          // not view (a higher tier) is the same: recorded with its reason, and no failure of the run.
+          if (asset.unavailable.code !== 'ASSET_NOT_YET_AVAILABLE' && asset.unavailable.code !== 'ASSET_LOCKED' && record.errorCode !== asset.unavailable.code) {
             stats.assetsFailed += 1;
             failure ??= { runState: 'failed', code: asset.unavailable.code, message: asset.unavailable.message, retryable: false };
           }
           continue;
         }
         try {
+          if (await this.referenceStoredFileOfSameAsset(lease.userId, post, asset, record)) continue;
           await this.storeAsset({ lease, runId, adapter: candidate, post, asset, record, workspace, stats, signal, credentials });
         } catch (error) {
           if (error instanceof LeaseLostError || signal.aborted) throw error;
@@ -451,6 +551,14 @@ export class JobExecutor {
     return { status, discoveryComplete: manifest.discoveryComplete && manifest.errors.length === 0, failure };
   }
 
+  private async isArchivedUnchanged(userId: string, post: SourcePost): Promise<boolean> {
+    const revisions = await this.deps.history.revisionsOf(userId, post.sourceType, post.platformPostId);
+    const same = revisions.find((revision) => revision.revisionKey === post.revisionKey);
+    if (same) return same.settled;
+    return !isLegacyRevisionKey(post.revisionKey)
+      && revisions.some((revision) => revision.settled && isLegacyRevisionKey(revision.revisionKey));
+  }
+
   /** Derives the post state from the per-asset states in the database, not from this run's memory. */
   private async finishPost(postId: string, manifest: AssetManifest): Promise<'stored' | 'partially_completed' | 'failed'> {
     const assets = await this.deps.history.assetsOfPost(postId);
@@ -463,6 +571,20 @@ export class JobExecutor {
     const state = complete ? 'stored' : stored > 0 ? 'partially_completed' : 'failed';
     await this.deps.history.setPostState(postId, state, manifest.discoveryComplete);
     return state;
+  }
+
+  /**
+   * Asset-level safety net, before anything is fetched: when another revision of this post already holds a stored
+   * file under the same asset id, and that id says which content it is (a media id, a file hash, a Pixiv page), this
+   * asset points at that stored file. A new revision that only adds a file therefore downloads only that file.
+   */
+  private async referenceStoredFileOfSameAsset(userId: string, post: SourcePost, asset: ResolvedAsset, record: AssetRecord): Promise<boolean> {
+    if (!isContentStableAssetId(post.sourceType, asset.sourceAssetId)) return false;
+    const { history } = this.deps;
+    const twin = await history.findStoredByAssetId(userId, post.sourceType, post.platformPostId, asset.sourceAssetId, record.id);
+    if (!twin) return false;
+    await history.referenceStoredAsset(record.id, userId, twin);
+    return true;
   }
 
   private async storeAsset(input: {
@@ -496,11 +618,21 @@ export class JobExecutor {
       ? await adapter.stage(asset, { ...context, workspace })
       : await stageByteStream(adapter.download(asset, context), workspace, asset.assetIndex, asset.mediaType, this.deps.maxAssetBytes);
 
-    await history.markAssetVerifying(record.id);
-    await history.updateRun(runId, { state: 'verifying' });
-    const imported = await importStagedFile({ blobstore, ownerUserId: lease.userId, staged, signal });
+    // The same bytes are already stored for this subscription: refer to them instead of importing a second time.
+    const digest = await checkedDigestOfStagedFile(staged, signal);
+    const sameBytes = await history.findStoredBySha256(lease.userId, lease.subscriptionId, digest, record.id);
+    let imported: ImportedBlob | undefined;
+    if (!sameBytes) {
+      await history.markAssetVerifying(record.id);
+      await history.updateRun(runId, { state: 'verifying' });
+      imported = await importStagedFile({ blobstore, ownerUserId: lease.userId, staged, signal });
+    }
     await rm(staged.absolutePath, { force: true });
 
+    if (!imported) {
+      await history.referenceStoredAsset(record.id, lease.userId, sameBytes!);
+      return;
+    }
     await history.markAssetStored(record.id, {
       sha256: imported.sha256,
       sha1: imported.sha1,
@@ -642,6 +774,19 @@ export class JobExecutor {
     );
     return result.rows[0]?.trigger_kind ?? 'schedule';
   }
+}
+
+/**
+ * Newest first when every post has a date (a stable order, so equal dates keep the tool's order); otherwise the tool's
+ * order is kept rather than guessing. Pinned posts are printed first by Instagram and Patreon although they are old.
+ */
+function newestFirst(posts: readonly SourcePost[]): SourcePost[] {
+  if (posts.some((post) => post.publishedAt === null)) return [...posts];
+  return [...posts].sort((left, right) => (left.publishedAt! < right.publishedAt! ? 1 : left.publishedAt! > right.publishedAt! ? -1 : 0));
+}
+
+function targetHashOf(canonicalUrl: string): string {
+  return createHash('sha256').update(canonicalUrl).digest('hex');
 }
 
 function unreadableCredentialsDisposition(platform: CredentialPlatform): Disposition {
