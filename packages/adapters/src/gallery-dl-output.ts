@@ -41,8 +41,6 @@ export interface ParsedPost {
    * Kura applies to yt-dlp (D-007). They are listed, never downloaded.
    */
   readonly ytdlFiles: ReadonlySet<number>;
-  /** A message of this post was longer than the line limit and was dropped; the file list cannot be taken as complete. */
-  readonly oversize?: boolean;
 }
 
 export interface ParsedOutput {
@@ -172,7 +170,7 @@ export class FeedMessageReader {
   postsBegun = 0;
   /** Messages dropped because one line was over the limit. */
   oversizeLines = 0;
-  private current: { directory: Record<string, unknown> | undefined; files: Record<string, unknown>[]; filesTruncated: boolean; ytdlFiles: Set<number>; oversize: boolean } | undefined;
+  private current: { directory: Record<string, unknown> | undefined; files: Record<string, unknown>[]; filesTruncated: boolean; ytdlFiles: Set<number> } | undefined;
   /** After a dropped message it is unknown whom the following file messages belong to, until the next post begins. */
   private lostSync = false;
 
@@ -201,11 +199,13 @@ export class FeedMessageReader {
     return undefined;
   }
 
-  /** A line over the limit was dropped: the post being collected is incomplete, and so is whatever follows it. */
+  /**
+   * A line over the limit was dropped. It may have been the start of a post or one of its files, so the messages that
+   * follow cannot be assigned to a post until the next post begins. The caller reports the loss (oversizeLines).
+   */
   dropped(): void {
     this.oversizeLines += 1;
     this.lostSync = true;
-    if (this.current) this.current.oversize = true;
   }
 
   /** The end of the stream completes the last post. */
@@ -219,7 +219,7 @@ export class FeedMessageReader {
     const completed = this.current;
     this.lostSync = false;
     this.postsBegun += 1;
-    this.current = { directory, files: [], filesTruncated: false, ytdlFiles: new Set(), oversize: false };
+    this.current = { directory, files: [], filesTruncated: false, ytdlFiles: new Set() };
     return completed;
   }
 }

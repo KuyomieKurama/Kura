@@ -525,14 +525,19 @@ export class GalleryDlAdapter implements SourceAdapter {
       }
       if (stoppedEarly) return;
 
-      const last = reader.finish();
-      if (last) yield this.feedPostFrom(sourceType, last);
+      // A tool that failed may have been in the middle of the last post: its list of files cannot be trusted, so the
+      // post is left for the next run. After a normal end the last post is complete.
       const result = { exitCode: end!.exitCode, terminatedBySignal: end!.terminatedBySignal, untrustedStdout: '', untrustedStderr: end!.untrustedStderr };
       if (result.exitCode !== 0) throw failureFromProcess(result, failureContext, 'listing posts');
-      // A dropped message makes the count of posts uncertain, so the next position cannot be named.
-      if (reader.postsBegun < bound && reader.oversizeLines === 0) {
-        await this.confirmEndOfFeed(target, reader.postsBegun, context);
+      const last = reader.finish();
+      if (last) yield this.feedPostFrom(sourceType, last);
+      // A message that was too large to read cost Kura a post it cannot name. Everything else has been handed over; the
+      // run must not look complete, and the count of posts is uncertain, so the next position cannot be named either.
+      if (reader.oversizeLines > 0) {
+        throw new AdapterError('PROCESS_OUTPUT_LIMIT', 'A message of the feed listing was over the size limit and was dropped', undefined,
+          `Ein Beitrag von ${PLATFORM_LABELS[sourceType]} ist zu groß, um gelesen zu werden. Die übrigen Beiträge wurden verarbeitet. Wenn der Fehler bleibt, ist dieser Beitrag nicht abrufbar.`);
       }
+      if (reader.postsBegun < bound) await this.confirmEndOfFeed(target, reader.postsBegun, context);
       // Instagram answers a missing or expired session with empty pages: an empty profile is a login problem there.
       if (reader.postsBegun === 0 && sourceType === 'instagram') throw failureOfEmptyProfileListing(result.untrustedStderr, failureContext);
     } catch (error) {

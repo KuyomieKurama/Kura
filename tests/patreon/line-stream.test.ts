@@ -97,6 +97,35 @@ describe('streamStdoutLines', () => {
     expect(bytes).toBe(3000 * 20 * 1024);
   });
 
+  it('holds the tool back while the consumer is slow: only a bounded amount of output waits for it', async () => {
+    // The tool prints 1 KiB lines as fast as it is allowed to and records how many bytes it got out. The consumer takes
+    // one line and then does nothing for a while. Without a limit on what waits for the consumer, all of it would
+    // pile up in memory.
+    const progress = `${await tempDir('kura-stream-pressure-')}/written`;
+    const stream = await start(`
+      const fs = require('node:fs');
+      const line = 'x'.repeat(1023) + '\\n';
+      let written = 0;
+      (function pump() {
+        while (true) {
+          const ok = process.stdout.write(line);
+          written += line.length;
+          if (written % (256 * 1024) === 0) fs.writeFileSync(${JSON.stringify(progress)}, String(written));
+          if (!ok) { process.stdout.once('drain', pump); return; }
+        }
+      })();
+    `);
+    const first = await stream.next();
+    expect(first.done).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const { readFile } = await import('node:fs/promises');
+    const written = Number(await readFile(progress, 'utf8'));
+    // 8 MiB waiting for the consumer, plus what the pipe and the chunk in flight hold; far less than the tool could have printed in 1.5 s.
+    expect(written).toBeGreaterThan(1024 * 1024);
+    expect(written).toBeLessThan(12 * 1024 * 1024);
+    await stream.return({ exitCode: null, terminatedBySignal: null, untrustedStderr: '' });
+  });
+
   it('reports a line over the limit and keeps reading', async () => {
     const stream = await start(`console.log('a'); console.log('b'.repeat(1000)); console.log('c');`, { maxLineBytes: 100 });
     expect(await collect(stream)).toEqual(['a', '<oversize 1000>', 'c']);

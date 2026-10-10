@@ -297,9 +297,7 @@ export function listingOfPost(post: ParsedPost, sourceType: SourceType): PostLis
     ugoiraFrames: workType === 'ugoira' ? ugoiraFramesOf(first?.frames) : null,
     incomplete: post.filesTruncated
       ? { code: 'LISTING_TRUNCATED', message: `More than ${MAX_FILES_PER_POST} files; the list was cut off` }
-      : post.oversize
-        ? { code: 'MESSAGE_TOO_LARGE', message: 'A message of the tool for this post was too large to read; the list of files may be incomplete' }
-        : null
+      : null
   };
 }
 
