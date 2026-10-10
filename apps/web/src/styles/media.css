@@ -1,0 +1,242 @@
+/* Media view of a subscription, the viewer dialog and the live view of a run. Tokens only. */
+
+.media-section {
+  align-self: stretch;
+}
+
+.media-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.media-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  align-self: stretch;
+  width: 100%;
+}
+
+.media-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.media-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.media-group-head h5 {
+  min-width: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-grid > li {
+  min-width: 0;
+}
+
+.media-cell {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.media-cell:hover {
+  border-color: var(--accent);
+}
+
+.media-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-thumb-icon {
+  display: grid;
+  place-items: center;
+}
+
+/* The play mark sits on the first frame of a video. Colour and border keep it readable on any picture. */
+.media-badge {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-chip);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* A file of a running download that is not stored yet. */
+.media-pending {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-1);
+  aspect-ratio: 1;
+  padding: var(--space-2);
+  overflow: hidden;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.media-pending-name {
+  font-weight: 500;
+}
+
+.media-pending .chip {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+/* The fill and the shimmer come with the other skeletons (components.css). */
+.skeleton-tile {
+  aspect-ratio: 1;
+  border-radius: var(--radius-control);
+}
+
+.media-more {
+  display: flex;
+  justify-content: center;
+  align-self: stretch;
+}
+
+/* Viewer: a wide dialog; the picture is as large as the screen allows and never cropped. */
+.viewer {
+  width: min(100%, 1080px);
+  max-height: 96dvh;
+  gap: var(--space-3);
+}
+
+.viewer-frame {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+
+.viewer-media {
+  display: block;
+  max-width: 100%;
+  max-height: min(58dvh, 720px);
+  object-fit: contain;
+}
+
+.viewer-audio {
+  width: 100%;
+}
+
+.viewer-nopreview {
+  padding: var(--space-5);
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.viewer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.viewer-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+}
+
+.viewer-meta dt {
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+}
+
+.viewer-meta dd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+}
+
+.break {
+  overflow-wrap: anywhere;
+}
+
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Live view of a run */
+.run-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: stretch;
+  padding: var(--space-4);
+}
+
+.run-live-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.run-live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.live-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (max-width: 639px) {
+  .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+
+  .viewer-nav .btn {
+    min-height: 44px;
+  }
+}

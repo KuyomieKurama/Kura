@@ -64,6 +64,16 @@ export const api = {
   runSubscriptionNow(id: string) { return request<{ coalesced: boolean; run: { id: string; state: string; runAfter: string } }>(`/subscriptions/${id}/run-now`, { method: 'POST' }); },
   syncState(id: string) { return request<{ syncState: SyncState | null }>(`/subscriptions/${id}/sync-state`); },
   history() { return request<{ runs: HistoryRun[]; posts: HistoryPost[] }>('/history'); },
+  subscriptionMedia(id: string, options: { type?: MediaFilter; cursor?: string | null } = {}) {
+    const query = new URLSearchParams();
+    if (options.type && options.type !== 'all') query.set('type', options.type);
+    if (options.cursor) query.set('cursor', options.cursor);
+    const text = query.toString();
+    const suffix = text ? `?${text}` : '';
+    return request<SubscriptionMediaPage>(`/subscriptions/${id}/media${suffix}`);
+  },
+  /** `id` is the id of a history run or the id of the queued run that "Jetzt ausführen" returns. */
+  runAssets(id: string) { return request<RunAssets>(`/runs/${id}/assets`); },
   killSwitches() { return request<{ killSwitches: KillSwitch[] }>('/admin/adapter-kill-switches'); },
   setKillSwitch(input: { adapterId: string; adapterVersion?: string; sourceType?: string; reason: string }) { return request<{ killSwitch: KillSwitch }>('/admin/adapter-kill-switches', { method: 'POST', body: JSON.stringify(input) }); },
   liftKillSwitch(id: string) { return request<void>(`/admin/adapter-kill-switches/${id}`, { method: 'DELETE' }); },
@@ -165,3 +175,27 @@ export type HistoryPost = {
   creatorName: string | null; platformPostId: string; title: string | null; sourceUrl: string | null; state: string;
   discoveryComplete: boolean; discoveredAt: string; completedAt: string | null; assets: HistoryAsset[];
 };
+
+export type MediaKind = 'image' | 'video' | 'audio' | 'other';
+export type MediaFilter = 'all' | 'image' | 'video';
+export type MediaAsset = {
+  id: string; postId: string; assetIndex: number; platform: string; platformPostId: string; postTitle: string | null;
+  postUrl: string | null; creatorName: string | null; runId: string; originalName: string; mediaKind: MediaKind; mimeType: string;
+  byteSize: number | null; state: string; attempts: number; errorCode: string | null; errorMessage: string | null;
+  storedAt: string | null;
+  immich: { state: string; verified: boolean; verifiedAt: string | null };
+};
+export type SubscriptionMediaPage = { items: MediaAsset[]; nextCursor: string | null; counts?: { all: number; image: number; video: number } };
+export type RunAssets = {
+  run: Omit<HistoryRun, 'sourceUrl' | 'adapterId' | 'adapterVersion'> & { jobRunId: string } | null;
+  queue: { state: string; lastError: string | null } | null;
+  active: boolean;
+  counts: { pending: number; downloading: number; verifying: number; stored: number; failed: number };
+  truncated: boolean;
+  assets: MediaAsset[];
+};
+
+/** The stream of a stored original. Served inline for safe media types, as an attachment otherwise or with `download`. */
+export function contentUrl(assetId: string, download = false): string {
+  return `/api/v1/assets/${assetId}/content${download ? '?download=1' : ''}`;
+}

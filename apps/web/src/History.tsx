@@ -4,6 +4,7 @@ import { api, type HistoryPost, type HistoryRun } from './api.js';
 import { errorMessage } from './error-message.js';
 import { formatBytes, platformLabels } from './history-labels.js';
 import { LedgerEntry } from './Ledger.js';
+import { RunLive } from './RunLive.js';
 import { labels } from './labels.js';
 import { formatInstant } from './schedule-format.js';
 import { Banner } from './ui/Banner.js';
@@ -15,6 +16,7 @@ import { SkeletonRows } from './ui/Skeleton.js';
 import { StatusChip } from './ui/StatusChip.js';
 
 const REFRESH_MS = 10_000;
+const MAX_LIVE_RUNS = 3;
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function summarize(run: HistoryRun): string {
@@ -72,6 +74,17 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
         ? (!error && <SkeletonRows count={4} tall />)
         : (
           <>
+            {data.runs.some((run) => run.finishedAt === null) && (
+              <section className="section" aria-labelledby="live-heading">
+                <h2 id="live-heading">Läuft gerade</h2>
+                {data.runs.filter((run) => run.finishedAt === null).slice(0, MAX_LIVE_RUNS).map((run) => (
+                  <div key={run.id} className="live-run">
+                    <p className="meta">{`${run.subscriptionName}, gestartet ${formatInstant(run.startedAt, zone())}`}</p>
+                    <RunLive runId={run.id} />
+                  </div>
+                ))}
+              </section>
+            )}
             <section className="section" aria-labelledby="posts-heading">
               <h2 id="posts-heading">Beiträge und Dateien</h2>
               {data.posts.length === 0

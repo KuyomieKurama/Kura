@@ -100,13 +100,14 @@ it('validates the saved address after saving and shows the stored result on the 
   expect(await within(card).findByText(/Adresse erkannt und unterstützt/)).toBeInTheDocument();
 });
 
-it('queues a run with "Jetzt ausführen" and points to the history; it explains a coalesced click', async () => {
+it('queues a run with "Jetzt ausführen", shows its progress live; it explains a coalesced click', async () => {
   const responses = [
     { coalesced: false, run: { id: 'r1', state: 'queued', runAfter: '2026-06-01T10:00:00Z' } },
     { coalesced: true, run: { id: 'r1', state: 'queued', runAfter: '2026-06-01T10:00:00Z' } }
   ];
   const fetch = mockApi('user', (path) => {
     if (path.endsWith('/subscriptions/s1/run-now')) return json(responses.shift(), 202);
+    if (path.endsWith('/runs/r1/assets')) return json({ run: null, queue: { state: 'queued', lastError: null }, active: true, counts: { pending: 0, downloading: 0, verifying: 0, stored: 0, failed: 0 }, truncated: false, assets: [] });
     if (path.endsWith('/subscriptions')) return json({ subscriptions: [subscription] });
     return undefined;
   });
@@ -114,6 +115,8 @@ it('queues a run with "Jetzt ausführen" and points to the history; it explains 
   const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
   fireEvent.click(within(card).getByRole('button', { name: 'Jetzt ausführen' }));
   expect(await within(card).findByText(/Der Lauf wurde eingereiht/)).toBeInTheDocument();
+  expect(await within(card).findByRole('region', { name: 'Lauf live' })).toBeInTheDocument();
+  expect(await within(card).findByText('Der Lauf ist eingereiht und wartet auf einen freien Worker.')).toBeInTheDocument();
   fireEvent.click(within(card).getByRole('button', { name: 'Jetzt ausführen' }));
   expect(await within(card).findByText(/Es gibt bereits einen offenen Lauf .* Es wird kein zweiter angelegt/)).toBeInTheDocument();
   expect(calls(fetch, 'POST', '/subscriptions/s1/run-now')).toHaveLength(2);
@@ -220,4 +223,38 @@ it('does not show the kill switch controls to normal users', async () => {
   fireEvent(details, new Event('toggle'));
   await waitFor(() => expect(screen.queryByText('Wird abgerufen …')).not.toBeInTheDocument());
   expect(screen.queryByRole('form', { name: 'Adapter abschalten' })).not.toBeInTheDocument();
+});
+
+it('opens the media section of a subscription from its row', async () => {
+  const fetch = mockApi('user', (path) => {
+    if (path.endsWith('/subscriptions/s1/media')) return json({ items: [], nextCursor: null, counts: { all: 0, image: 0, video: 0 } });
+    if (path.endsWith('/subscriptions')) return json({ subscriptions: [subscription] });
+    return undefined;
+  });
+  await open('Abonnements');
+  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  const toggle = within(card).getByRole('button', { name: 'Medien' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(await within(card).findByText('Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen.')).toBeInTheDocument();
+  expect(calls(fetch, 'GET', '/subscriptions/s1/media')).toHaveLength(1);
+  fireEvent.click(toggle);
+  expect(within(card).queryByRole('region', { name: 'Medien' })).not.toBeInTheDocument();
+});
+
+it('shows a running run of the history live and leaves finished runs alone', async () => {
+  const finished = { ...history.runs[0], id: 'run-done', finishedAt: '2026-06-01T10:05:00Z' };
+  const running = { ...history.runs[0], id: 'run-live', subscriptionName: 'Läuft', state: 'downloading', finishedAt: null };
+  const fetch = mockApi('user', (path) => {
+    if (path.endsWith('/history')) return json({ ...history, runs: [finished, running] });
+    if (path.endsWith('/runs/run-live/assets')) return json({ run: null, queue: { state: 'leased', lastError: null }, active: true, counts: { pending: 0, downloading: 0, verifying: 0, stored: 0, failed: 0 }, truncated: false, assets: [] });
+    return undefined;
+  });
+  await open('Verlauf');
+  const live = await screen.findByRole('region', { name: 'Lauf live' });
+  expect(live).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Läuft gerade' })).toBeInTheDocument();
+  expect(calls(fetch, 'GET', '/runs/run-live/assets').length).toBeGreaterThan(0);
+  expect(calls(fetch, 'GET', '/runs/run-done/assets')).toHaveLength(0);
 });

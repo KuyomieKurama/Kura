@@ -132,7 +132,8 @@
 }
 
 .skeleton-row,
-.skeleton-inline {
+.skeleton-inline,
+.skeleton-tile {
   background: var(--surface-sunken);
 }
 
@@ -155,7 +156,8 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .skeleton-row,
-  .skeleton-inline {
+  .skeleton-inline,
+  .skeleton-tile {
     background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--line) 50%, var(--surface-sunken) 100%);
     background-size: 200% 100%;
     animation: shimmer 1.4s linear infinite;

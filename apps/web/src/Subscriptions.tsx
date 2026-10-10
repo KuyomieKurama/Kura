@@ -1,4 +1,4 @@
-import { ArrowsClockwise, CaretDown, CaretUp, FloppyDisk, MagnifyingGlass, Pause, PauseCircle, PencilSimple, Play, Plus, Trash } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown, CaretUp, FloppyDisk, Images, MagnifyingGlass, Pause, PauseCircle, PencilSimple, Play, Plus, Trash } from '@phosphor-icons/react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { AdaptersPanel } from './Adapters.js';
 import { api, type Schedule, type SourceValidation, type Subscription, type SubscriptionRun, type SyncState } from './api.js';
@@ -6,7 +6,9 @@ import { errorMessage } from './error-message.js';
 import { labels } from './labels.js';
 import { ScheduleForm } from './ScheduleForm.js';
 import { describeRule, formatInstant, runStateLabels } from './schedule-format.js';
+import { RunLive } from './RunLive.js';
 import { SourceValidationView } from './SourceCheck.js';
+import { SubscriptionMedia } from './SubscriptionMedia.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { Chip } from './ui/Chip.js';
@@ -213,6 +215,10 @@ function SubscriptionDetails({ subscription, reload }: { subscription: Subscript
 function SubscriptionRow({ subscription, reload }: { subscription: Subscription; reload: () => Promise<void> }) {
   const [mode, setMode] = useState<'view' | 'edit' | 'confirm-delete'>('view');
   const [open, setOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  // The run whose progress is shown live below the row, and a counter that makes the media section reload.
+  const [liveRunId, setLiveRunId] = useState<string | null>(null);
+  const [mediaReload, setMediaReload] = useState(0);
   const [notice, setNotice] = useState('');
   const [info, setInfo] = useState('');
   const [validation, setValidation] = useState<SourceValidation | null>(null);
@@ -234,7 +240,8 @@ function SubscriptionRow({ subscription, reload }: { subscription: Subscription;
       setNotice('');
       setInfo(result.coalesced
         ? `Es gibt bereits einen offenen Lauf (Status: ${runStateLabels[result.run.state] ?? result.run.state}); er startet frühestens ${formatInstant(result.run.runAfter, localZone())}. Es wird kein zweiter angelegt.`
-        : 'Der Lauf wurde eingereiht. Den Fortschritt sehen Sie unter „Verlauf“.');
+        : 'Der Lauf wurde eingereiht. Den Fortschritt sehen Sie unten live; das Ergebnis bleibt unter „Verlauf“.');
+      setLiveRunId(result.run.id);
       await reload();
     } catch (cause) {
       setInfo('');
@@ -283,6 +290,7 @@ function SubscriptionRow({ subscription, reload }: { subscription: Subscription;
               <div className="row-actions">
                 <Button icon={Play} onClick={() => void runNow()} disabled={paused}>Jetzt ausführen</Button>
                 <Button variant="ghost" icon={MagnifyingGlass} onClick={() => void check()}>Adresse prüfen</Button>
+                <Button variant="ghost" icon={Images} onClick={() => setMediaOpen(!mediaOpen)} aria-expanded={mediaOpen}>Medien</Button>
                 <Button variant="ghost" icon={open ? CaretUp : CaretDown} onClick={() => setOpen(!open)} aria-expanded={open}>
                   {open ? 'Details ausblenden' : 'Zeitpläne und Läufe'}
                 </Button>
@@ -300,6 +308,16 @@ function SubscriptionRow({ subscription, reload }: { subscription: Subscription;
             {paused && <p className="meta">Beim Fortsetzen werden verpasste Termine aus der Pause nicht nachgeholt. Ein pausiertes Abonnement kann nicht ausgeführt werden.</p>}
             {validation && <SourceValidationView result={validation} />}
             {info && <Banner tone="info">{info}</Banner>}
+            {liveRunId && (
+              <RunLive
+                key={liveRunId}
+                runId={liveRunId}
+                onFinished={() => setMediaReload((count) => count + 1)}
+                onShowMedia={() => setMediaOpen(true)}
+                onDismiss={() => setLiveRunId(null)}
+              />
+            )}
+            {mediaOpen && <SubscriptionMedia subscriptionId={subscription.id} reloadKey={mediaReload} />}
           </>
         )}
       {mode === 'confirm-delete' && (
