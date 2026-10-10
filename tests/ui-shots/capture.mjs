@@ -4,7 +4,8 @@
 // the API where possible and writes PNG files named view-theme-width.png. See tests/ui-shots/README.md.
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { history, transferVerified } from './fixtures.mjs';
+import { history, historyLive, transferVerified } from './fixtures.mjs';
+import { seedMedia } from './media-seed.mjs';
 import { loadPlaywright, repoRoot, startStack } from './stack.mjs';
 
 const args = new Map(process.argv.slice(2).map((arg) => {
@@ -102,6 +103,15 @@ async function signIn(context, origin) {
   if (!login.ok()) throw new Error(`login failed: ${login.status()} ${await login.text()}`);
 }
 
+/** Waits until every picture on the page is decoded, so a screenshot never shows a half loaded grid. */
+async function picturesLoaded(page) {
+  // Lazy pictures below the fold are not fetched by a full-page screenshot; the grid is shot as it looks when scrolled.
+  await page.evaluate(() => document.querySelectorAll('img[loading="lazy"]').forEach((image) => { image.loading = 'eager'; }));
+  await page.waitForFunction(() => [...document.images].every((image) => image.complete && image.naturalWidth > 0));
+  await page.waitForFunction(() => [...document.querySelectorAll('video')].every((video) => video.readyState >= 2));
+  await page.waitForTimeout(250);
+}
+
 async function main() {
   const { chromium } = await loadPlaywright();
   await mkdir(outDirectory, { recursive: true });
@@ -125,11 +135,12 @@ async function main() {
       page.on('requestfailed', (request) => problems.push(`request failed: ${request.url()}`));
       return { context, page };
     };
-    const shooter = (page, variant) => async (name) => {
+    // `viewportOnly` is for dialogs: their backdrop is fixed to the viewport, so a full-page shot would cut it off.
+    const shooter = (page, variant) => async (name, { viewportOnly = false } = {}) => {
       if (only && !only.has(name)) return;
       const file = `${name}-${variant.theme}-${variant.width}.png`;
       await page.evaluate(() => window.scrollTo(0, 0));
-      await page.screenshot({ path: resolve(outDirectory, file), fullPage: true });
+      await page.screenshot({ path: resolve(outDirectory, file), fullPage: !viewportOnly });
       written.push(file);
     };
 
@@ -144,6 +155,7 @@ async function main() {
     }
 
     await seed(stack.origin);
+    await seedMedia({ browser, databaseUrl: stack.databaseUrl });
 
     for (const variant of variants) {
       const { context, page } = await open(variant);
@@ -217,8 +229,55 @@ async function main() {
       await shot('subscriptions-error');
       await page.unroute('**/api/v1/subscriptions');
 
+      // Media: the grid of a subscription, the viewer (picture and video), the empty state and the live view.
+      const mara = page.getByRole('article', { name: /Abonnement Atelier Mori/ });
+      await navigate(page, 'Übersicht');
+      await navigate(page, 'Abonnements');
+      await mara.getByRole('button', { name: 'Medien', exact: true }).click();
+      await page.getByRole('region', { name: 'Medien' }).getByRole('button', { name: /Bild illustration_01/ }).waitFor();
+      await picturesLoaded(page);
+      await shot('media-grid');
+
+      await mara.getByRole('button', { name: 'Videos (1)' }).click();
+      await page.getByRole('button', { name: /Video hafen_zeitraffer/ }).waitFor();
+      await page.waitForTimeout(500);
+      await shot('media-grid-videos');
+      await mara.getByRole('button', { name: 'Alle (14)' }).click();
+      await page.getByRole('button', { name: /Bild illustration_01/ }).waitFor();
+      await picturesLoaded(page);
+
+      await page.getByRole('button', { name: /Bild illustration_01/ }).click();
+      const viewer = page.getByRole('dialog');
+      await viewer.getByRole('img').waitFor();
+      await page.waitForFunction(() => document.querySelector('[role=dialog] img')?.naturalWidth > 0);
+      await shot('media-viewer-image', { viewportOnly: true });
+      await page.keyboard.press('Escape');
+      await viewer.waitFor({ state: 'detached' });
+
+      await page.getByRole('button', { name: /Video hafen_zeitraffer/ }).click();
+      await viewer.locator('video').waitFor();
+      await page.waitForFunction(() => document.querySelector('[role=dialog] video')?.readyState >= 2);
+      await page.evaluate(() => { document.querySelector('[role=dialog] video').currentTime = 0.8; });
+      await page.waitForTimeout(600);
+      await shot('media-viewer-video', { viewportOnly: true });
+      await page.keyboard.press('Escape');
+      await viewer.waitFor({ state: 'detached' });
+
+      await page.getByRole('article', { name: /Abonnement Kanal Nordlicht/ }).getByRole('button', { name: 'Medien', exact: true }).click();
+      await page.getByText('Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen.').waitFor();
+      await shot('media-empty');
+      await page.getByRole('article', { name: /Abonnement Kanal Nordlicht/ }).getByRole('button', { name: 'Medien', exact: true }).click();
+
+      // The run that is still going is the queued run of Atelier Mori: "Jetzt ausführen" shows it live.
+      await mara.getByRole('button', { name: 'Jetzt ausführen' }).click();
+      const live = mara.getByRole('region', { name: 'Lauf live' });
+      await live.getByText('1 wird geladen').waitFor();
+      await picturesLoaded(page);
+      await shot('live-run');
+
       // History: mocked, because runs and posts only exist once a worker has downloaded something.
       await page.route('**/api/v1/history', (route) => json(route, history));
+      await page.route('**/api/v1/runs/run-4/assets', (route) => json(route, historyLive));
       await navigate(page, 'Verlauf');
       await page.getByRole('heading', { name: 'Läufe' }).waitFor();
       await page.evaluate(() => document.fonts.ready);
@@ -227,6 +286,16 @@ async function main() {
       for (let index = 0; index < expandable; index += 1) await page.getByRole('button', { name: 'Dateien anzeigen' }).first().click();
       await page.waitForTimeout(400);
       await shot('history-expanded');
+
+      await page.unroute('**/api/v1/history');
+      await page.unroute('**/api/v1/runs/run-4/assets');
+      // The real history now: the finished run and the running one with its pictures.
+      await navigate(page, 'Übersicht');
+      await navigate(page, 'Verlauf');
+      await page.getByRole('heading', { name: 'Läuft gerade' }).waitFor();
+      await page.getByText('1 wird geladen').waitFor();
+      await picturesLoaded(page);
+      await shot('history-live');
 
       // Immich, with a mocked transfer.
       await page.route('**/api/v1/immich/test-transfer', (route) => json(route, { transfer: { ...transferVerified, status: 'uploading', evidence: null } }, 202));

@@ -26,6 +26,7 @@ function PendingTile({ asset }: { asset: MediaAsset }) {
       <span className="media-pending-name truncate">{asset.originalName}</span>
       <span className="meta">{kindLabels[asset.mediaKind]}{asset.byteSize !== null ? `, ${formatBytes(asset.byteSize)}` : ''}</span>
       <StatusChip domain="asset" status={asset.state} suffix={asset.attempts > 1 ? ` (Versuch ${asset.attempts})` : ''} />
+      {asset.errorMessage && <span className="sr-only">{asset.errorMessage}</span>}
     </div>
   );
 }

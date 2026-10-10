@@ -28,7 +28,15 @@ Everything else is real API data.
 
 Views: setup, login, login-error, dashboard, menu-open (narrow only), subscriptions, subscriptions-expanded,
 subscriptions-adapters, subscriptions-form, subscriptions-empty, subscriptions-loading, subscriptions-error,
-history, history-expanded, immich, immich-transfer, users, users-dialog, dialog, limits, account.
+media-grid, media-grid-videos, media-viewer-image, media-viewer-video, media-empty, live-run,
+history, history-expanded, history-live, immich, immich-transfer, users, users-dialog, dialog, limits, account.
+
+The media views use real files. `media-seed.mjs` draws sixteen pictures in the browser (canvas, PNG and JPEG) and
+records a short WebM with Playwright, stores them through the worker's `HistoryRepository` and the blob store's
+`DatabaseBlobStore` (the built packages, so run `corepack pnpm build` first), and leaves one run in progress
+(downloading, waiting and failed files) for the live views. `media-viewer-*` are viewport shots, because the
+dialog backdrop is fixed to the viewport. Lazy pictures are switched to eager before a shot, since a full-page
+shot does not scroll.
 
 Playwright is not a dependency of this repository. `stack.mjs` loads `playwright-core` from
 `PLAYWRIGHT_CORE_DIR` (default: the copy installed in `/work/SuperTakt`) and the browsers from

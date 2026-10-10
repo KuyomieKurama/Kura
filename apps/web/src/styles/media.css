@@ -34,6 +34,7 @@
 
 .media-group-head h5 {
   min-width: 0;
+  margin: 0;
   font-size: var(--text-body);
   font-weight: 600;
 }
@@ -138,6 +139,11 @@
   gap: var(--space-3);
 }
 
+/* The dialog scrolls when it is taller than the screen; its parts keep their size instead of shrinking. */
+.viewer > * {
+  flex-shrink: 0;
+}
+
 .viewer-frame {
   display: grid;
   place-items: center;
@@ -151,7 +157,7 @@
 .viewer-media {
   display: block;
   max-width: 100%;
-  max-height: min(58dvh, 720px);
+  max-height: min(48dvh, 640px);
   object-fit: contain;
 }
 

@@ -100,3 +100,13 @@ export const transferVerified = {
   localOriginalRetained: true,
   evidence: { serverVersion: '2.1.0', byteLength: 2048, album: 'none' }
 };
+
+// Live view of the running run in the mocked history (run-4): no file yet, the queue has it.
+export const historyLive = {
+  run: { ...history.runs[3], jobRunId: 'job-4' },
+  queue: { state: 'leased', lastError: null },
+  active: true,
+  counts: { pending: 0, downloading: 0, verifying: 0, stored: 0, failed: 0 },
+  truncated: false,
+  assets: []
+};

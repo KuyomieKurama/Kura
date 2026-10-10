@@ -97,6 +97,7 @@ export async function startStack({ skipBuild = false } = {}) {
 
   return {
     origin,
+    databaseUrl: databaseUrl.toString(),
     async stop() {
       child.kill('SIGTERM');
       await new Promise((done) => child.once('exit', done));
