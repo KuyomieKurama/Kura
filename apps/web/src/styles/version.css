@@ -1,0 +1,99 @@
+/* Version and update: the notice strip, the version line in the sidebar and the "Über Kura" page. */
+
+.version-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  max-width: none;
+  padding: var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.version-notice p {
+  max-width: none;
+  margin: 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.version-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* The version line is a quiet button below the account box; the marker for a new version is text, not only colour. */
+.version-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: var(--control-height);
+  margin: var(--space-2) var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: var(--text-meta);
+  text-align: left;
+  cursor: pointer;
+}
+
+.version-link:hover {
+  background: var(--surface-sunken);
+}
+
+.version-link[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.version-new {
+  color: var(--accent);
+  font-size: var(--text-meta);
+  font-weight: 600;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: var(--prose-width);
+  margin: 0;
+}
+
+.command {
+  display: block;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  white-space: pre;
+}
+
+.release-notes {
+  max-width: var(--prose-width);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1023px) {
+  .version-notice {
+    padding: var(--space-2) var(--space-4);
+  }
+}

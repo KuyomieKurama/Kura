@@ -35,13 +35,19 @@ export function TestStrip() {
  * Desktop: fixed sidebar. Below 1024px the same markup is a top bar whose navigation is a disclosure
  * (button with aria-expanded, Escape closes). There is exactly one navigation in the DOM.
  */
-export function AppShell({ items, active, onNavigate, userName, userRole, onLogout, children }: {
+export function AppShell({ items, active, onNavigate, userName, userRole, onLogout, pageTitle, version, notice, children }: {
   items: NavItem[];
   active: string;
   onNavigate: (view: string) => void;
   userName: string;
   userRole: string;
   onLogout: () => void;
+  /** Title of a page that is not in the navigation (the version page). */
+  pageTitle?: string;
+  /** Version line of the sidebar footer, with the marker for a newer version, and where it leads. */
+  version?: { label: string; newVersion: string | null; current: boolean; onOpen: () => void };
+  /** A strip above the page content, for example the notice about a new version. */
+  notice?: ReactNode;
   children: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,8 +66,9 @@ export function AppShell({ items, active, onNavigate, userName, userRole, onLogo
 
   useEffect(() => {
     const current = items.find((item) => item.view === active);
-    document.title = current ? `${current.label} | ${labels.title}` : labels.title;
-  }, [active, items]);
+    const title = current?.label ?? pageTitle;
+    document.title = title ? `${title} | ${labels.title}` : labels.title;
+  }, [active, items, pageTitle]);
 
   function navigate(view: string) {
     setMenuOpen(false);
@@ -110,10 +117,17 @@ export function AppShell({ items, active, onNavigate, userName, userRole, onLogo
             {userRole && <p className="meta">{userRole}</p>}
             <Button variant="ghost" icon={SignOut} onClick={onLogout}>{labels.logout}</Button>
           </div>
+          {version && (
+            <button type="button" className="version-link" title="Version und Update" aria-current={version.current ? 'page' : undefined} onClick={() => { setMenuOpen(false); version.onOpen(); document.getElementById('main')?.focus(); }}>
+              <span>{version.label}</span>
+              {version.newVersion && <span className="version-new">{`Neue Version ${version.newVersion}`}</span>}
+            </button>
+          )}
         </div>
       </div>
       <main id="main" tabIndex={-1} className="main">
         <TestStrip />
+        {notice}
         <div className="page">{children}</div>
       </main>
     </div>

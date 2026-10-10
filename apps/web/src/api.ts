@@ -77,8 +77,32 @@ export const api = {
   killSwitches() { return request<{ killSwitches: KillSwitch[] }>('/admin/adapter-kill-switches'); },
   setKillSwitch(input: { adapterId: string; adapterVersion?: string; sourceType?: string; reason: string }) { return request<{ killSwitch: KillSwitch }>('/admin/adapter-kill-switches', { method: 'POST', body: JSON.stringify(input) }); },
   liftKillSwitch(id: string) { return request<void>(`/admin/adapter-kill-switches/${id}`, { method: 'DELETE' }); },
+  version() { return request<VersionInfo>('/version'); },
+  /** Administrator only: asks GitHub now and returns the new result. */
+  checkVersion() { return request<VersionInfo>('/version/check', { method: 'POST' }); },
+  dismissVersionNotice(version: string) { return request<void>('/version/dismiss', { method: 'POST', body: JSON.stringify({ version }) }); },
   runtimePolicy() { return request<RuntimePolicyResponse>('/admin/runtime-policy'); },
   saveRuntimePolicy(expectedVersion: number, policy: RuntimePolicy) { return request<RuntimePolicyResponse>('/admin/runtime-policy', { method: 'PUT', body: JSON.stringify({ expectedVersion, policy }) }); }
+};
+
+export type UpdateStatus = 'current' | 'outdated' | 'unknown' | 'disabled';
+/** Version of this installation and what the update check found out. Release notes are plain text, never HTML. */
+export type VersionInfo = {
+  version: string;
+  commit: string;
+  status: UpdateStatus;
+  latestVersion: string | null;
+  latestTag: string | null;
+  checkedAt: string | null;
+  attemptedAt: string | null;
+  reason: string | null;
+  hasRelease: boolean;
+  releaseUrl: string | null;
+  releaseNotes: string | null;
+  channel: 'stable' | 'prerelease';
+  repository: string;
+  checkEnabled: boolean;
+  noticeDismissed: boolean;
 };
 
 export type ScheduleRule =

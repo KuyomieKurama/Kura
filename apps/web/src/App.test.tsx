@@ -6,12 +6,16 @@ import { App } from './App.js';
 
 const response = (body: unknown, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 const admin = { id: 'admin', display_name: 'Admin', username: 'admin', role: 'admin', status: 'active', created_at: '2026-01-01T00:00:00Z' };
+/** The API of a signed-in session. Answers by path, so the order of the requests does not matter. */
 function mockAuthenticated(role: 'admin' | 'user' = 'admin', passwordChangeRequired = false) {
-  return vi.fn()
-    .mockResolvedValueOnce(response({ configured: true, authenticated: true, role, csrfToken: 'csrf', passwordChangeRequired }))
-    .mockResolvedValueOnce(response({ users: [{ ...admin, role }] }))
-    .mockResolvedValueOnce(response({ status: 'ok' }))
-    .mockResolvedValueOnce(response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } }));
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith('/auth/state')) return response({ configured: true, authenticated: true, role, csrfToken: 'csrf', passwordChangeRequired });
+    if (path.endsWith('/api/v1/users')) return response({ users: [{ ...admin, role }] });
+    if (path === '/healthz') return response({ status: 'ok' });
+    if (path.endsWith('/api/v1/status')) return response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } });
+    return response({}, 404);
+  });
 }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 

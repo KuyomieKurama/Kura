@@ -2,7 +2,7 @@ import { ArrowsClockwise, ClockCounterClockwise, Gauge, Images, SquaresFour, Use
 import { type FormEvent, useEffect, useState } from 'react';
 import { PasswordForm } from './Account.js';
 import { AdminLimitsPage } from './AdminLimits.js';
-import { api, type AuthState, type User } from './api.js';
+import { api, type AuthState, type User, type VersionInfo } from './api.js';
 import { AppShell, type NavItem } from './AppShell.js';
 import { ForcedPasswordScreen, LoadingScreen, LoginScreen, SetupScreen } from './AuthScreens.js';
 import { Dashboard, type HealthState, type ServiceStatus } from './Dashboard.js';
@@ -12,14 +12,19 @@ import { ImmichPage } from './Immich.js';
 import { CredentialsSection } from './Credentials.js';
 import { labels } from './labels.js';
 import { SubscriptionsPage } from './Subscriptions.js';
+import { Button } from './ui/Button.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { UsersPage } from './Users.js';
+import { hasNewVersion, VersionNotice, VersionPage, versionLabel, versionTexts } from './Version.js';
 
 type View =
   | 'loading' | 'setup' | 'login' | 'forced-password'
-  | 'dashboard' | 'account' | 'users' | 'immich' | 'subscriptions' | 'history' | 'limits';
+  | 'dashboard' | 'account' | 'users' | 'immich' | 'subscriptions' | 'history' | 'limits' | 'version';
 
 const STATUS_REFRESH_MS = 10_000;
+// The server checks GitHub every 12 hours; this only re-reads its cached answer.
+const VERSION_REFRESH_MS = 30 * 60_000;
+const SIGNED_OUT_VIEWS: readonly View[] = ['loading', 'setup', 'login', 'forced-password'];
 
 export function App() {
   const [view, setView] = useState<View>('loading');
@@ -29,6 +34,8 @@ export function App() {
   const [health, setHealth] = useState<HealthState>('loading');
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [error, setError] = useState('');
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const signedIn = !SIGNED_OUT_VIEWS.includes(view);
 
   const loadUsers = async () => {
     const result = await api.users();
@@ -88,6 +95,34 @@ export function App() {
       window.clearInterval(timer);
     };
   }, [view]);
+
+  // The version line and the notice need the answer of GET /version. A failure only hides them.
+  useEffect(() => {
+    if (!signedIn) {
+      setVersionInfo(null);
+      return;
+    }
+    let active = true;
+    const refresh = () => {
+      api.version().then((next) => { if (active) setVersionInfo(next); }, () => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, VERSION_REFRESH_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [signedIn]);
+
+  async function dismissVersionNotice() {
+    if (!versionInfo?.latestVersion) return;
+    try {
+      await api.dismissVersionNotice(versionInfo.latestVersion);
+      setVersionInfo({ ...versionInfo, noticeDismissed: true });
+    } catch {
+      // The strip stays; the next try may work.
+    }
+  }
 
   async function logout() {
     try {
@@ -158,6 +193,16 @@ export function App() {
       userName={current?.display_name ?? current?.username ?? ''}
       userRole={auth?.role ? (isAdmin ? labels.adminRole : labels.userRole) : ''}
       onLogout={() => void logout()}
+      pageTitle={view === 'version' ? versionTexts.title : undefined}
+      version={versionInfo ? {
+        label: versionLabel(versionInfo),
+        newVersion: hasNewVersion(versionInfo) ? versionInfo.latestVersion : null,
+        current: view === 'version',
+        onOpen: () => setView('version')
+      } : undefined}
+      notice={isAdmin && versionInfo && hasNewVersion(versionInfo) && !versionInfo.noticeDismissed && view !== 'version'
+        ? <VersionNotice info={versionInfo} onDetails={() => setView('version')} onDismiss={() => void dismissVersionNotice()} />
+        : undefined}
     >
       {view === 'dashboard' && <Dashboard health={health} status={status} checkedAt={checkedAt} onNavigate={(next) => setView(next as View)} />}
       {view === 'subscriptions' && <SubscriptionsPage isAdmin={isAdmin} />}
@@ -172,8 +217,16 @@ export function App() {
             <PasswordForm done={() => setView('dashboard')} />
           </section>
           <CredentialsSection />
+          <section className="section narrow" aria-labelledby="about-heading">
+            <h2 id="about-heading">{versionTexts.title}</h2>
+            <p className="muted">{versionInfo ? `${versionLabel(versionInfo)}, Status: ${versionTexts.statusLabels[versionInfo.status]}` : 'Kura'}</p>
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setView('version')}>{versionTexts.linkTitle}</Button>
+            </div>
+          </section>
         </>
       )}
+      {view === 'version' && <VersionPage info={versionInfo} isAdmin={isAdmin} onChanged={setVersionInfo} />}
       {view === 'users' && isAdmin && <UsersPage users={users} currentUserId={current?.id} reload={loadUsers} />}
     </AppShell>
   );
