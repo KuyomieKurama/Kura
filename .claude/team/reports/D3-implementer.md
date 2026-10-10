@@ -97,7 +97,7 @@ Geänderte bestehende Tests (Abweichung von "nur neue Dateien unter tests/dedupe
 - Ein Lauf, der nicht `stored` endet (zum Beispiel wegen eines dauerhaften Fehlers eines Posts), hebt das frühe Stoppen für den nächsten Lauf auf. Sicher, aber langsam.
 - Der Test für das Skript nutzt nicht `psql`.
 - Fremdes Abo mit demselben Post: `upsertPost` behält die `subscription_id` der ersten Zeile; ein zweites Abo, das denselben Post enthält, sieht ihn in seiner Medienliste nicht. Das war schon vorher so und ist nicht Teil dieser Karte.
-- Kollisionen: `apps/worker/src/executor.ts` und `history.ts` sind jetzt größer (666 → ca. 790 Zeilen, 402 → ca. 560). Falls weitere Karten dort anbauen, besser vorher aufteilen.
+- Kollisionen: `apps/worker/src/executor.ts` und `history.ts` sind jetzt größer (665 → 773 Zeilen, 402 → 560). Falls weitere Karten dort anbauen, besser vorher aufteilen.
 
 ## Offene Fragen
 
