@@ -1,5 +1,6 @@
 #!/bin/sh
 # Build and (re)start the Kura test stand on this VM. Usage: kura-deploy.sh [git-ref]
+# The ref is a branch (e.g. main) or a release tag (e.g. v0.3.0, see docs/vm-setup.md, "Version and update").
 #
 # Containers (all on the Podman network kura-net, all from the same env file):
 #   kura-postgres  PostgreSQL, volume kura-pgdata
@@ -12,10 +13,34 @@ REPO="$HOME/work/Kura"
 ENV_FILE="$HOME/.config/kura/kura.env"
 
 cd "$REPO"
-git fetch -q origin
-git checkout -q "$REF"
-git reset -q --hard "origin/$REF"
+git fetch -q --tags origin
+if git rev-parse -q --verify "refs/remotes/origin/$REF^{commit}" >/dev/null; then
+  # A branch: follow the remote.
+  git checkout -q "$REF"
+  git reset -q --hard "origin/$REF"
+elif git rev-parse -q --verify "refs/tags/$REF^{commit}" >/dev/null; then
+  # A tag (a release such as v0.3.0): there is no origin/<tag>, check out the tag itself.
+  git checkout -q --detach "refs/tags/$REF"
+else
+  echo "unknown git ref: $REF (neither a branch on origin nor a tag)" >&2
+  exit 1
+fi
 COMMIT="$(git rev-parse --short HEAD)"
+
+# The version this build reports is the "version" of the root package.json at this ref (single source of truth;
+# no node needed on the host). It is passed to the image as build argument together with the commit.
+VERSION="$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' package.json | head -n 1)"
+if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+  echo "warning: no valid version in package.json (found: '$VERSION'); the build will report an unknown version" >&2
+  VERSION=""
+fi
+case "$REF" in
+  v[0-9]*)
+    if [ -n "$VERSION" ] && [ "$REF" != "v$VERSION" ]; then
+      echo "warning: ref $REF, but package.json says $VERSION; the app will report $VERSION" >&2
+    fi
+    ;;
+esac
 
 # Value of a KEY=value line of the env file (last one wins), empty if the key is not set.
 # The env file is not sourced here: podman reads it as plain KEY=value lines, not as shell.
@@ -35,7 +60,8 @@ if ! podman container exists kura-postgres || [ "$(podman inspect -f '{{.HostCon
     --shm-size=128m docker.io/library/postgres:17-trixie >/dev/null
 fi
 
-podman build -q -t "localhost/kura:$COMMIT" -t localhost/kura:latest -f deploy/Containerfile .
+podman build -q -t "localhost/kura:$COMMIT" -t localhost/kura:latest \
+  --build-arg "KURA_VERSION=$VERSION" --build-arg "KURA_COMMIT=$COMMIT" -f deploy/Containerfile .
 
 # Storage. With KURA_STORAGE_BACKEND=database (recommended) nothing is mounted: the API and the worker share
 # the objects through PostgreSQL. Anything else means the filesystem backend (the API default): then a named
@@ -126,4 +152,4 @@ if [ -z "$worker_started" ]; then
   exit 1
 fi
 
-echo "kura $COMMIT is up: http://$(hostname -i 2>/dev/null | awk '{print $1}'):8080 (api and worker running)"
+echo "kura $COMMIT (version ${VERSION:-unknown}) is up: http://$(hostname -i 2>/dev/null | awk '{print $1}'):8080 (api and worker running)"
