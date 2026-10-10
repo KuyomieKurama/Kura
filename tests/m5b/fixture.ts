@@ -38,6 +38,8 @@ export interface FixtureOptions {
   directApproved?: boolean;
   immichMode?: UploadMode;
   maxAssetBytes?: number;
+  /** Time a gallery-dl feed listing may print nothing (the adapter's default is 15 minutes). */
+  feedListingIdleTimeoutMs?: number;
 }
 
 export interface LogEntry { level: 'info' | 'error'; message: string; fields?: Record<string, unknown> }
@@ -82,6 +84,7 @@ export async function createPipelineFixture(options: FixtureOptions = {}) {
     maxAssetBytes: options.maxAssetBytes ?? 10 * 1024 * 1024,
     directUrl,
     logger,
+    ...(options.feedListingIdleTimeoutMs !== undefined ? { feedListingIdleTimeoutMs: options.feedListingIdleTimeoutMs } : {}),
     toolEnvironment: { ytDlp: options.tools?.ytDlp?.env, galleryDl: options.tools?.galleryDl?.env }
   });
   await catalog.refresh();
