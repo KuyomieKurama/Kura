@@ -82,9 +82,10 @@ beforeAll(async () => {
 afterAll(async () => { await cleanup(); });
 
 describe('GET /api/v1/status', () => {
-  it('returns the real version and commit instead of a fixed string', async () => {
+  it('returns the real version instead of a fixed string, and keeps the commit for signed-in users', async () => {
     const response = await call(null, 'GET', '/api/v1/status');
-    expect(response.json()).toMatchObject({ version: '0.2.0', commit: 'abcdef1', database: 'ok' });
+    expect(response.json()).toMatchObject({ version: '0.2.0', database: 'ok' });
+    expect(response.json()).not.toHaveProperty('commit');
   });
 });
 

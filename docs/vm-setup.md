@@ -224,8 +224,9 @@ people how to upgrade. It never upgrades itself.
 
 `deploy/kura-deploy.sh` reads the version from `package.json` (with `sed`, the host has no Node) and the short commit from
 git, and passes both to `podman build` as `--build-arg KURA_VERSION=... --build-arg KURA_COMMIT=...`. The Containerfile
-stores them as the environment variables `KURA_VERSION` and `KURA_COMMIT` of the image. They appear in
-`GET /api/v1/status`, in the sidebar footer ("Kura 0.2.0") and on the page "Über Kura" (menu footer or account page).
+stores them as the environment variables `KURA_VERSION` and `KURA_COMMIT` of the image. The version
+appears in `GET /api/v1/status` (public, as before, only the version); version and commit appear in `GET /api/v1/version`
+(signed-in users), in the sidebar footer ("Kura 0.2.0") and on the page "Über Kura" (menu footer or account page).
 A build by hand without the build arguments reports the version of the root `package.json` and the commit `unbekannt`.
 Do not set `KURA_VERSION` in `kura.env`: an environment file overrides the image and would make the instance lie.
 

@@ -137,7 +137,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
     await audit(pool, null, action, `login:${subject || 'invalid'}`, source, 'failure');
   }
   app.get('/healthz', async () => { await pool.query('SELECT 1'); return { status: 'ok' }; });
-  app.get('/api/v1/status', async () => { const migrations = await pool.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version'); return { version: buildInfo.version, commit: buildInfo.commit, database: 'ok', migrations: { appliedCount: migrations.rowCount, latestVersion: migrations.rows.at(-1)?.version ?? null } }; });
+  app.get('/api/v1/status', async () => { const migrations = await pool.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version'); return { version: buildInfo.version, database: 'ok', migrations: { appliedCount: migrations.rowCount, latestVersion: migrations.rows.at(-1)?.version ?? null } }; });
   app.get('/api/v1/auth/config', async () => ({ oidcEnabled: Boolean(oidcProvider) }));
   app.get('/api/v1/auth/state', async (request) => { const count = await pool.query('SELECT 1 FROM users LIMIT 1'); const session = await getSession(request); return { configured: count.rowCount !== 0, authenticated: Boolean(session), role: session?.role ?? null, csrfToken: session?.csrf ?? null, passwordChangeRequired: session?.mustChangePassword ?? false, cookieSecure: config.cookieSecure ?? true, oidcEnabled: Boolean(oidcProvider) }; });
   app.get('/api/v1/auth/oidc/start', async (_request, reply) => {

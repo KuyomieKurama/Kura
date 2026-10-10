@@ -34,7 +34,7 @@ The API listens on `127.0.0.1:3000` by default and exposes `GET /healthz`. Set `
 ## Version and update check
 
 The running version is the `version` of the root `package.json` plus the git commit; the container build embeds both
-(`KURA_VERSION`, `KURA_COMMIT`) and `GET /api/v1/status` reports them. Releases are annotated git tags `vMAJOR.MINOR.PATCH`.
+(`KURA_VERSION`, `KURA_COMMIT`); `GET /api/v1/status` reports the version, `GET /api/v1/version` (signed in) version and commit. Releases are annotated git tags `vMAJOR.MINOR.PATCH`.
 The API process asks the public GitHub REST API for the tags every 12 hours (and when an administrator clicks "Jetzt
 prüfen"), compares the highest stable tag with the running version, and shows a notice in the web UI when the instance
 is outdated. Everybody sees the version in the sidebar, administrators get a dismissible notice and the upgrade steps on
