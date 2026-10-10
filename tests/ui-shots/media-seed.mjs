@@ -103,10 +103,11 @@ async function renderVideo(browser) {
 const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000);
 
 /**
- * @param {{ browser: object, databaseUrl: string }} input
- * @returns facts the screenshot script needs (nothing secret)
+ * @param {{ browser: object, databaseUrl: string, extraFiles?: { name: string, mime: string, bytes: Buffer }[] }} input
+ *   `extraFiles` become one more post of the finished run (the content check adds an SVG and an HTML file).
+ * @returns facts the scripts need (nothing secret)
  */
-export async function seedMedia({ browser, databaseUrl }) {
+export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
   const { default: pg } = await import(pathToFileURL(resolve(repoRoot, 'node_modules/pg/lib/index.js')).href);
   const { HistoryRepository } = await import(pathToFileURL(resolve(repoRoot, 'apps/worker/dist/history.js')).href);
   const { DatabaseBlobStore, sha256Digest } = await import(pathToFileURL(resolve(repoRoot, 'packages/blobstore/dist/index.js')).href);
@@ -206,6 +207,7 @@ export async function seedMedia({ browser, databaseUrl }) {
     await addPost(finishedRun, '118840003', 'Skizzenbuch Oktober', 46, [pictureFor(7)]);
     await addPost(finishedRun, '118840004', 'Studie: Katze am Fenster', 44, [pictureFor(8)]);
     await addPost(finishedRun, '118840005', null, 42, [pictureFor(9), pictureFor(10)]);
+    if (extraFiles.length > 0) await addPost(finishedRun, '118840099', 'Dateien mit riskantem Typ', 40, extraFiles);
     await history.updateRun(finishedRun, { state: 'stored', stats: { postsFound: 5, postsSkipped: 0, assetsStored: 12, assetsFailed: 0, bytesStored: 1 }, finished: true });
 
     // The run that is still going: it belongs to the queued run that "Jetzt ausführen" shows.

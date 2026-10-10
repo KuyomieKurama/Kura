@@ -49,6 +49,17 @@ Playwright is not a dependency of this repository. `stack.mjs` loads `playwright
 Drives the UI with the keyboard only (sign in, skip link, navigation order, focus ring, creating a subscription,
 the mobile menu with Escape) in light and dark and exits with 1 when a step fails.
 
+## Media content and viewer check
+
+    node tests/ui-shots/media-check.mjs [--skip-build]
+
+Seeds the same real media (plus an SVG and an HTML file) and checks in Chromium: the content route shows a picture
+under `default-src 'none'; sandbox`, downloads SVG and HTML instead of rendering them, and runs no script of them; the
+viewer opens with Enter, moves with the arrow keys, keeps Tab inside, closes with Escape and returns the focus to the
+cell of the file shown last; a video in the viewer decodes, seeks with Range requests and keeps the arrow keys for its
+controls. Exits with 1 when a step fails. Known and intended: a video opened on its own in a tab is refused by
+Chromium because `media-src` falls back to `default-src 'none'`; the app embeds videos in the viewer.
+
 ## Contrast test
 
 `contrast.test.ts` runs with `corepack pnpm test` (root vitest). It reads `apps/web/src/styles/tokens.css` and checks
