@@ -1,8 +1,10 @@
-import { CaretDown, CaretUp, CheckCircle, Hourglass, SealCheck } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, CheckCircle, Hourglass, LockKey, SealCheck } from '@phosphor-icons/react';
 import { useId, useState } from 'react';
 import { api, type HistoryAsset, type HistoryPost } from './api.js';
 import { errorMessage } from './error-message.js';
-import { assetStateLabels, formatBytes, handoverLabels, isNotYetAvailable, platformLabels, postStateLabels } from './history-labels.js';
+import {
+  assetStateLabels, formatBytes, handoverLabels, isLocked, isNotYetAvailable, isWaitingOrLocked, platformLabels, postStateLabels
+} from './history-labels.js';
 import { formatInstant } from './schedule-format.js';
 import { assetSegmentTone } from './status.js';
 import { Button } from './ui/Button.js';
@@ -50,16 +52,17 @@ function VerificationStamp({ verification }: { verification: Verification }) {
 function Segments({ assets }: { assets: HistoryAsset[] }) {
   const stored = assets.filter((asset) => asset.state === 'stored').length;
   const waiting = assets.filter(isNotYetAvailable).length;
-  const failed = assets.filter((asset) => asset.state === 'failed').length - waiting;
-  const summary = `${stored} von ${assets.length} gespeichert${failed > 0 ? `, ${failed} fehlgeschlagen` : ''}${waiting > 0 ? `, ${waiting} noch nicht verfügbar` : ''}`;
+  const locked = assets.filter(isLocked).length;
+  const failed = assets.filter((asset) => asset.state === 'failed').length - waiting - locked;
+  const summary = `${stored} von ${assets.length} gespeichert${failed > 0 ? `, ${failed} fehlgeschlagen` : ''}${waiting > 0 ? `, ${waiting} noch nicht verfügbar` : ''}${locked > 0 ? `, ${locked} nicht zugänglich` : ''}`;
   return (
     <div className="ledger-segments">
       <div className="segments" aria-hidden="true">
         {assets.map((asset) => (
           <span
             key={asset.id}
-            className={`segment segment-${isNotYetAvailable(asset) ? 'warn' : assetSegmentTone(asset.state)}`}
-            title={`${asset.originalName}: ${isNotYetAvailable(asset) ? 'Noch nicht verfügbar' : assetStateLabels[asset.state] ?? asset.state}`}
+            className={`segment segment-${isLocked(asset) ? 'neutral' : isNotYetAvailable(asset) ? 'warn' : assetSegmentTone(asset.state)}`}
+            title={`${asset.originalName}: ${isLocked(asset) ? 'Nicht zugänglich' : isNotYetAvailable(asset) ? 'Noch nicht verfügbar' : assetStateLabels[asset.state] ?? asset.state}`}
           />
         ))}
       </div>
@@ -125,10 +128,12 @@ function AssetsTable({ post }: { post: HistoryPost }) {
       header: 'Status',
       render: (asset) => (
         <>
-          {isNotYetAvailable(asset)
-            ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
-            : <StatusChip domain="asset" status={asset.state} suffix={asset.attempts > 1 ? ` (Versuch ${asset.attempts})` : ''} />}
-          {asset.errorMessage && <span className={isNotYetAvailable(asset) ? 'cell-note' : 'cell-note cell-note-danger'}>{asset.errorMessage}</span>}
+          {isLocked(asset)
+            ? <Chip tone="neutral" icon={LockKey}>Nicht zugänglich</Chip>
+            : isNotYetAvailable(asset)
+              ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
+              : <StatusChip domain="asset" status={asset.state} suffix={asset.attempts > 1 ? ` (Versuch ${asset.attempts})` : ''} />}
+          {asset.errorMessage && <span className={isWaitingOrLocked(asset) ? 'cell-note' : 'cell-note cell-note-danger'}>{asset.errorMessage}</span>}
         </>
       )
     },
@@ -160,7 +165,9 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
   const hasAssets = post.assets.length > 0;
   // A post whose only files are expected to appear later (a running livestream) is waiting, it has not failed.
   const waitingOnly = hasAssets && post.state === 'failed' && post.assets.every(isNotYetAvailable);
-  const statusLine = `Status: ${waitingOnly ? 'Noch nicht verfügbar' : postStateLabels[post.state] ?? post.state}${!post.discoveryComplete && post.state !== 'discovered' ? ' (Dateiliste nicht als vollständig gemeldet)' : ''}`;
+  // A post that the account may not view has not failed either.
+  const lockedOnly = hasAssets && post.state === 'failed' && post.assets.every(isLocked);
+  const statusLine = `Status: ${lockedOnly ? 'Nicht zugänglich' : waitingOnly ? 'Noch nicht verfügbar' : postStateLabels[post.state] ?? post.state}${!post.discoveryComplete && post.state !== 'discovered' ? ' (Dateiliste nicht als vollständig gemeldet)' : ''}`;
 
   return (
     <article className="ledger-entry" aria-label={`Beitrag ${label}`}>
@@ -176,9 +183,11 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
           {hasAssets ? <Segments assets={post.assets} /> : <p className="meta">Noch keine Dateien erfasst.</p>}
         </div>
         <div className="ledger-mark">
-          {waitingOnly
-            ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
-            : <StatusChip domain="post" status={post.state} />}
+          {lockedOnly
+            ? <Chip tone="neutral" icon={LockKey}>Nicht zugänglich</Chip>
+            : waitingOnly
+              ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
+              : <StatusChip domain="post" status={post.state} />}
           {hasAssets && <VerificationStamp verification={verificationOf(post)} />}
         </div>
         {hasAssets && (

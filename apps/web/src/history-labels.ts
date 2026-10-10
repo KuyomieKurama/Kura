@@ -39,6 +39,22 @@ export function isNotYetAvailable(asset: { state: string; errorCode: string | nu
   return asset.state === 'failed' && asset.errorCode === NOT_YET_AVAILABLE_CODE;
 }
 
+/**
+ * Error code of a file of a post that the account may not view (Patreon: a higher tier). It is a fact about the account,
+ * not a failure: the entry says "nicht zugänglich" with its reason, and Kura loads the post once the platform lists
+ * files for it.
+ */
+export const LOCKED_CODE = 'ASSET_LOCKED';
+
+export function isLocked(asset: { state: string; errorCode: string | null }): boolean {
+  return asset.state === 'failed' && asset.errorCode === LOCKED_CODE;
+}
+
+/** A file that is not stored for a reason that is no failure: it will appear later, or the account may not view it. */
+export function isWaitingOrLocked(asset: { state: string; errorCode: string | null }): boolean {
+  return isNotYetAvailable(asset) || isLocked(asset);
+}
+
 export const handoverLabels: Record<string, string> = {
   not_attempted: 'Noch nicht an Immich übergeben',
   no_connection: 'Keine Immich-Verbindung',
