@@ -31,6 +31,21 @@ export class ImportRejectedError extends Error {
 }
 
 /**
+ * The checksum of a staged file, computed here and compared with the adapter's report, for the decision to refer to
+ * an already stored file instead of importing this one. The adapter's word alone is not enough for that either.
+ */
+export async function checkedDigestOfStagedFile(staged: StagedFile, signal?: AbortSignal): Promise<string> {
+  const info = await lstat(staged.absolutePath);
+  if (!info.isFile() || info.isSymbolicLink()) throw new ImportRejectedError('Staged file is not a regular file');
+  if (info.size !== staged.byteLength) throw new ImportRejectedError('Staged file size differs from the reported size');
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(staged.absolutePath, { highWaterMark: CHUNK_BYTES, signal })) hash.update(chunk as Buffer);
+  const digest = hash.digest('hex');
+  if (digest !== staged.sha256) throw new ImportRejectedError('Content differs from what the adapter reported');
+  return digest;
+}
+
+/**
  * The trusted import step (docs/planning/04, section 7): the adapter's report is not believed. The file is
  * checked again (regular file, announced size), streamed into the blob store in chunks while the SHA-256
  * is computed on exactly the bytes that are written, and compared with what the adapter staged. The blob
