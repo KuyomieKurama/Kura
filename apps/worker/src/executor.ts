@@ -220,12 +220,16 @@ export class JobExecutor {
           break;
         }
         posts.push(post);
+        // Each post is recorded when it is found: the run's counters and the history move while a long feed is still
+        // being read, and a failure further down the feed does not take back what was found before it.
+        await this.recordDiscovered({ lease, runId, candidate, post, stats });
       }
     } catch (error) {
       if (error instanceof LeaseLostError || signal.aborted) throw error;
-      const failure = classifyFailure(error);
-      if (posts.length === 0 || !stopsWholeRun(failure)) throw error;
-      discoveryStop = failure;
+      // Nothing found yet: the failure is the result of the run. Otherwise the posts found so far are worked on first
+      // and the run ends with this failure afterwards (and is retried or paused according to what it was).
+      if (posts.length === 0) throw error;
+      discoveryStop = classifyFailure(error);
     }
     if (posts.length === 0 && target.kind === 'post') {
       // A single post that cannot be listed is a failure, not "nothing new".
@@ -234,9 +238,12 @@ export class JobExecutor {
 
     // A feed that was read only as far as the archived posts still owes the posts behind that point which failed earlier.
     const reread = discoveryStop ? [] : await this.rediscoverOpenPosts({ lease, candidate, jobContext, listed: posts });
+    for (const post of reread) await this.recordDiscovered({ lease, runId, candidate, post, stats });
     const outcomes: PostOutcome[] = [];
     let firstFailure: Disposition | undefined;
-    for (const post of [...posts, ...reread]) {
+    // The tool prints a feed in its own order (pinned posts first); the newest posts are worked on first.
+    const ordered = newestFirst(posts);
+    for (const post of [...ordered, ...reread]) {
       this.throwIfAborted(signal);
       let outcome: PostOutcome;
       try {
@@ -257,7 +264,7 @@ export class JobExecutor {
 
     if (discoveryStop) throw new RunStop(discoveryStop);
 
-    const last = posts.at(-1);
+    const last = ordered.at(-1);
     const enumerationComplete = !truncated && outcomes.every((outcome) => outcome.discoveryComplete);
     await history.saveSyncState({
       subscriptionId: lease.subscriptionId,
@@ -430,30 +437,26 @@ export class JobExecutor {
     }
   }
 
-  private async processPost(input: {
+  /**
+   * A post that was found: counted, and entered in the history as "discovered" unless it is archived and unchanged
+   * (then nothing is written, as in processPost). Writing it again later, when it is worked on, changes nothing.
+   */
+  private async recordDiscovered(input: {
     lease: JobLease;
     runId: string;
     candidate: AdapterCandidate;
     post: SourcePost;
     stats: RunStats;
-    signal: AbortSignal;
-    credentials?: RunCredentials;
-  }): Promise<PostOutcome> {
-    const { lease, runId, candidate, post, stats, signal, credentials } = input;
-    const { history, catalog } = this.deps;
-    const { adapter } = candidate;
-    const { adapterId, adapterVersion } = adapter.capabilities();
+  }): Promise<void> {
+    const { lease, runId, candidate, post, stats } = input;
+    stats.postsFound += 1;
+    if (!(await this.isArchivedUnchanged(lease.userId, post))) await this.upsertDiscoveredPost(lease, runId, candidate, post);
+    await this.deps.history.updateRun(runId, { state: 'discovering', stats });
+  }
 
-    // Unchanged and archived: skipped, also if the local copy has meanwhile gone to Immich, and without asking the
-    // platform for anything. A post archived before the revision key was derived from stable ids only (old format)
-    // counts as unchanged: its old key says nothing about the content and cannot be compared with the new one.
-    if (await this.isArchivedUnchanged(lease.userId, post)) {
-      stats.postsFound += 1;
-      stats.postsSkipped += 1;
-      return { status: 'skipped', discoveryComplete: true };
-    }
-
-    const saved = await history.upsertPost({
+  private upsertDiscoveredPost(lease: JobLease, runId: string, candidate: AdapterCandidate, post: SourcePost) {
+    const { adapterId, adapterVersion } = candidate.adapter.capabilities();
+    return this.deps.history.upsertPost({
       userId: lease.userId,
       runId,
       subscriptionId: lease.subscriptionId,
@@ -468,7 +471,31 @@ export class JobExecutor {
       sourceUrl: post.canonicalUrl,
       publishedAt: post.publishedAt
     });
-    stats.postsFound += 1;
+  }
+
+  private async processPost(input: {
+    lease: JobLease;
+    runId: string;
+    candidate: AdapterCandidate;
+    post: SourcePost;
+    stats: RunStats;
+    signal: AbortSignal;
+    credentials?: RunCredentials;
+  }): Promise<PostOutcome> {
+    const { lease, runId, candidate, post, stats, signal, credentials } = input;
+    const { history, catalog } = this.deps;
+    const { adapter } = candidate;
+
+    // Unchanged and archived: skipped, also if the local copy has meanwhile gone to Immich, and without asking the
+    // platform for anything. A post archived before the revision key was derived from stable ids only (old format)
+    // counts as unchanged: its old key says nothing about the content and cannot be compared with the new one.
+    // (The post was counted when it was found, see recordDiscovered.)
+    if (await this.isArchivedUnchanged(lease.userId, post)) {
+      stats.postsSkipped += 1;
+      return { status: 'skipped', discoveryComplete: true };
+    }
+
+    const saved = await this.upsertDiscoveredPost(lease, runId, candidate, post);
     if (saved.state === 'stored') {
       // Stored between the check above and now (another run of the same user): nothing to do.
       stats.postsSkipped += 1;
@@ -492,8 +519,9 @@ export class JobExecutor {
           // as failed with its reason, once as a problem of the run; later runs repeat nothing and only keep the record.
           await history.markAssetFailed(record.id, asset.unavailable.code, asset.unavailable.message);
           // Something that is expected to appear later (a running livestream, a premiere) is recorded for the entry
-          // but is no failure of the run; the post is looked at again on the next run.
-          if (asset.unavailable.code !== 'ASSET_NOT_YET_AVAILABLE' && record.errorCode !== asset.unavailable.code) {
+          // but is no failure of the run; the post is looked at again on the next run. A post that the account may
+          // not view (a higher tier) is the same: recorded with its reason, and no failure of the run.
+          if (asset.unavailable.code !== 'ASSET_NOT_YET_AVAILABLE' && asset.unavailable.code !== 'ASSET_LOCKED' && record.errorCode !== asset.unavailable.code) {
             stats.assetsFailed += 1;
             failure ??= { runState: 'failed', code: asset.unavailable.code, message: asset.unavailable.message, retryable: false };
           }
@@ -746,6 +774,15 @@ export class JobExecutor {
     );
     return result.rows[0]?.trigger_kind ?? 'schedule';
   }
+}
+
+/**
+ * Newest first when every post has a date (a stable order, so equal dates keep the tool's order); otherwise the tool's
+ * order is kept rather than guessing. Pinned posts are printed first by Instagram and Patreon although they are old.
+ */
+function newestFirst(posts: readonly SourcePost[]): SourcePost[] {
+  if (posts.some((post) => post.publishedAt === null)) return [...posts];
+  return [...posts].sort((left, right) => (left.publishedAt! < right.publishedAt! ? 1 : left.publishedAt! > right.publishedAt! ? -1 : 0));
 }
 
 function targetHashOf(canonicalUrl: string): string {

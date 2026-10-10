@@ -160,8 +160,14 @@ export interface ManifestAsset {
    * sentence and the code, instead of being downloaded or silently left out. Never contains tool output.
    * ASSET_NOT_YET_AVAILABLE is the same for something that is expected to become available (a livestream that is
    * running, a premiere): it is recorded for the entry, is not a failure of the run, and is checked again next time.
+   * ASSET_LOCKED is a post that the account may not view (Patreon: a higher tier): recorded with its reason, no failure
+   * of the run, and not read again as long as the post's list of files stays empty (the revision key changes when
+   * Patreon lists files for it).
    */
-  readonly unavailable?: { readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE' | 'ASSET_NOT_YET_AVAILABLE'; readonly message: string };
+  readonly unavailable?: {
+    readonly code: 'ASSET_UNSUPPORTED' | 'ASSET_NOT_ACCESSIBLE' | 'ASSET_NOT_YET_AVAILABLE' | 'ASSET_LOCKED';
+    readonly message: string;
+  };
 }
 
 /** Volatile access data. Lives only in the job context and must never be persisted or logged. */

@@ -202,7 +202,7 @@ describe('assets that cannot be fetched (Patreon, fake gallery-dl, real PostgreS
     const assets = await subject.rows<{ post: string; asset: string; state: string; error_code: string | null }>(query);
     expect(assets.map((asset) => [asset.post, asset.asset, asset.state, asset.error_code])).toEqual([
       ['1002', 'embed-0', 'failed', 'ASSET_UNSUPPORTED'],
-      ['1003', 'locked', 'failed', 'ASSET_NOT_ACCESSIBLE'],
+      ['1003', 'locked', 'failed', 'ASSET_LOCKED'],
       ['1004', 'file-0', 'failed', 'ASSET_UNSUPPORTED'],
       ['1005', 'hash-0000000000000000000000000000000d', 'stored', null]
     ]);

@@ -51,7 +51,9 @@ const egressNotConfirmed = fail(
 );
 
 /** Codes for which the adapter's own German sentence may replace the general text. */
-const USER_MESSAGE_CODES: ReadonlySet<AdapterErrorCode> = new Set(['AUTH_REQUIRED', 'RATE_LIMITED', 'TARGET_NOT_FOUND', 'TARGET_UNSUPPORTED', 'TARGET_INVALID']);
+const USER_MESSAGE_CODES: ReadonlySet<AdapterErrorCode> = new Set([
+  'AUTH_REQUIRED', 'RATE_LIMITED', 'TARGET_NOT_FOUND', 'TARGET_UNSUPPORTED', 'TARGET_INVALID', 'PROCESS_TIMEOUT', 'PROCESS_OUTPUT_LIMIT', 'NETWORK_FAILED'
+]);
 
 const targetNotFound = fail(
   'TARGET_NOT_FOUND',
@@ -75,7 +77,9 @@ const byAdapterCode: Record<AdapterErrorCode, Disposition> = {
   PROCESS_SPAWN_FAILED: retry('PROCESS_SPAWN_FAILED', 'Das Werkzeug konnte nicht gestartet werden.'),
   PROCESS_FAILED: retry('PROCESS_FAILED', 'Das Werkzeug ist fehlgeschlagen. Der Lauf wird wiederholt.'),
   PROCESS_TIMEOUT: retry('PROCESS_TIMEOUT', 'Das Werkzeug hat zu lange gebraucht. Der Lauf wird wiederholt.'),
-  PROCESS_OUTPUT_LIMIT: fail('PROCESS_OUTPUT_LIMIT', 'Das Werkzeug hat die Ausgabegrenze überschritten.'),
+  // Possible with a tool that prints without end; later tries usually get a normal answer, so it is retried (with the
+  // queue's backoff and attempt limit) like a timeout.
+  PROCESS_OUTPUT_LIMIT: retry('PROCESS_OUTPUT_LIMIT', 'Das Werkzeug hat die Ausgabegrenze überschritten. Der Lauf wird wiederholt.'),
   PROCESS_TEMP_LIMIT: fail('PROCESS_TEMP_LIMIT', 'Das Werkzeug hat die Grenze für temporären Speicher überschritten.'),
   PROCESS_ABORTED: retry('PROCESS_ABORTED', 'Der Lauf wurde abgebrochen.'),
   OUTPUT_INVALID: fail('OUTPUT_INVALID', 'Die Ausgabe des Werkzeugs war nicht lesbar.'),

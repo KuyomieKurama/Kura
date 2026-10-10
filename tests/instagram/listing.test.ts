@@ -144,18 +144,19 @@ describe('single posts', () => {
 });
 
 describe('profile discovery', () => {
-  it('lists the posts of a profile newest first with stable ids, and addresses each by its own URL', async () => {
+  it('lists the posts of a profile as the tool prints them, with stable ids, and addresses each by its own URL', async () => {
     const { adapter } = await setup();
     const posts = await discover(adapter, 'https://www.instagram.com/Own_Test_Account/?igsh=abc');
 
-    // The tool prints the pinned (old) post first; the adapter orders by date.
-    expect(posts.map((post) => post.platformPostId)).toEqual(['DNewReel001', 'DCarous0001', 'DPhoto00001', 'DOlder00001', 'DPinned0001']);
+    // The tool prints the pinned (old) post first. Posts are handed over while the tool is still reading, so the
+    // order is the tool's; the worker puts them newest first before it works on them.
+    expect(posts.map((post) => post.platformPostId)).toEqual(['DPinned0001', 'DNewReel001', 'DCarous0001', 'DPhoto00001', 'DOlder00001']);
     expect(posts.map((post) => post.canonicalUrl)).toEqual([
-      `${INSTAGRAM_ROOT}/reel/DNewReel001/`, `${INSTAGRAM_ROOT}/p/DCarous0001/`, `${INSTAGRAM_ROOT}/p/DPhoto00001/`,
-      `${INSTAGRAM_ROOT}/p/DOlder00001/`, `${INSTAGRAM_ROOT}/p/DPinned0001/`
+      `${INSTAGRAM_ROOT}/p/DPinned0001/`, `${INSTAGRAM_ROOT}/reel/DNewReel001/`, `${INSTAGRAM_ROOT}/p/DCarous0001/`,
+      `${INSTAGRAM_ROOT}/p/DPhoto00001/`, `${INSTAGRAM_ROOT}/p/DOlder00001/`
     ]);
     expect(posts.map((post) => post.publishedAt)).toEqual([
-      '2026-01-05T00:00:00.000Z', '2026-01-04T00:00:00.000Z', '2026-01-03T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '2025-01-01T00:00:00.000Z'
+      '2025-01-01T00:00:00.000Z', '2026-01-05T00:00:00.000Z', '2026-01-04T00:00:00.000Z', '2026-01-03T00:00:00.000Z', '2026-01-02T00:00:00.000Z'
     ]);
     for (const post of posts) {
       expect(post).toMatchObject({ adapterId: 'gallery-dl', sourceType: 'instagram', creator: { platformId: '4242424242', displayName: 'Own Test Account' } });
@@ -170,7 +171,7 @@ describe('profile discovery', () => {
     await discover(adapter, PROFILE);
     const [listing] = await toolCalls(tool);
     expect(listing).toEqual([
-      '--config-ignore', '--dump-json',
+      '--config-ignore', '--dump-json', '-o', 'output.jsonl=true',
       '--sleep-request', '8-15', '--sleep-extractor', '8-15', '--retries', '0', '-o', 'extractor.instagram.videos=merged',
       '--post-range', `1-${INSTAGRAM_DEFAULT_MAX_POSTS_PER_RUN}`,
       '--', PROFILE_TOOL_URL
@@ -186,8 +187,7 @@ describe('profile discovery', () => {
   });
 
   it('cuts a listing that is longer than the bound even if the tool ignored the range', async () => {
-    const profile = await fixture('profile-posts');
-    const { adapter } = await setup({ rawOutput: JSON.stringify(profile) }, { instagramMaxPostsPerRun: 3 });
+    const { adapter } = await setup({ ignoreRange: true }, { instagramMaxPostsPerRun: 3 });
     expect(await discover(adapter, PROFILE)).toHaveLength(3);
   });
 
@@ -226,7 +226,7 @@ describe('profile discovery', () => {
     const profile = (await fixture('profile-posts')) as Array<[number, ...unknown[]]>;
     const photo = profile.filter((entry) => (entry.at(-1) as Record<string, unknown>).post_shortcode === 'DPhoto00001');
     const hostile = photo.map((entry) => [entry[0], ...entry.slice(1, -1), { ...(entry.at(-1) as object), post_shortcode: '--exec=touch /tmp/pwned' }]);
-    const { adapter, tool } = await setup({ rawOutput: JSON.stringify([...profile, ...photo, ...hostile]) });
+    const { adapter, tool } = await setup({ listings: { ...(await allListings()), [PROFILE_TOOL_URL]: [...profile, ...photo, ...hostile] } });
     const posts = await discover(adapter, PROFILE);
     expect(posts.map((post) => post.platformPostId).sort()).toEqual(['DCarous0001', 'DNewReel001', 'DOlder00001', 'DPhoto00001', 'DPinned0001']);
     for (const args of await tool.calls()) expect(args.join(' ')).not.toContain('pwned');
@@ -255,9 +255,10 @@ describe('profile discovery', () => {
     });
     const { adapter, tool, workRoot } = await setup({ listings: { [PROFILE_TOOL_URL]: hostile, ...Object.fromEntries(Object.entries(await allListings()).filter(([url]) => url.includes('/p/') || url.includes('/reel/'))) } });
     const posts = await discover(adapter, PROFILE);
-    const manifest = await adapter.resolveAssets(posts[0]!, { preset: 'BEST_AVAILABLE' });
+    const reel = posts.find((post) => post.platformPostId === 'DNewReel001')!;
+    const manifest = await adapter.resolveAssets(reel, { preset: 'BEST_AVAILABLE' });
     expect(manifest.assets).toHaveLength(1);
-    expect(posts[0]!.creator.displayName).toBe('-o evil');
+    expect(reel.creator.displayName).toBe('-o evil');
     for (const args of await tool.calls()) {
       const joined = args.join(' ');
       for (const needle of ['pwned', '/etc/shadow', 'write-link', 'evil', 'passwd', 'exec=id']) expect(joined).not.toContain(needle);

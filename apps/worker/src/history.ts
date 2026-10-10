@@ -195,9 +195,10 @@ export function sanitizedSourceUrl(url: string): string | null {
 /**
  * "Completely archived", for a row of download_posts aliased `alias`: stored, or finished with nothing left to try.
  * A post whose remaining assets can never be fetched (an embedded video of another site, a file type that is not
- * allowed) is settled too. A post with a failed download, a pending asset, an enumeration that was not complete or an
- * asset that is not accessible now (private, locked: that can change without the revision key changing) is not,
- * and is looked at again.
+ * allowed) is settled too, and so is a post that the account may not view (ASSET_LOCKED): when that changes, the
+ * platform lists files for the post, which gives it another revision key. A post with a failed download, a pending
+ * asset, an enumeration that was not complete or an asset that is not accessible now (private: that can change without
+ * the revision key changing) is not settled, and is looked at again.
  */
 const settledPost = (alias: string): string => `(${alias}.state = 'stored' OR (
   ${alias}.state IN ('partially_completed', 'failed') AND ${alias}.discovery_complete
@@ -205,7 +206,7 @@ const settledPost = (alias: string): string => `(${alias}.state = 'stored' OR (
   AND NOT EXISTS (
     SELECT 1 FROM download_assets s
      WHERE s.post_id = ${alias}.id AND s.state <> 'stored'
-       AND NOT (s.state = 'failed' AND s.error_code = 'ASSET_UNSUPPORTED')
+       AND NOT (s.state = 'failed' AND s.error_code IN ('ASSET_UNSUPPORTED', 'ASSET_LOCKED'))
   )
 ))`;
 

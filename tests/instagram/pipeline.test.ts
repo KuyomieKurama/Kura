@@ -87,9 +87,10 @@ describe('Instagram through the download pipeline (fake gallery-dl, real Postgre
     const newDownloads = (await downloadCalls(tool)).slice(downloadsBefore);
     expect(newDownloads).toHaveLength(1);
     expect(newDownloads[0]!.slice(-2)).toEqual(['--', postUrl('DExtraNew01')]);
-    // Two profile listings (probe and discovery) and one single-post listing for the new post; the five archived posts are not asked again.
+    // Three profile listings (probe, the stream, and the check that the short profile ended) and one single-post listing
+    // for the new post; the five archived posts are not asked again.
     const newListings = (await listingCalls(tool)).slice(listingsBefore).map((args) => args.at(-1));
-    expect(newListings).toEqual([PROFILE_TOOL_URL, PROFILE_TOOL_URL, postUrl('DExtraNew01')]);
+    expect(newListings).toEqual([PROFILE_TOOL_URL, PROFILE_TOOL_URL, PROFILE_TOOL_URL, postUrl('DExtraNew01')]);
     expect(await subject.rows('SELECT posts_found, posts_skipped, assets_stored FROM download_runs ORDER BY started_at')).toEqual([
       { posts_found: 5, posts_skipped: 0, assets_stored: 7 }, { posts_found: 6, posts_skipped: 5, assets_stored: 1 }
     ]);
@@ -230,7 +231,8 @@ describe('Instagram through the download pipeline (fake gallery-dl, real Postgre
       expect(outcome).toMatchObject({ result: 'problem', disposition: { runState: 'waiting_rate_limit', code: 'RATE_LIMITED' } });
       // The newest post comes first and is throttled: no other post is tried afterwards.
       const asked = (await listingCalls(tool)).map((args) => args.at(-1));
-      expect(asked).toEqual([PROFILE_TOOL_URL, PROFILE_TOOL_URL, postUrl('DNewReel001', 'reel')]);
+      // The probe, the stream of the profile, the check that the profile ended (it has fewer posts than the bound), the post.
+      expect(asked).toEqual([PROFILE_TOOL_URL, PROFILE_TOOL_URL, PROFILE_TOOL_URL, postUrl('DNewReel001', 'reel')]);
       expect(await subject.rows('SELECT 1 FROM subscription_sync_state')).toEqual([]);
     });
 

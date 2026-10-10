@@ -43,7 +43,8 @@ describe('cookies file of a run (interface for the per-user cookies of slice B)'
     await collect(adapter.discover({ ...jobContext, target: adapter.validateTarget('https://www.instagram.com/own_test_account/'), credentials }));
 
     const calls = (await tool.calls()).filter((args) => !args.includes('--version'));
-    expect(calls).toHaveLength(5);
+    // probe, post listing, post listing for the assets, one download, the profile stream and the check that the profile ended
+    expect(calls).toHaveLength(6);
     for (const args of calls) {
       const before = options(args);
       const at = before.indexOf('-C');

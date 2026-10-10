@@ -129,7 +129,7 @@ describe('Patreon creator', () => {
     });
     const [call] = await toolCalls(tool);
     expect(call).toEqual([
-      '--config-ignore', '--dump-json', '--sleep-request', '3-6', '--sleep-extractor', '3-6', '--retries', '0',
+      '--config-ignore', '--dump-json', '-o', 'output.jsonl=true', '--sleep-request', '3-6', '--sleep-extractor', '3-6', '--retries', '0',
       '--post-range', '1-50', '--', CREATOR_TOOL_URL
     ]);
   });
@@ -169,7 +169,7 @@ describe('Patreon creator', () => {
 
     const locked = (await manifestOf(adapter, posts, '1003')).manifest;
     expect(locked.assets).toHaveLength(1);
-    expect(locked.assets[0]!.unavailable).toMatchObject({ code: 'ASSET_NOT_ACCESSIBLE', message: expect.stringContaining('nicht zugänglich') });
+    expect(locked.assets[0]!.unavailable).toMatchObject({ code: 'ASSET_LOCKED', message: expect.stringContaining('Nicht zugänglich') });
 
     const stream = (await manifestOf(adapter, posts, '1004')).manifest;
     expect(stream.assets).toHaveLength(1);
@@ -231,7 +231,7 @@ describe('Pixiv artist', () => {
     });
     const [call] = await toolCalls(tool);
     expect(call).toEqual([
-      '--config-ignore', '--dump-json', '--sleep-request', '2-4', '--sleep-extractor', '2-4', '--retries', '0',
+      '--config-ignore', '--dump-json', '-o', 'output.jsonl=true', '--sleep-request', '2-4', '--sleep-extractor', '2-4', '--retries', '0',
       '-o', 'extractor.pixiv.sanity=false', '-o', 'extractor.pixiv.ugoira=true',
       '-c', '/run/kura/private/gallery-dl.conf', '--post-range', '1-50', '--', ARTIST_TOOL_URL
     ]);
@@ -242,7 +242,9 @@ describe('Pixiv artist', () => {
     const { adapter, tool } = await setup();
     await discover(adapter, `${PIXIV}/users/4242/illustrations`, credentials);
     await discover(adapter, `${PIXIV}/users/4242/manga`, credentials);
-    const calls = await toolCalls(tool);
+    // Each feed is read by a stream, and then checked once more because it ended before the bound.
+    const calls = (await toolCalls(tool)).filter((args) => args.includes('output.jsonl=true'));
+    expect(calls).toHaveLength(2);
     expect(calls[0]).toContain('--post-filter');
     expect(calls[1]).toContain('--post-filter');
     expect(optionValue(calls[0]!, '--post-filter')).not.toBe(optionValue(calls[1]!, '--post-filter'));

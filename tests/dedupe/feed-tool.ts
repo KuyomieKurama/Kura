@@ -40,14 +40,18 @@ if (args.includes('--dump-json')) {
   if (control.listingFailure) { process.stderr.write(control.listingFailure.stderr); process.exit(control.listingFailure.exitCode); }
   if (listing === undefined) { process.stderr.write('[gallery-dl][error] Unsupported URL ' + url); process.exit(64); }
   const rangeAt = args.indexOf('--post-range');
-  const limit = rangeAt >= 0 ? Number(args[rangeAt + 1].split('-')[1]) : Infinity;
+  const [first, last] = rangeAt >= 0 ? (args[rangeAt + 1].includes('-') ? args[rangeAt + 1].split('-').map(Number) : [Number(args[rangeAt + 1]), Number(args[rangeAt + 1])]) : [1, Infinity];
   const out = [];
   let posts = 0;
   for (const entry of listing) {
     if (entry[0] === 2) posts += 1;
-    if (entry[0] === -1 || posts <= limit) out.push(entry);
+    if (entry[0] === -1 || (posts >= first && posts <= last)) out.push(entry);
   }
-  process.stdout.write(JSON.stringify(out) + '\n', () => process.exit(0));
+  if (args.includes('output.jsonl=true')) {
+    process.stdout.write(out.filter((entry) => entry[0] !== -1).map((entry) => JSON.stringify(entry) + '\n').join(''), () => process.exit(0));
+  } else {
+    process.stdout.write(JSON.stringify(out) + '\n', () => process.exit(0));
+  }
 } else {
   const position = Number(args[args.indexOf('--range') + 1]) - 1;
   const directory = args[args.indexOf('-D') + 1];

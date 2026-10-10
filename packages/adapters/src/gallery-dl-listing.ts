@@ -5,13 +5,14 @@ import {
   failureFromProcess,
   failureFromToolError,
   failureOfEmptyProfileListing,
+  FeedMessageReader,
   parseDumpJson,
   type FailureContext,
   type ParsedOutput,
   type ParsedPost
 } from './gallery-dl-output.js';
 import { INSTAGRAM_SHORTCODE } from './instagram-target.js';
-import type { ProcessResult } from './process-runner.js';
+import type { ProcessResult, StdoutLine } from './process-runner.js';
 import type { CanonicalTarget, SourceType } from './types.js';
 
 /**
@@ -165,6 +166,47 @@ export function readFeedListing(result: ProcessResult, context: FailureContext, 
   return { posts: newestFirst(listings).slice(0, maxPosts), inToolOrder: listings.slice(0, maxPosts), stoppedBy };
 }
 
+/**
+ * The posts of a feed listing printed as JSON lines, read while the tool runs: each line goes in, and every post that
+ * is complete comes out as a PostListing, in the order the tool printed it. Posts without a usable id and posts seen
+ * twice are left out, as in readFeedListing. Holds the post being collected and the ids of the posts handed out.
+ */
+export class FeedStreamReader {
+  private readonly reader = new FeedMessageReader();
+  private readonly seen = new Set<string>();
+
+  constructor(private readonly sourceType: SourceType) {}
+
+  /** Posts the tool has begun to print. gallery-dl's --post-range counts exactly these. */
+  get postsBegun(): number {
+    return this.reader.postsBegun;
+  }
+
+  get oversizeLines(): number {
+    return this.reader.oversizeLines;
+  }
+
+  push(line: StdoutLine): PostListing | undefined {
+    if (line.kind === 'oversize') {
+      this.reader.dropped();
+      return undefined;
+    }
+    return this.accept(this.reader.push(line.bytes));
+  }
+
+  finish(): PostListing | undefined {
+    return this.accept(this.reader.finish());
+  }
+
+  private accept(post: ParsedPost | undefined): PostListing | undefined {
+    if (!post) return undefined;
+    const listing = listingOfPost(post, this.sourceType);
+    if (listing.postId === null || this.seen.has(listing.postId)) return undefined;
+    this.seen.add(listing.postId);
+    return listing;
+  }
+}
+
 /** This many known posts in a row, with nothing newer behind them, mark the end of what is new in a feed. */
 export const KNOWN_POSTS_TO_STOP = 3;
 
@@ -178,7 +220,7 @@ export const KNOWN_POSTS_TO_STOP = 3;
  * A post without a date cannot be placed in time, so such a listing never ends early. Returns how many posts of
  * `listings` are needed (up to the end of the known run), or null if the walk has to go on.
  */
-export function endOfNewPosts(listings: readonly PostListing[], known: ReadonlySet<string>): number | null {
+export function endOfNewPosts(listings: readonly Pick<PostListing, 'postId' | 'date'>[], known: ReadonlySet<string>): number | null {
   for (let start = 0; start + KNOWN_POSTS_TO_STOP <= listings.length; start += 1) {
     const run = listings.slice(start, start + KNOWN_POSTS_TO_STOP);
     if (!run.every((listing) => listing.postId !== null && known.has(listing.postId))) continue;
@@ -255,7 +297,9 @@ export function listingOfPost(post: ParsedPost, sourceType: SourceType): PostLis
     ugoiraFrames: workType === 'ugoira' ? ugoiraFramesOf(first?.frames) : null,
     incomplete: post.filesTruncated
       ? { code: 'LISTING_TRUNCATED', message: `More than ${MAX_FILES_PER_POST} files; the list was cut off` }
-      : null
+      : post.oversize
+        ? { code: 'MESSAGE_TOO_LARGE', message: 'A message of the tool for this post was too large to read; the list of files may be incomplete' }
+        : null
   };
 }
 

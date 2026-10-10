@@ -46,12 +46,13 @@ describe('repeat runs over an Instagram profile (fake gallery-dl, real PostgreSQ
   const singlePostListings = async (tool: FeedTool, from = 0) => (await tool.calls()).slice(from)
     .filter((args) => args.includes('--dump-json') && args.at(-1) !== PROFILE_TOOL_URL).map((args) => args.at(-1));
 
-  it('stores nothing on the second run over an unchanged profile and stops after the first window of the feed', async () => {
+  it('stores nothing on the second run over an unchanged profile and stops reading the feed at the first archived posts', async () => {
     const { tool, subject, run } = await setup(plainPosts(30));
 
     expect(await run()).toEqual({ result: 'stored' });
     expect(await counts(subject)).toEqual({ posts: 30, assets: 30, stored: 30, blobs: 30 });
-    expect(await profileRanges(tool)).toEqual(['1-1', '1-50']);
+    // The probe, the stream of the feed and, because the feed ended before the bound, the check that it really ended.
+    expect(await profileRanges(tool)).toEqual(['1-1', '1-50', '31']);
     const keys = await revisionKeys(subject);
     const before = (await tool.calls()).length;
 
@@ -59,8 +60,9 @@ describe('repeat runs over an Instagram profile (fake gallery-dl, real PostgreSQ
 
     expect(await counts(subject)).toEqual({ posts: 30, assets: 30, stored: 30, blobs: 30 });
     expect(await revisionKeys(subject)).toEqual(keys);
-    // The probe and one window of 12 posts: no download, no listing of a single post.
-    expect(await profileRanges(tool, before)).toEqual(['1-1', '1-12']);
+    // The probe and one stream that is stopped after the first window of 12 posts: no download, no listing of a
+    // single post, and no check of the end of the feed (it was not read to its end).
+    expect(await profileRanges(tool, before)).toEqual(['1-1', '1-50']);
     expect(await downloads(tool, before)).toEqual([]);
     expect(await singlePostListings(tool, before)).toEqual([]);
     expect((await tool.calls()).length - before).toBe(2);
@@ -169,7 +171,7 @@ describe('repeat runs over an Instagram profile (fake gallery-dl, real PostgreSQ
       expect(await counts(subject)).toEqual({ posts: 40, assets: 40, stored: 40, blobs: 30 });
       expect(await downloads(tool, before)).toEqual([]);
       expect(await singlePostListings(tool, before)).toEqual([]);
-      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-12']);
+      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-50']);
     });
 
     it('still stores a post that is new after the old history', async () => {
@@ -199,7 +201,8 @@ describe('repeat runs over an Instagram profile (fake gallery-dl, real PostgreSQ
 
       expect(await run()).toEqual({ result: 'stored' });
 
-      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-50']);
+      // The whole range again: the stream reads all 30 posts and the feed ends before the bound.
+      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-50', '31']);
       expect(await counts(subject)).toEqual({ posts: 30, assets: 30, stored: 30, blobs: 30 });
     });
 
@@ -218,8 +221,9 @@ describe('repeat runs over an Instagram profile (fake gallery-dl, real PostgreSQ
 
       expect((await counts(subject)).posts).toBe(53);
       expect((await downloads(tool, before))).toHaveLength(20);
-      // The first windows hold the pinned posts and new ones only; the walk goes on until it meets old posts.
-      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-12', '1-24', '1-48']);
+      // The pinned posts are known but newer posts follow them, so the stream goes on until it meets old posts.
+      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-50']);
+      expect(await subject.rows('SELECT posts_found FROM download_runs ORDER BY started_at DESC LIMIT 1')).toEqual([{ posts_found: 26 }]);
     });
 
     it('does not look at an edit of a post behind the archived ones (documented limit of incremental runs)', async () => {
@@ -249,7 +253,7 @@ describe('repeat runs over an Instagram profile (fake gallery-dl, real PostgreSQ
 
       expect(await run()).toEqual({ result: 'stored' });
 
-      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-12']);
+      expect(await profileRanges(tool, before)).toEqual(['1-1', '1-50']);
       expect(await downloads(tool, before)).toHaveLength(1);
       expect(await subject.rows('SELECT state FROM download_posts WHERE platform_post_id = $1', [posts[20]!.code])).toEqual([{ state: 'stored' }]);
       expect((await counts(subject)).posts).toBe(30);
