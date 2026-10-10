@@ -8,7 +8,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { OidcClient, OidcError, PostgresIdentityRepository, type LoginTransaction, type OidcProviderConfig } from '@kura/identity';
-import type { ApiConfig } from './config.js';
+import { DEFAULT_UPDATE_API_BASE, DEFAULT_UPDATE_REPOSITORY, type ApiConfig } from './config.js';
 import { resolveBuildInfo } from './build-info.js';
 import { registerImmichRoutes } from './immich-routes.js';
 import { registerCredentialRoutes } from './credential-routes.js';
@@ -17,6 +17,8 @@ import { loggerOptions } from './logging.js';
 import { registerRuntimePolicyRoutes } from './runtime-policy-routes.js';
 import { registerScheduleRoutes } from './schedule-routes.js';
 import { registerSourceRoutes } from './source-routes.js';
+import { PostgresUpdateCheckStore, UpdateChecker } from './update-check.js';
+import { registerVersionRoutes } from './version-routes.js';
 
 const scrypt = promisify(scryptCallback) as (password: string | Buffer, salt: string | Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
 const SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
@@ -66,7 +68,7 @@ async function audit(client: Pool | PoolClient, actor: string | null, action: st
 }
 
 
-export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient; logStream?: Writable; resolveImmichHost?: (host: string) => Promise<string[]> } = {}): FastifyInstance {
+export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, clock: AuthClock = { now: () => new Date() }, dependencies: { oidcClient?: OidcClient; logStream?: Writable; resolveImmichHost?: (host: string) => Promise<string[]>; updateChecker?: UpdateChecker; startUpdateCheck?: boolean } = {}): FastifyInstance {
   const app = Fastify({ logger: loggerOptions(dependencies.logStream), trustProxy: config.trustProxy });
   // An idle connection that the database closes (restart, failover) is reported on the pool.
   // Without a listener Node would treat the event as an unhandled error and end the process.
@@ -198,6 +200,18 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   registerRuntimePolicyRoutes({ app, pool, requireSession, audit: auditRoute });
   registerSourceRoutes({ app, pool, clock, requireSession, audit: auditRoute });
   registerMediaRoutes({ app, pool, blobstore, requireSession });
+  // Without an explicit update configuration (tests) the check is off and makes no request to GitHub.
+  const updateChecker = dependencies.updateChecker ?? new UpdateChecker({
+    build: buildInfo,
+    settings: config.update ?? { enabled: false, repository: DEFAULT_UPDATE_REPOSITORY, apiBase: DEFAULT_UPDATE_API_BASE, channel: 'stable' },
+    store: new PostgresUpdateCheckStore(pool),
+    clock,
+    log: { info: (details, message) => app.log.info(details, message), warn: (details, message) => app.log.warn(details, message) }
+  });
+  registerVersionRoutes({ app, requireSession, checker: updateChecker, audit: auditRoute });
+  // The schedule (first check after 60 s, then every 12 h) only runs in the real service.
+  if (dependencies.startUpdateCheck) app.addHook('onReady', async () => { updateChecker.start(); });
+  app.addHook('onClose', async () => { updateChecker.stop(); });
   if (webDirectory && existsSync(webDirectory)) { void app.register(fastifyStatic, { root: webDirectory, index: ['index.html'], cacheControl: false, setHeaders: (reply, filePath) => reply.header('Cache-Control', filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable') }); app.setNotFoundHandler((request, reply) => request.url.startsWith('/api/') || request.url === '/healthz' ? reply.code(404).send({ statusCode: 404, ...error('NOT_FOUND', 'Nicht gefunden.') }) : reply.type('text/html').sendFile('index.html')); }
   app.addHook('onClose', async () => { await pool.end(); }); return app;
 }

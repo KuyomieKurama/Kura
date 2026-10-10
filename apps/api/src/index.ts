@@ -9,7 +9,7 @@ const config = loadConfig();
 const pool = new Pool({ connectionString: config.databaseUrl });
 const migrationsDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../../../migrations');
 await runMigrations(pool, migrationsDirectory);
-const app = buildApp(config, pool, resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist'));
+const app = buildApp(config, pool, resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist'), undefined, { startUpdateCheck: true });
 
 try {
   await app.listen({ host: config.host, port: config.port });
