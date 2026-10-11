@@ -1,9 +1,14 @@
-import { Stack } from '@phosphor-icons/react';
+import { ArrowSquareOut, Stack } from '@phosphor-icons/react';
 import { type CSSProperties, type KeyboardEvent, useRef } from 'react';
 import type { MediaAsset } from './api.js';
-import type { PostGroup } from './media.js';
+import { type PostGroup, platformLabel, safeExternalUrl } from './media.js';
 import { MediaTile } from './MediaTile.js';
 import { Chip } from './ui/Chip.js';
+import { Glyph } from './ui/Glyph.js';
+import { RelativeTime } from './ui/RelativeTime.js';
+
+/** Groups with more files than this are painted lazily (content-visibility); small ones are always painted. */
+const LARGE_GROUP = 12;
 
 /**
  * Moves the focus between the cells with the arrow keys (left/right: neighbour, up/down: the cell above or below
@@ -81,16 +86,36 @@ export function MediaSkeleton({ count = 8 }: { count?: number }) {
 }
 
 /** Stored files grouped by post: a carousel post shows its files together, with their count. */
+/** Title ("Ohne Titel" with the date when the source gave none), file count, relative time and the link to the post. */
+function groupTitle(group: PostGroup): string {
+  return group.titled || !group.storedAt ? group.title : `${group.title} vom ${new Date(group.storedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`;
+}
+
+function GroupHead({ group }: { group: PostGroup }) {
+  const source = safeExternalUrl(group.postUrl);
+  const title = groupTitle(group);
+  return (
+    <header className="media-group-head">
+      <h5 className="truncate" title={title}>{title}</h5>
+      {group.assets.length > 1 && <Chip tone="neutral" icon={Stack}>{`${group.assets.length} Dateien`}</Chip>}
+      {group.storedAt && <span className="meta media-group-time"><RelativeTime value={group.storedAt} /></span>}
+      {source && (
+        <a className="media-group-link" href={source} target="_blank" rel="noopener noreferrer">
+          {`Beitrag auf ${platformLabel(group.platform)} öffnen`}
+          <Glyph icon={ArrowSquareOut} size={14} />
+        </a>
+      )}
+    </header>
+  );
+}
+
 export function MediaGrid({ groups, onOpen }: { groups: PostGroup[]; onOpen: (asset: MediaAsset, opener: HTMLElement) => void }) {
   const container = useRef<HTMLDivElement>(null);
   return (
     <div className="media-groups" ref={container} onKeyDown={(event) => container.current && moveFocus(event, container.current)}>
       {groups.map((group) => (
-        <section key={group.postId} className="media-group" aria-label={`Beitrag ${group.title}`}>
-          <header className="media-group-head">
-            <h5 className="truncate" title={group.title}>{group.title}</h5>
-            {group.assets.length > 1 && <Chip tone="neutral" icon={Stack}>{`${group.assets.length} Dateien`}</Chip>}
-          </header>
+        <section key={group.postId} className={group.assets.length > LARGE_GROUP ? 'media-group media-group-large' : 'media-group'} aria-label={`Beitrag ${groupTitle(group)}`}>
+          <GroupHead group={group} />
           <Gallery assets={group.assets} onOpen={onOpen} />
         </section>
       ))}

@@ -1,4 +1,4 @@
-import { ArrowsClockwise } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretDown } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type MediaAsset, type MediaFilter, type Subscription } from './api.js';
 import { errorMessage } from './error-message.js';
@@ -9,6 +9,7 @@ import { openViewer } from './viewTransition.js';
 import { dayLabel } from './time-format.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
+import { Glyph } from './ui/Glyph.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { Segmented } from './ui/Segmented.js';
@@ -100,19 +101,24 @@ export function MediaPage() {
 
   return (
     <>
-      <PageHeader title={labels.media} />
-      <div className="media-toolbar">
-        {subscriptions.length > 1 && (
-          <label className="select-inline">
-            <span className="sr-only">Abonnement</span>
-            <select value={subscriptionId} onChange={(event) => setSubscriptionId(event.target.value)} aria-label="Abonnement">
-              <option value="">{labels.allSubscriptions}</option>
-              {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
-            </select>
-          </label>
+      <PageHeader
+        title={labels.media}
+        actions={(
+          <div className="media-toolbar">
+            {subscriptions.length > 1 && (
+              <label className="select-inline">
+                <span className="sr-only">Abonnement</span>
+                <select value={subscriptionId} onChange={(event) => setSubscriptionId(event.target.value)} aria-label="Abonnement">
+                  <option value="">{labels.allSubscriptions}</option>
+                  {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
+                </select>
+                <span className="select-caret"><Glyph icon={CaretDown} size={16} /></span>
+              </label>
+            )}
+            <Segmented label="Medientyp" value={filter} onChange={setFilter} options={FILTERS} />
+          </div>
         )}
-        <Segmented label="Medientyp" value={filter} onChange={setFilter} options={FILTERS} />
-      </div>
+      />
       {status === 'error' && (
         <Banner tone="danger" action={<Button icon={ArrowsClockwise} onClick={() => void loadFirst()}>{labels.reload}</Button>}>
           <strong>Die Medien konnten nicht geladen werden.</strong> {error}

@@ -90,6 +90,21 @@
   flex: none;
 }
 
+.strip-narrow {
+  display: none;
+}
+
+/* Narrow: a short text that fits whole, so "HTTP" never falls off the end. */
+@media (max-width: 639px) {
+  .strip-wide {
+    display: none;
+  }
+
+  .strip-narrow {
+    display: inline;
+  }
+}
+
 .sidebar {
   grid-column: 1;
   grid-row: 2;

@@ -71,10 +71,13 @@
   gap: var(--space-7);
 }
 
-.overview-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-7);
+/* Running now (7 of 12) beside Next up (5 of 12); the look back runs across the full width underneath. */
+.overview-last {
+  grid-column: 1 / -1;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 @media (max-width: 1023px) {
@@ -160,6 +163,20 @@
   grid-area: time;
   font-size: var(--text-meta);
   white-space: nowrap;
+}
+
+/* Full width: name, result and time in one line. */
+@media (min-width: 1024px) {
+  .last-run {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 160px;
+    grid-template-areas: 'name result time';
+    column-gap: var(--space-5);
+  }
+
+  .last-run-time {
+    font-size: var(--text-body);
+    text-align: right;
+  }
 }
 
 .tone-warn {

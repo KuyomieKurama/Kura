@@ -45,6 +45,8 @@ export const labels = {
   version: 'Version',
   testSurface: 'Testbetrieb',
   insecureConnection: 'Die Verbindung ist unverschlüsselt (HTTP).',
+  /** The same warning for a narrow strip, where the long text would be cut off and lose "HTTP". */
+  insecureShort: 'unverschlüsselt (HTTP)',
   service: 'Dienst',
   database: 'Datenbank',
   available: 'Erreichbar',

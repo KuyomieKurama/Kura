@@ -28,7 +28,7 @@ const carousel = [
   asset('a1', { assetIndex: 0 }),
   asset('a2', { assetIndex: 1 }),
   asset('a3', { assetIndex: 2, mediaKind: 'video', mimeType: 'video/mp4', originalName: 'clip.mp4' }),
-  asset('b1', { postId: 'post-2', platformPostId: 'P2', postTitle: null, originalName: 'einzel.png' })
+  asset('b1', { postId: 'post-2', platformPostId: 'P2', postTitle: null, postUrl: null, originalName: 'einzel.png' })
 ];
 
 function mockMedia(handler: (url: string) => ReturnType<typeof json> | undefined) {
@@ -44,8 +44,10 @@ it('shows the files grouped by post with their count, lazy images and video post
   const first = await screen.findByRole('region', { name: 'Beitrag Sommer am See' });
   expect(within(first).getByText('3 Dateien')).toBeInTheDocument();
   expect(within(first).getAllByRole('button')).toHaveLength(3);
-  const second = screen.getByRole('region', { name: 'Beitrag Beitrag P2' });
+  const second = screen.getByRole('region', { name: 'Beitrag Ohne Titel vom 01.06.' });
   expect(within(second).queryByText(/Dateien/)).not.toBeInTheDocument();
+  // A raw platform id is never shown as a title.
+  expect(screen.queryByText(/P2/)).not.toBeInTheDocument();
 
   const image = within(first).getByAltText('Bild: a1.png');
   expect(image).toHaveAttribute('loading', 'lazy');
@@ -54,6 +56,24 @@ it('shows the files grouped by post with their count, lazy images and video post
   expect(within(first).getByLabelText('Video: clip.mp4')).toBeInTheDocument();
   expect(first.querySelector('video')).toBeNull();
   expect(screen.getByRole('button', { name: 'Alle (4)' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+it('gives each post a head with the time (absolute in the title) and a link to the post on its platform', async () => {
+  mockMedia(() => json({ items: carousel, nextCursor: null, counts: { all: 4, image: 3, video: 1 } } satisfies SubscriptionMediaPage));
+  render(<SubscriptionMedia subscriptionId="s1" />);
+
+  const first = await screen.findByRole('region', { name: 'Beitrag Sommer am See' });
+  const time = first.querySelector('header time');
+  expect(time).not.toBeNull();
+  expect(time).toHaveAttribute('datetime', '2026-06-01T10:00:00.000Z');
+  expect(time?.getAttribute('title')).toMatch(/2026/);
+  const link = within(first).getByRole('link', { name: /Beitrag auf Instagram öffnen/ });
+  expect(link).toHaveAttribute('href', 'https://www.instagram.com/p/P1/');
+  expect(link).toHaveAttribute('target', '_blank');
+  expect(link.getAttribute('rel')).toContain('noopener');
+  // The second post has no address: no link.
+  const second = screen.getByRole('region', { name: /^Beitrag Ohne Titel/ });
+  expect(within(second).queryByRole('link')).toBeNull();
 });
 
 it('reloads with the type when a filter is chosen', async () => {

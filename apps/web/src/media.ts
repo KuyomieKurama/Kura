@@ -18,12 +18,17 @@ export interface PostGroup {
   title: string;
   creatorName: string | null;
   platform: string;
+  /** True when the source gave the post a title; false when `title` is the fallback. */
+  titled: boolean;
+  postUrl: string | null;
+  /** When the newest file of the post was stored. */
+  storedAt: string | null;
   assets: MediaAsset[];
 }
 
-/** Title of a post as shown to the user: the title the source gave, else its id. */
-export function postLabel(asset: Pick<MediaAsset, 'postTitle' | 'platformPostId'>): string {
-  return asset.postTitle?.trim() || `Beitrag ${asset.platformPostId}`;
+/** Title of a post as shown to the user: the title the source gave, else "Ohne Titel". A raw platform id is never shown. */
+export function postLabel(asset: Pick<MediaAsset, 'postTitle'>): string {
+  return asset.postTitle?.trim() || 'Ohne Titel';
 }
 
 /**
@@ -38,12 +43,19 @@ export function groupByPost(assets: readonly MediaAsset[]): PostGroup[] {
       title: postLabel(asset),
       creatorName: asset.creatorName,
       platform: asset.platform,
+      titled: Boolean(asset.postTitle?.trim()),
+      postUrl: asset.postUrl,
+      storedAt: asset.storedAt,
       assets: []
     };
     group.assets.push(asset);
     groups.set(asset.postId, group);
   }
-  for (const group of groups.values()) group.assets.sort((first, second) => first.assetIndex - second.assetIndex);
+  for (const group of groups.values()) {
+    group.assets.sort((first, second) => first.assetIndex - second.assetIndex);
+    // The newest file stored decides the time of the post.
+    group.storedAt = group.assets.reduce<string | null>((newest, asset) => (asset.storedAt && (!newest || asset.storedAt > newest) ? asset.storedAt : newest), null);
+  }
   return [...groups.values()];
 }
 

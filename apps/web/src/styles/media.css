@@ -23,8 +23,12 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+}
+
+/* Only a long group is painted lazily. The remembered size (auto) keeps the scroll bar steady once it was seen. */
+.media-group-large {
   content-visibility: auto;
-  contain-intrinsic-size: auto 320px;
+  contain-intrinsic-size: auto 640px;
 }
 
 .media-group-head {
@@ -39,6 +43,44 @@
   margin: 0;
   font-size: var(--text-body);
   font-weight: 600;
+}
+
+.media-group-time {
+  flex: none;
+  white-space: nowrap;
+}
+
+.media-group-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--accent);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.media-group-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+@media (max-width: 639px) {
+  .media-group-head {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .media-group-head h5 {
+    flex: 1 1 100%;
+  }
+
+  .media-group-link {
+    margin-left: auto;
+    min-height: 44px;
+  }
 }
 
 .media-grid {
@@ -659,13 +701,34 @@ video.viewer-media {
 
 
 /* Media page */
+/* The filters sit in the title row (PageHeader actions). Narrow: both start at the page edge, the select across the width. */
 .media-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 639px) {
+  .page-actions:has(.media-toolbar) {
+    width: 100%;
+  }
+
+  .media-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .media-toolbar .segmented {
+    align-self: flex-start;
+  }
+
+  .select-inline select {
+    max-width: none;
+  }
 }
 
 .day-group {
@@ -733,9 +796,29 @@ video.viewer-media {
   }
 }
 
+.select-inline {
+  position: relative;
+  display: block;
+}
+
+/* A native select with the same caret as the other disclosures (the arrow of the system is switched off). */
 .select-inline select {
   min-width: 200px;
   max-width: 320px;
+  padding-right: calc(var(--space-3) + 24px);
+  font-size: var(--text-body);
+  appearance: none;
+  cursor: pointer;
+}
+
+.select-caret {
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  display: inline-flex;
+  color: var(--ink-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 /* A file that is not stored yet: the tile of its state. No dashed box, no spinner; the bar is a fixed 3px accent line. */

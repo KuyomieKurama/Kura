@@ -42,7 +42,8 @@ function attentionText(kind: Overview['attention'][number]['kind']): string {
 function Lede({ overview }: { overview: Overview }) {
   const next = overview.upcoming[0];
   const last = overview.lastRuns.find((run) => run.finishedAt && run.assetsStored > 0);
-  const nextPart = next ? <> Nächster Lauf <RelativeTime value={next.dueAt} detail endSentence /></> : null;
+  // One group that never breaks inside: "Nächster Lauf in 5 Std. 59 Min."
+  const nextPart = next ? <>{' '}<span className="nowrap">Nächster Lauf <RelativeTime value={next.dueAt} detail endSentence /></span></> : null;
   if (overview.recentAssets.length === 0 && !last) return <p className="page-lead">{labels.emptyArchive}</p>;
   if (!last || !last.finishedAt) {
     return <p className="page-lead">Heute war noch kein Lauf.{nextPart}</p>;
@@ -191,7 +192,6 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
       )}
       {overview && !empty && (
         <div className="overview-columns">
-          <div className="overview-stack">
           <section className="section" aria-labelledby="running-heading">
             <h2 id="running-heading">{labels.runningNow}</h2>
             {overview.activeRuns.length === 0
@@ -236,9 +236,8 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
                 </ul>
               )}
           </section>
-          </div>
           {overview.lastRuns.length > 0 && (
-          <section className="section" aria-labelledby="last-heading">
+          <section className="section overview-last" aria-labelledby="last-heading">
             <div className="section-head">
               <h2 id="last-heading">{labels.lastRan}</h2>
               <button type="button" className="text-link" onClick={() => onNavigate('history')}>{labels.openHistory}</button>

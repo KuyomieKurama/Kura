@@ -39,7 +39,14 @@ export function TestStrip() {
   return (
     <p className="test-strip">
       <Glyph icon={Warning} size={16} />
-      <span>{insecure ? `${labels.testSurface}: ${labels.insecureConnection}` : labels.testSurface}</span>
+      {insecure
+        ? (
+          <>
+            <span className="strip-wide">{`${labels.testSurface}: ${labels.insecureConnection}`}</span>
+            <span className="strip-narrow">{`${labels.testSurface}: ${labels.insecureShort}`}</span>
+          </>
+        )
+        : <span>{labels.testSurface}</span>}
     </p>
   );
 }

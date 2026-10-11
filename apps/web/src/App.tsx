@@ -184,7 +184,7 @@ export function App() {
     { view: 'media', label: labels.media, icon: Image, group: 'main' },
     { view: 'subscriptions', label: labels.subscriptions, shortLabel: labels.subscriptionsShort, icon: ArrowsClockwise, group: 'main' },
     { view: 'history', label: labels.history, icon: ClockCounterClockwise, group: 'main' },
-    { view: 'immich', label: labels.immich, icon: Images, group: 'main', more: true },
+    { view: 'immich', label: labels.immich, icon: Images, group: 'admin', more: true },
     ...(isAdmin
       ? [
         { view: 'users', label: labels.users, icon: Users, group: 'admin' as const, more: true },
