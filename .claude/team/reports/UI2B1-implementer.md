@@ -54,7 +54,7 @@ req_id REQ-DL-008, req_hash b838cb501c2e1aa5, Branch ui/next, Worktree /work/wt/
 
 ## Befehle und Ergebnisse
 
-- `corepack pnpm check`: exit 0, Test Files 76 passed, Tests 1593 passed, 1 skipped (vor der letzten Kleinigkeit content-visibility und Credentials-Text; danach `eslint . --max-warnings=0`, `tsc --noEmit` und `vitest run` in apps/web grün, 127 Tests).
+- `corepack pnpm check`: exit 0, Test Files 76 passed, Tests 1593 passed, 1 skipped, auf dem endgültigen Stand (nach content-visibility und Credentials-Text) erneut ausgeführt, gleiches Ergebnis. apps/web: 127 Tests.
 - `node tests/ui-shots/capture.mjs --skip-build --out=/work/shots-ui2b1`: 85 Screenshots (hell 1440, dunkel 1440, hell 390). Neue Ansichten: media-page, subscription-detail. Konsole: 401, 404, 500 wie oben erklärt.
 - `node tests/ui-shots/keyboard.mjs --skip-build`: alle Prüfungen grün (Fokusring 2px solid, Abstand 2px, Mehr-Sheet, Zielgröße 64px).
 - `node tests/ui-shots/media-check.mjs --skip-build`: alle Prüfungen grün.
