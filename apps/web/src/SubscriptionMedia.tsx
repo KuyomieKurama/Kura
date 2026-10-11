@@ -7,6 +7,7 @@ import { MediaGrid, MediaSkeleton } from './MediaGrid.js';
 import { MediaViewer } from './MediaViewer.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
+import { Segmented } from './ui/Segmented.js';
 import { EmptyState } from './ui/EmptyState.js';
 
 const FILTERS: { value: MediaFilter; label: string; count: (counts: Counts) => number }[] = [
@@ -78,20 +79,14 @@ export function SubscriptionMedia({ subscriptionId, reloadKey = 0 }: { subscript
 
   return (
     <section className="detail-block media-section" aria-label="Medien">
-      <h4>Medien</h4>
+      <h4 className="sr-only">Medien</h4>
       {counts && counts.all > 0 && (
-        <div className="media-filter" role="group" aria-label="Medientyp">
-          {FILTERS.map((entry) => (
-            <Button
-              key={entry.value}
-              variant={filter === entry.value ? 'primary' : 'secondary'}
-              aria-pressed={filter === entry.value}
-              onClick={() => setFilter(entry.value)}
-            >
-              {`${entry.label} (${entry.count(counts)})`}
-            </Button>
-          ))}
-        </div>
+        <Segmented
+          label="Medientyp"
+          value={filter}
+          onChange={setFilter}
+          options={FILTERS.map((entry) => ({ value: entry.value, label: entry.label, count: entry.count(counts) }))}
+        />
       )}
       {status === 'error' && (
         <Banner tone="danger">
@@ -101,7 +96,7 @@ export function SubscriptionMedia({ subscriptionId, reloadKey = 0 }: { subscript
       )}
       {status === 'loading' && items.length === 0 && <MediaSkeleton />}
       {nothingAtAll && <EmptyState title="Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen." />}
-      {empty && !nothingAtAll && <EmptyState title="Für diesen Filter gibt es keine Dateien." hint="Wählen Sie „Alle“, um alles zu sehen." />}
+      {empty && !nothingAtAll && <EmptyState title="Für diesen Filter gibt es keine Dateien." hint="Wähle „Alle“, um alles zu sehen." />}
       {items.length > 0 && <MediaGrid groups={groups} onOpen={(asset) => setViewing(asset.id)} />}
       {status === 'ready' && error && items.length > 0 && <Banner tone="danger">{error}</Banner>}
       {nextCursor && (

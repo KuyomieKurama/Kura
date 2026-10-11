@@ -1,55 +1,5 @@
 /* Subscriptions, schedules, adapters, limits and other page-specific layouts. */
 
-/* Subscription list: one panel, rows separated by 1px lines. */
-.sub-list {
-  overflow: hidden;
-}
-
-.sub-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--line);
-}
-
-.sub-row:last-child {
-  border-bottom: 0;
-}
-
-.sub-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3) var(--space-5);
-}
-
-.sub-main {
-  display: flex;
-  flex: 1 1 360px;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.sub-main p {
-  max-width: 100%;
-}
-
-.sub-facts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-4);
-}
-
-.sub-facts p {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .row-actions {
   display: flex;
   flex-wrap: wrap;

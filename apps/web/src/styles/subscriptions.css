@@ -1,0 +1,268 @@
+/* Subscriptions: a list of rows (no cards), the detail page with tabs. */
+
+.sub-list {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.sub-head,
+.sub-row {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 3fr) minmax(0, 2fr) 72px auto;
+  align-items: center;
+  column-gap: var(--space-4);
+}
+
+.sub-head {
+  padding: 0 var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+}
+
+.sub-row {
+  position: relative;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.sub-row:hover {
+  background: var(--surface-sunken);
+}
+
+.sub-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 64px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sub-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sub-title {
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+
+.sub-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sub-count {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.sub-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.sub-messages {
+  grid-column: 1 / -1;
+  margin-top: var(--space-3);
+}
+
+.cover {
+  flex: none;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.cover-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.run-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Narrow: the row stacks, the primary action takes the full width. */
+@container (max-width: 760px) {
+  .sub-head {
+    display: none;
+  }
+
+  .sub-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-2);
+  }
+
+  .sub-open {
+    grid-column: 1;
+  }
+
+  .sub-last,
+  .sub-next,
+  .sub-count {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+    text-align: left;
+  }
+
+  .sub-next::before {
+    content: 'Nächster Lauf:';
+    color: var(--ink-muted);
+  }
+
+  .sub-count::after {
+    content: 'Medien';
+    color: var(--ink-muted);
+  }
+
+  .sub-actions {
+    display: contents;
+  }
+
+  .sub-actions .btn:not(.btn-icon) {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .sub-actions .menu {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+/* Detail */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--ink);
+}
+
+.detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.detail-name {
+  min-width: 0;
+}
+
+.detail-name h1 {
+  font-size: 32px;
+  line-height: 36px;
+}
+
+.address {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tab-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.schedule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.schedule-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.run-row {
+  display: grid;
+  grid-template-columns: 11ch 7ch minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+.run-outcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+@media (max-width: 639px) {
+  .run-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .detail-actions .btn-primary {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .detail-actions {
+    width: 100%;
+  }
+}

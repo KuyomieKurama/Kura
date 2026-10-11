@@ -54,7 +54,7 @@ export function App() {
         setView('login');
       } else {
         await loadUsers();
-        setView(state.passwordChangeRequired ? 'forced-password' : 'dashboard');
+        setView(state.passwordChangeRequired ? 'forced-password' : window.location.hash.startsWith('#/abonnements') ? 'subscriptions' : 'dashboard');
       }
     } catch (cause) {
       setError(errorMessage(cause));
@@ -211,7 +211,7 @@ export function App() {
         : undefined}
     >
       {view === 'dashboard' && <Dashboard health={health} status={status} checkedAt={checkedAt} onNavigate={(next) => setView(next as View)} />}
-      {view === 'subscriptions' && <SubscriptionsPage isAdmin={isAdmin} />}
+      {view === 'subscriptions' && <SubscriptionsPage isAdmin={isAdmin} onOpenHistory={() => setView('history')} />}
       {view === 'history' && <HistoryPage onOpenSubscriptions={() => setView('subscriptions')} />}
       {view === 'limits' && isAdmin && <AdminLimitsPage />}
       {view === 'immich' && <ImmichPage isAdmin={isAdmin} />}

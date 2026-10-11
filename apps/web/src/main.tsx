@@ -9,6 +9,7 @@ import './styles/shell.css';
 import './styles/components.css';
 import './styles/ui.css';
 import './styles/overview.css';
+import './styles/subscriptions.css';
 import './styles/auth.css';
 import './styles/pages.css';
 import './styles/ledger.css';
