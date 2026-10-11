@@ -55,8 +55,22 @@ worker needs on top of what the API needs:
 | `KURA_STORAGE_QUOTA_BYTES` | API, worker | Same per-user quota. |
 | `WORKER_*`, `KURA_WORK_DIR` | worker | Optional tuning; defaults are in `.env.example`. In the container `KURA_WORK_DIR` is `/var/lib/kura/staging` (not persistent; the biggest file must fit there twice). |
 | `KURA_YTDLP_PATH`, `KURA_YTDLP_SHA256`, `KURA_GALLERYDL_PATH`, `KURA_GALLERYDL_SHA256`, `KURA_TOOL_PATH` | worker | External tools; see "External tools" below. Path and hash only together. |
+| `WORKER_DERIVATIVES`, `WORKER_DERIVATIVES_POLL_SECONDS` | worker | Previews and picture sizes of stored files (default on, pause 30 s when nothing is left). See "Previews (ffmpeg)". |
 | `KURA_EXTERNAL_TOOLS_EGRESS_CONFIRMED` | worker | `true` only after the egress barrier below exists. Unset or `false`: yt-dlp and gallery-dl are never started. |
 | `KURA_TOOLS_HOST_DIR` | script | Host directory mounted read-only at `/opt/kura-tools` in `kura-worker`. |
+
+## Previews (ffmpeg)
+
+After a file is stored, the worker derives its size, its duration, its average colour and two previews (480 and 960
+pixels wide, WebP or JPEG) with `ffprobe` and `ffmpeg`. They are looked up in `KURA_TOOL_PATH` (default
+`/usr/local/bin:/usr/bin:/bin`); put both files in the tool directory. Without them nothing is derived and the
+interface shows the original; no error, one log line. Originals are never changed: the derived data lives in the
+tables `asset_media_info` and `asset_thumbnails` (migration 0070) and may be deleted at any time, the worker then
+derives it again.
+
+Files stored before this version are processed in the background, newest first, 20 per pass; a file that could not
+be read is tried up to three times, six hours apart. `WORKER_DERIVATIVES=false` switches the whole thing off. The
+tool processes run with the same limits as the download tools (timeout, output limit, no shell).
 
 ## Storage
 

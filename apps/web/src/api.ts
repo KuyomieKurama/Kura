@@ -72,6 +72,17 @@ export const api = {
     const suffix = text ? `?${text}` : '';
     return request<SubscriptionMediaPage>(`/subscriptions/${id}/media${suffix}`);
   },
+  /** The stored files of the user over all subscriptions, newest first. */
+  media(options: { kind?: MediaFilter; cursor?: string | null; limit?: number; subscriptionId?: string } = {}) {
+    const query = new URLSearchParams();
+    if (options.kind && options.kind !== 'all') query.set('kind', options.kind);
+    if (options.cursor) query.set('cursor', options.cursor);
+    if (options.limit) query.set('limit', String(options.limit));
+    if (options.subscriptionId) query.set('subscriptionId', options.subscriptionId);
+    const text = query.toString();
+    return request<MediaPage>(`/media${text ? `?${text}` : ''}`);
+  },
+  overview() { return request<Overview>('/overview'); },
   /** `id` is the id of a history run or the id of the queued run that "Jetzt ausführen" returns. */
   runAssets(id: string) { return request<RunAssets>(`/runs/${id}/assets`); },
   killSwitches() { return request<{ killSwitches: KillSwitch[] }>('/admin/adapter-kill-switches'); },
@@ -119,6 +130,16 @@ export type Subscription = {
   targetState: 'unvalidated' | 'valid' | 'invalid';
   status: 'active' | 'paused';
   schedules?: Schedule[];
+} & Partial<SubscriptionSummary>;
+/** Only in the list answer (GET /subscriptions), not in the single-subscription answers. */
+export type SubscriptionSummary = {
+  platform: string | null;
+  lastRun: { id: string; state: string; finishedAt: string; assetsStored: number; assetsFailed: number; errorCode: string | null } | null;
+  nextRunAt: string | null;
+  mediaCount: { all: number; image: number; video: number };
+  coverAssetId: string | null;
+  /** The id of the queued run; usable with runAssets(). */
+  activeRunId: string | null;
 };
 export type SubscriptionInput = { name: string; targetUrl: string; platformHint?: string | null };
 export type SubscriptionRun = { id: string; triggerKind: 'schedule' | 'manual'; state: string; scheduledFor: string; attempts: number; maxAttempts: number; lastError: string | null; finishedAt: string | null };
@@ -207,9 +228,28 @@ export type MediaAsset = {
   postUrl: string | null; creatorName: string | null; runId: string; originalName: string; mediaKind: MediaKind; mimeType: string;
   byteSize: number | null; state: string; attempts: number; errorCode: string | null; errorMessage: string | null;
   storedAt: string | null;
+  /** Derived by the worker after storing; null / false until then, or when ffmpeg is not installed. */
+  width: number | null; height: number | null; durationSeconds: number | null; averageColor: string | null; hasThumbnail: boolean;
   immich: { state: string; verified: boolean; verifiedAt: string | null };
 };
 export type SubscriptionMediaPage = { items: MediaAsset[]; nextCursor: string | null; counts?: { all: number; image: number; video: number } };
+export type MediaPage = SubscriptionMediaPage;
+export type OverviewAttention = {
+  kind: 'auth_required' | 'failed' | 'partial'; subscriptionId: string; subscriptionName: string; runId: string; state: string;
+  platform: string | null; errorCode: string | null; errorMessage: string | null; finishedAt: string;
+};
+export type Overview = {
+  recentAssets: MediaAsset[];
+  activeRuns: {
+    /** The id of the queued run, usable with runAssets(). */
+    runId: string; subscriptionId: string; subscriptionName: string; triggerKind: string; queueState: string; state: string | null;
+    platform: string | null; startedAt: string | null; queuedAt: string; bytesStored: number;
+    counts: { postsFound: number; stored: number; failed: number; pending: number; downloading: number; verifying: number };
+  }[];
+  upcoming: { subscriptionId: string; subscriptionName: string; dueAt: string }[];
+  attention: OverviewAttention[];
+  lastRuns: HistoryRun[];
+};
 export type RunAssets = {
   run: Omit<HistoryRun, 'sourceUrl' | 'adapterId' | 'adapterVersion'> & { jobRunId: string } | null;
   queue: { state: string; lastError: string | null } | null;
@@ -218,6 +258,11 @@ export type RunAssets = {
   truncated: boolean;
   assets: MediaAsset[];
 };
+
+/** The preview of a stored file (480 or 960 pixels wide). 404 when none exists: fall back to contentUrl(). */
+export function thumbnailUrl(assetId: string, width: 480 | 960 = 480): string {
+  return `/api/v1/assets/${assetId}/thumbnail?w=${width}`;
+}
 
 /** The stream of a stored original. Served inline for safe media types, as an attachment otherwise or with `download`. */
 export function contentUrl(assetId: string, download = false): string {
