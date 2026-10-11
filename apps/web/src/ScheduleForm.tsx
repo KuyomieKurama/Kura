@@ -62,15 +62,15 @@ export function ScheduleForm({ subscriptionId, schedule, onSaved, onCancel }: {
     const { mode, timeZone } = state;
     if (mode === 'interval') {
       const amount = Number(state.amount);
-      if (!Number.isInteger(amount) || amount < 1) return 'Bitte geben Sie ein ganzzahliges Intervall ab 1 an.';
+      if (!Number.isInteger(amount) || amount < 1) return 'Gib ein ganzzahliges Intervall ab 1 an.';
       const existing = schedule?.rule.kind === 'interval' ? schedule.rule : undefined;
       return { kind: 'interval', everySeconds: intervalSeconds(amount, state.unit), timeZone, ...(existing ? { anchorUtc: existing.anchorUtc } : {}) };
     }
     if (mode === 'once') {
-      return state.atUtc ? { kind: 'once', atUtc: `${state.atUtc}:00Z`, timeZone } : 'Bitte geben Sie den Zeitpunkt an.';
+      return state.atUtc ? { kind: 'once', atUtc: `${state.atUtc}:00Z`, timeZone } : 'Gib den Zeitpunkt an.';
     }
     const expression = mode === 'custom' ? state.expression.trim() : cronFromPreset(mode, state);
-    if (!expression) return 'Bitte geben Sie eine gültige Uhrzeit an.';
+    if (!expression) return 'Gib eine gültige Uhrzeit an.';
     return { kind: 'cron', expression, timeZone, gapPolicy: state.gapPolicy };
   }
 

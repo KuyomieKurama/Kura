@@ -71,7 +71,7 @@ function ImmichEndpointApprovals() {
       <p className="muted">Ziele in privaten Netzen oder auf diesem Rechner werden nur nach Freigabe von Host und Port durch einen Administrator kontaktiert. Link-Local- und Metadaten-Adressen sind immer gesperrt.</p>
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
       {approvals.length === 0
-        ? <EmptyState title="Keine Freigaben vorhanden." hint="Geben Sie unten Host und Port Ihres Immich-Servers frei." />
+        ? <EmptyState title="Keine Freigaben vorhanden." hint="Gib unten Host und Port deines Immich-Servers frei." />
         : <DataTable label="Freigaben" columns={columns} rows={approvals} rowKey={(approval) => `${approval.host}:${approval.port}`} />}
       <form onSubmit={approve} className="form-grid form-inline-actions">
         <Field label="Host">
@@ -131,7 +131,7 @@ export function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
     event.preventDefault();
     const file = new FormData(event.currentTarget).get('testFile');
     if (!(file instanceof File) || file.size === 0) {
-      setResult({ tone: 'danger', text: 'Bitte wählen Sie eine Testdatei aus.' });
+      setResult({ tone: 'danger', text: 'Wähle eine Testdatei aus.' });
       return;
     }
     if (file.size > 4 * 1024 * 1024) {

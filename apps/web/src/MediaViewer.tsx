@@ -1,6 +1,6 @@
-import { ArrowSquareOut, CaretLeft, CaretRight, DownloadSimple, X } from '@phosphor-icons/react';
-import { useEffect, useId, useRef } from 'react';
-import { contentUrl, type MediaAsset } from './api.js';
+import { ArrowSquareOut, CaretLeft, CaretRight, DownloadSimple, File as FileIcon, Info, X } from '@phosphor-icons/react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { contentUrl, type MediaAsset, thumbnailUrl } from './api.js';
 import { formatBytes, handoverLabels } from './history-labels.js';
 import { labels } from './labels.js';
 import { altText, kindLabels, platformLabel, postLabel, safeExternalUrl } from './media.js';
@@ -21,7 +21,7 @@ function Stage({ asset }: { asset: MediaAsset }) {
   if (asset.mediaKind === 'image') return <img key={asset.id} className="viewer-media" src={url} alt={altText(asset)} />;
   if (asset.mediaKind === 'video') return <video key={asset.id} className="viewer-media" src={url} controls preload="metadata" playsInline aria-label={altText(asset)} />;
   if (asset.mediaKind === 'audio') return <audio key={asset.id} className="viewer-audio" src={url} controls preload="metadata" aria-label={altText(asset)} />;
-  return <p className="viewer-nopreview">Für diesen Dateityp gibt es keine Vorschau. Sie können die Datei herunterladen.</p>;
+  return <p className="viewer-nopreview">Für diesen Dateityp gibt es keine Vorschau. Du kannst die Datei herunterladen.</p>;
 }
 
 function Metadata({ asset }: { asset: MediaAsset }) {
@@ -66,8 +66,8 @@ function Metadata({ asset }: { asset: MediaAsset }) {
 }
 
 /**
- * The viewer for one stored file: a modal dialog with the file, previous/next (buttons and arrow keys), the
- * metadata and the explicit download. Escape closes it. While it is open the focus stays inside; on close it
+ * The viewer for one stored file: a full-screen modal dialog with the file, previous/next (buttons and arrow keys), the
+ * strip of the post's files, an info column (key I) and the explicit download. Escape closes it. While it is open the focus stays inside; on close it
  * returns to the cell of the file that was shown last (the opener, if the user did not move on).
  */
 export function MediaViewer({ items, index, onNavigate, onClose, hasMore = false, loadingMore = false, onLoadMore }: {
@@ -151,20 +151,57 @@ export function MediaViewer({ items, index, onNavigate, onClose, hasMore = false
     return () => document.removeEventListener('keydown', listener);
   }, []);
 
+  const [info, setInfo] = useState(() => typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 1280px)').matches);
+  const infoRef = useRef(setInfo);
+  infoRef.current = setInfo;
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if ((event.key === 'i' || event.key === 'I') && !event.ctrlKey && !event.metaKey && !event.altKey && !isMediaControl(event.target)) infoRef.current((open) => !open);
+    };
+    document.addEventListener('keydown', listener);
+    return () => document.removeEventListener('keydown', listener);
+  }, []);
+
   if (!asset) return null;
+  // The strip shows the other files of the same post, so a carousel can be walked through without leaving the file.
+  const siblings = items.map((item, position) => ({ item, position })).filter(({ item }) => item.postId === asset.postId);
   return (
-    <div className="backdrop viewer-backdrop" role="presentation">
-      <div className="dialog viewer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog}>
-        <header className="dialog-header">
-          <h2 id={titleId} className="truncate" title={asset.originalName}>{asset.originalName}</h2>
-          <Button variant="ghost" icon={X} onClick={onClose}>{labels.close}</Button>
-        </header>
+    <div className="viewer-screen" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog} data-info={info}>
+      <header className="viewer-bar">
+        <Button variant="ghost" icon={X} className="viewer-close" onClick={onClose}>{labels.close}</Button>
+        <h2 id={titleId} className="truncate" title={asset.originalName}>{postLabel(asset)}</h2>
+        <p className="meta viewer-position num" aria-live="polite">{`${index + 1} von ${items.length}${hasMore ? '+' : ''}`}</p>
+        <Button variant="ghost" icon={Info} aria-pressed={info} onClick={() => setInfo(!info)}>Info</Button>
+      </header>
+      <div className="viewer-stage">
         <div className="viewer-frame"><Stage asset={asset} /></div>
-        <nav className="viewer-nav" aria-label="Zwischen Dateien wechseln">
-          <Button icon={CaretLeft} onClick={() => onNavigate(index - 1)} disabled={!hasPrevious}>Vorherige</Button>
-          <p className="meta viewer-position" aria-live="polite">{`Datei ${index + 1} von ${items.length}${hasMore ? ' (weitere werden nachgeladen)' : ''}`}</p>
-          <Button icon={CaretRight} onClick={() => onNavigate(index + 1)} disabled={!hasNext}>Nächste</Button>
-        </nav>
+        <button type="button" className="viewer-arrow viewer-arrow-prev" aria-label="Vorherige" disabled={!hasPrevious} onClick={() => onNavigate(index - 1)}>
+          <Glyph icon={CaretLeft} size={24} />
+        </button>
+        <button type="button" className="viewer-arrow viewer-arrow-next" aria-label="Nächste" disabled={!hasNext} onClick={() => onNavigate(index + 1)}>
+          <Glyph icon={CaretRight} size={24} />
+        </button>
+      </div>
+      {siblings.length > 1 && (
+        <ul className="viewer-strip" aria-label="Dateien dieses Beitrags">
+          {siblings.map(({ item, position }) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                className="viewer-strip-item"
+                aria-label={`${kindLabels[item.mediaKind]} ${item.originalName}`}
+                aria-current={item.id === asset.id ? 'true' : undefined}
+                onClick={() => onNavigate(position)}
+              >
+                {item.mediaKind === 'image' || item.hasThumbnail
+                  ? <img src={item.hasThumbnail ? thumbnailUrl(item.id, 480) : contentUrl(item.id)} alt="" loading="lazy" />
+                  : <Glyph icon={FileIcon} size={20} />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <aside className="viewer-info" aria-label="Informationen zur Datei" hidden={!info}>
         <Metadata asset={asset} />
         <div className="form-actions">
           <a className="btn btn-primary" href={contentUrl(asset.id, true)} download={asset.originalName}>
@@ -172,7 +209,7 @@ export function MediaViewer({ items, index, onNavigate, onClose, hasMore = false
             Herunterladen
           </a>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }

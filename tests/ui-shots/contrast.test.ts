@@ -28,7 +28,8 @@ const { light, dark } = extractBlocks(tokensCss);
 const COLOR_TOKENS = [
   'bg', 'surface', 'surface-sunken', 'surface-overlay', 'ink', 'ink-muted', 'line', 'line-strong',
   'accent', 'accent-hover', 'accent-ink', 'accent-soft',
-  'ok', 'ok-soft', 'warn', 'warn-soft', 'danger', 'danger-soft', 'viewer-bg'
+  'ok', 'ok-soft', 'warn', 'warn-soft', 'danger', 'danger-soft', 'viewer-bg',
+  'viewer-ink', 'viewer-ink-muted', 'viewer-hover', 'viewer-hover-strong', 'viewer-line'
 ];
 /** Tokens that must exist in both schemes but are not plain hex colours. */
 const OTHER_TOKENS = ['scrim', 'shadow-popover', 'shadow-dialog', 'backdrop', 'focus'];
@@ -99,7 +100,15 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['accent', 'accent-soft', 3, 'focus ring on the active navigation item'],
   ['ok', 'surface', 3, 'ledger segment: stored'],
   ['danger', 'surface', 3, 'ledger segment: failed'],
-  ['warn', 'surface', 3, 'ledger segment: partly or attention']
+  ['warn', 'surface', 3, 'ledger segment: partly or attention'],
+  // The viewer (dark in both schemes)
+  ['viewer-ink', 'viewer-bg', 4.5, 'viewer text, buttons, focus ring'],
+  ['viewer-ink-muted', 'viewer-bg', 4.5, 'viewer meta text'],
+  ['viewer-ink', 'viewer-hover', 4.5, 'viewer buttons on hover and pressed'],
+  ['viewer-ink', 'viewer-hover-strong', 4.5, 'viewer arrows on hover'],
+  ['viewer-ink-muted', 'viewer-hover', 4.5, 'viewer position text on a pressed bar'],
+  ['viewer-bg', 'viewer-ink', 4.5, 'download button in the viewer'],
+  ['viewer-ink', 'viewer-bg', 3, 'viewer focus ring and active strip frame']
 ];
 
 describe.each([['light', light], ['dark', dark]] as const)('design tokens, %s scheme', (_name, tokens) => {

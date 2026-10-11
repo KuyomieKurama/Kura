@@ -69,7 +69,7 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
         lead="Hier steht, was Kura wann von welcher Quelle geholt hat, mit dem Zustand jeder einzelnen Datei. Der Verlauf bleibt erhalten, auch wenn ein Abonnement gelöscht wird. Lokale Originale werden von Kura nicht entfernt."
         actions={<Button icon={ArrowsClockwise} onClick={() => void load()}>Aktualisieren</Button>}
       />
-      {error && <Banner tone="danger">{error} Prüfen Sie die Verbindung und wählen Sie „Aktualisieren“.</Banner>}
+      {error && <Banner tone="danger">{error} Prüfe die Verbindung und wähle „Aktualisieren“.</Banner>}
       {data === null
         ? (!error && <SkeletonRows count={4} tall />)
         : (
@@ -97,7 +97,7 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
                 ? (
                   <EmptyState
                     title="Noch keine Läufe."
-                    hint="Legen Sie ein Abonnement an und wählen Sie „Jetzt ausführen“."
+                    hint="Lege ein Abonnement an und wähle „Jetzt ausführen“."
                     action={onOpenSubscriptions && <Button variant="primary" icon={ListChecks} onClick={onOpenSubscriptions}>Zu den Abonnements</Button>}
                   />
                 )

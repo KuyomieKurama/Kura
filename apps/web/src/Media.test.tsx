@@ -135,7 +135,7 @@ async function openViewer() {
 
 it('opens the viewer with the file, the metadata, the source link and the download', async () => {
   const { dialog } = await openViewer();
-  expect(within(dialog).getByRole('heading', { name: 'a1.png' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': a1.png'], [aria-label$=': a1.png']`), 'file shown: a1.png').not.toBeNull();
   expect(within(dialog).getByAltText('Bild: a1.png')).toHaveAttribute('src', '/api/v1/assets/a1/content');
   expect(within(dialog).getByText('2 KiB')).toBeInTheDocument();
   expect(within(dialog).getByText('Bild (image/png)')).toBeInTheDocument();
@@ -146,7 +146,7 @@ it('opens the viewer with the file, the metadata, the source link and the downlo
   const download = within(dialog).getByRole('link', { name: 'Herunterladen' });
   expect(download).toHaveAttribute('href', '/api/v1/assets/a1/content?download=1');
   expect(within(dialog).getByText('Noch nicht an Immich übergeben')).toBeInTheDocument();
-  expect(within(dialog).getByText('Datei 1 von 4')).toBeInTheDocument();
+  expect(within(dialog).getByText('1 von 4')).toBeInTheDocument();
 });
 
 it('does not offer a source link for an address that is not a web link', async () => {
@@ -160,7 +160,7 @@ it('does not offer a source link for an address that is not a web link', async (
 it('walks through the files with the arrow keys and plays videos with native controls', async () => {
   const { dialog } = await openViewer();
   fireEvent.keyDown(document, { key: 'ArrowRight' });
-  expect(within(dialog).getByRole('heading', { name: 'a2.png' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': a2.png'], [aria-label$=': a2.png']`), 'file shown: a2.png').not.toBeNull();
   fireEvent.keyDown(document, { key: 'ArrowRight' });
   const video = within(dialog).getByLabelText('Video: clip.mp4');
   expect(video.tagName).toBe('VIDEO');
@@ -168,16 +168,16 @@ it('walks through the files with the arrow keys and plays videos with native con
   expect(video).toHaveAttribute('src', '/api/v1/assets/a3/content');
   // The arrow keys on a focused video belong to its controls.
   fireEvent.keyDown(video, { key: 'ArrowRight' });
-  expect(within(dialog).getByRole('heading', { name: 'clip.mp4' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': clip.mp4'], [aria-label$=': clip.mp4']`), 'file shown: clip.mp4').not.toBeNull();
   fireEvent.keyDown(document, { key: 'ArrowRight' });
-  expect(within(dialog).getByRole('heading', { name: 'einzel.png' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': einzel.png'], [aria-label$=': einzel.png']`), 'file shown: einzel.png').not.toBeNull();
   expect(within(dialog).getByRole('button', { name: 'Nächste' })).toBeDisabled();
   fireEvent.keyDown(document, { key: 'ArrowRight' });
-  expect(within(dialog).getByRole('heading', { name: 'einzel.png' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': einzel.png'], [aria-label$=': einzel.png']`), 'file shown: einzel.png').not.toBeNull();
   fireEvent.keyDown(document, { key: 'ArrowLeft' });
-  expect(within(dialog).getByRole('heading', { name: 'clip.mp4' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': clip.mp4'], [aria-label$=': clip.mp4']`), 'file shown: clip.mp4').not.toBeNull();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Vorherige' }));
-  expect(within(dialog).getByRole('heading', { name: 'a2.png' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': a2.png'], [aria-label$=': a2.png']`), 'file shown: a2.png').not.toBeNull();
 });
 
 it('closes with Escape and returns the focus to the cell it was opened from', async () => {
@@ -361,7 +361,7 @@ it('opens a stored file of the live view in the viewer', async () => {
   render(<RunLive runId="job-1" />);
   fireEvent.click(await screen.findByRole('button', { name: 'Bild s1.png ansehen' }));
   const dialog = await screen.findByRole('dialog');
-  expect(within(dialog).getByRole('heading', { name: 's1.png' })).toBeInTheDocument();
+  expect(dialog.querySelector(`[alt$=': s1.png'], [aria-label$=': s1.png']`), 'file shown: s1.png').not.toBeNull();
   // Only stored files can be walked through.
-  expect(within(dialog).getByText('Datei 1 von 1')).toBeInTheDocument();
+  expect(within(dialog).getByText('1 von 1')).toBeInTheDocument();
 });
