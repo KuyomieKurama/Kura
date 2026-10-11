@@ -1,4 +1,4 @@
-/* global document, requestAnimationFrame, performance, Buffer */
+/* global document, requestAnimationFrame, performance, Buffer, MediaRecorder, Blob, btoa */
 // Seeds real (small, generated) media for the screenshots of the media view and the live run view.
 //
 // The files go in through the same code the worker uses: HistoryRepository (history rows) and DatabaseBlobStore

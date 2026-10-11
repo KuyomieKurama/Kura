@@ -1,4 +1,4 @@
-/* global process, console, fetch, document, window, getComputedStyle, Buffer */
+/* global process, console, fetch, document, window, getComputedStyle, HTMLImageElement */
 // Browser limits of the media views: node tests/ui-shots/media-limits.mjs [--skip-build] [--out=dir]
 //
 // Real sizes instead of 160px placeholders: the post "Grosse Formate" holds photos of 4000x6000, 6000x1000 and
