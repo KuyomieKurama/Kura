@@ -41,7 +41,7 @@ function attentionText(kind: Overview['attention'][number]['kind']): string {
 function Lede({ overview }: { overview: Overview }) {
   const next = overview.upcoming[0];
   const last = overview.lastRuns.find((run) => run.finishedAt && run.assetsStored > 0);
-  const nextPart = next ? <> Nächster Lauf <RelativeTime value={next.dueAt} detail />.</> : null;
+  const nextPart = next ? <> Nächster Lauf <RelativeTime value={next.dueAt} detail endSentence /></> : null;
   if (overview.recentAssets.length === 0 && !last) return <p className="page-lead">{labels.emptyArchive}</p>;
   if (!last || !last.finishedAt) {
     return <p className="page-lead">Heute war noch kein Lauf.{nextPart}</p>;
@@ -195,7 +195,7 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
             {overview.activeRuns.length === 0
               ? (
                 <p className="muted">
-                  {labels.nothingRunning}{nextRun && <> Der nächste Lauf startet <RelativeTime value={nextRun.dueAt} detail />.</>}
+                  {labels.nothingRunning}{nextRun && <> Der nächste Lauf startet <RelativeTime value={nextRun.dueAt} detail endSentence /></>}
                 </p>
               )
               : (

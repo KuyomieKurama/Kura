@@ -47,7 +47,7 @@ try {
       check(response.ok, 'first-run setup through the API');
     }
     await page.goto(stack.origin);
-    await page.getByRole('heading', { name: 'Anmelden' }).waitFor();
+    await page.getByRole('heading', { name: 'Anmelden', includeHidden: true }).waitFor();
 
     // Sign in with the keyboard only.
     await page.keyboard.press('Tab');
@@ -79,7 +79,9 @@ try {
     const ring = await focusRing(page);
     check(ring.style === 'solid' && ring.width >= 2 && ring.offset >= 2, `focus ring is 2px solid with 2px offset (${JSON.stringify(ring)})`);
     await page.keyboard.press('Tab');
-    check((await activeName(page)).includes('Abonnements'), 'Tab moves to the next navigation item');
+    check((await activeName(page)).includes('Medien'), 'Tab moves to the next navigation item');
+    await page.keyboard.press('Tab');
+    check((await activeName(page)).includes('Abonnements'), 'Tab reaches the subscriptions entry');
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Abonnements', level: 1 }).waitFor();
     const current = await page.getByRole('navigation').getByRole('button', { name: 'Abonnements', exact: true }).getAttribute('aria-current');
@@ -116,17 +118,18 @@ try {
   await page.getByLabel('Passwort').fill(ADMIN.password);
   await page.keyboard.press('Enter');
   await page.getByRole('heading', { name: 'Übersicht', level: 1 }).waitFor();
-  const menu = page.getByRole('button', { name: 'Menü' });
-  check(!(await page.getByRole('button', { name: 'Verlauf', exact: true }).isVisible()), 'the navigation is collapsed on a narrow screen');
-  await menu.focus();
+  const more = page.getByRole('button', { name: 'Mehr', exact: true });
+  check(await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Verlauf', exact: true }).isVisible(), 'the bottom navigation shows the main pages on a narrow screen');
+  check(!(await page.getByRole('button', { name: 'Immich', exact: true }).isVisible()), 'rarely used pages are behind "Mehr"');
+  await more.focus();
   await page.keyboard.press('Enter');
-  check((await menu.getAttribute('aria-expanded')) === 'true', 'Enter on the menu button opens the navigation');
-  check(await page.getByRole('button', { name: 'Verlauf', exact: true }).isVisible(), 'navigation items are visible and reachable');
+  await page.getByRole('dialog').waitFor();
+  check(await page.getByRole('dialog').getByRole('button', { name: 'Immich', exact: true }).isVisible(), 'Enter on "Mehr" opens the sheet with the other pages');
   await page.keyboard.press('Escape');
-  check((await menu.getAttribute('aria-expanded')) === 'false', 'Escape closes the navigation');
-  check(await menu.evaluate((element) => element === document.activeElement), 'focus returns to the menu button');
-  const target = await menu.boundingBox();
-  check(target !== null && target.height >= 40, `menu button is at least 40px high (${target?.height}px)`);
+  check(!(await page.getByRole('dialog').isVisible().catch(() => false)), 'Escape closes the sheet');
+  check(await more.evaluate((element) => element === document.activeElement), 'focus returns to "Mehr"');
+  const target = await more.boundingBox();
+  check(target !== null && target.height >= 44, `the "Mehr" target is at least 44px high (${target?.height}px)`);
   await context.close();
 } finally {
   await browser.close();

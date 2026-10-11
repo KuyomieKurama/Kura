@@ -22,10 +22,12 @@ function subscribe(listener: () => void): () => void {
  * A point in time as <time datetime>. Relative up to 24 hours, otherwise short and absolute; the full time is the title.
  * It refreshes every 30 seconds and does not announce the change to screen readers.
  */
-export function RelativeTime({ value, detail = false, capitalize = false, timeZone }: {
+export function RelativeTime({ value, detail = false, capitalize = false, endSentence = false, timeZone }: {
   value: string | Date;
   detail?: boolean;
   capitalize?: boolean;
+  /** Closes the sentence with a full stop, unless the text already ends with one ("Min."). */
+  endSentence?: boolean;
   timeZone?: string;
 }) {
   const [now, setNow] = useState(() => new Date());
@@ -34,8 +36,11 @@ export function RelativeTime({ value, detail = false, capitalize = false, timeZo
   if (Number.isNaN(date.getTime())) return null;
   const text = relativeText(date, now, { detail, ...(timeZone ? { timeZone } : {}) });
   return (
-    <time className="num" dateTime={date.toISOString()} title={absoluteFull(date, timeZone)}>
-      {capitalize ? upperFirst(text) : text}
-    </time>
+    <>
+      <time className="num" dateTime={date.toISOString()} title={absoluteFull(date, timeZone)}>
+        {capitalize ? upperFirst(text) : text}
+      </time>
+        {endSentence && !text.endsWith('.') ? '.' : ''}
+    </>
   );
 }

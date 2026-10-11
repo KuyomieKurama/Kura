@@ -88,9 +88,15 @@ async function seed(origin) {
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 async function navigate(page, name) {
-  const menu = page.getByRole('button', { name: 'Menü' });
-  if (await menu.isVisible() && (await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();
-  await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name, exact: true }).click();
+  const short = { Abonnements: 'Abos' }[name] ?? name;
+  const item = page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: new RegExp(`^(${name}|${short})$`) });
+  if (await item.count() > 0) {
+    await item.click();
+  } else {
+    // Narrow screens keep the rarely used pages behind "Mehr".
+    await page.getByRole('button', { name: 'Mehr', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name, exact: true }).click();
+  }
   await page.waitForTimeout(150);
 }
 
@@ -148,7 +154,7 @@ async function main() {
     for (const variant of variants) {
       const { context, page } = await open(variant);
       await page.goto(stack.origin);
-      await page.getByRole('heading', { name: 'Kura einrichten' }).waitFor();
+      await page.getByRole('heading', { name: 'Willkommen bei Kura' }).waitFor();
       await page.evaluate(() => document.fonts.ready);
       await shooter(page, variant)('setup');
       await context.close();
@@ -175,32 +181,40 @@ async function main() {
       // 3. Signed in.
       await signIn(context, stack.origin);
       await page.goto(stack.origin);
-      await page.getByText('Erreichbar', { exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Übersicht', level: 1 }).waitFor();
+      await picturesLoaded(page);
       await shot('dashboard');
 
       if (variant.width < 1024) {
-        await page.getByRole('button', { name: 'Menü' }).click();
-        await shot('menu-open');
-        await page.getByRole('button', { name: 'Menü' }).click();
+        await page.getByRole('button', { name: 'Mehr', exact: true }).click();
+        await shot('menu-open', { viewportOnly: true });
+        await page.keyboard.press('Escape');
       }
 
       // Subscriptions: list, details, form, empty, loading, error.
       await navigate(page, 'Abonnements');
       await page.getByRole('article').first().waitFor();
       await shot('subscriptions');
-      await page.getByRole('article', { name: /Abonnement Atelier Mori/ }).getByRole('button', { name: 'Zeitpläne und Läufe' }).click();
-      await page.getByText('Zeitpläne', { exact: true }).first().waitFor();
-      await page.waitForTimeout(300);
-      await shot('subscriptions-expanded');
       await page.getByText('Unterstützte Quellen und Adapter').click();
       await page.waitForTimeout(500);
       await shot('subscriptions-adapters');
+      await page.getByText('Unterstützte Quellen und Adapter').click();
+      // The page of one subscription: its schedules and its runs.
+      await page.getByRole('button', { name: 'Atelier Mori öffnen' }).click();
+      await page.getByRole('heading', { name: 'Atelier Mori', level: 1 }).waitFor();
+      await page.getByRole('tab', { name: /^Zeitpläne/ }).click();
+      await page.getByRole('region', { name: 'Zeitpläne' }).waitFor();
+      await page.waitForTimeout(300);
+      await shot('subscriptions-expanded');
+      await page.getByRole('link', { name: 'Abonnements' }).click();
+      await page.getByRole('article').first().waitFor();
       await page.getByRole('button', { name: 'Abonnement anlegen' }).click();
       const createForm = page.getByRole('form', { name: 'Abonnement anlegen' });
       await createForm.getByLabel('Ziel-URL').fill('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
       await createForm.getByRole('button', { name: 'Adresse prüfen' }).click();
       await page.getByLabel('Ergebnis der Adressprüfung').waitFor();
-      await shot('subscriptions-form');
+      await shot('subscriptions-form', { viewportOnly: true });
+      await page.keyboard.press('Escape');
 
       await page.route('**/api/v1/subscriptions', (route) => route.request().method() === 'GET' ? json(route, { subscriptions: [] }) : route.continue());
       await navigate(page, 'Übersicht');
@@ -230,19 +244,23 @@ async function main() {
       await page.unroute('**/api/v1/subscriptions');
 
       // Media: the grid of a subscription, the viewer (picture and video), the empty state and the live view.
-      const mara = page.getByRole('article', { name: /Abonnement Atelier Mori/ });
       await navigate(page, 'Übersicht');
+      await navigate(page, 'Medien');
+      await page.getByRole('button', { name: /Bild illustration_01/ }).waitFor();
+      await picturesLoaded(page);
+      await shot('media-page');
+
       await navigate(page, 'Abonnements');
-      await mara.getByRole('button', { name: 'Medien', exact: true }).click();
-      await page.getByRole('region', { name: 'Medien' }).getByRole('button', { name: /Bild illustration_01/ }).waitFor();
+      await page.getByRole('button', { name: 'Atelier Mori öffnen' }).click();
+      await page.getByRole('button', { name: /Bild illustration_01/ }).waitFor();
       await picturesLoaded(page);
       await shot('media-grid');
 
-      await mara.getByRole('button', { name: 'Videos (1)' }).click();
+      await page.getByRole('button', { name: 'Videos (1)' }).click();
       await page.getByRole('button', { name: /Video hafen_zeitraffer/ }).waitFor();
       await page.waitForTimeout(500);
       await shot('media-grid-videos');
-      await mara.getByRole('button', { name: 'Alle (14)' }).click();
+      await page.getByRole('button', { name: 'Alle (14)' }).click();
       await page.getByRole('button', { name: /Bild illustration_01/ }).waitFor();
       await picturesLoaded(page);
 
@@ -263,14 +281,16 @@ async function main() {
       await page.keyboard.press('Escape');
       await viewer.waitFor({ state: 'detached' });
 
-      await page.getByRole('article', { name: /Abonnement Kanal Nordlicht/ }).getByRole('button', { name: 'Medien', exact: true }).click();
+      await page.getByRole('link', { name: 'Abonnements' }).click();
+      await page.getByRole('button', { name: 'Kanal Nordlicht öffnen' }).click();
       await page.getByText('Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen.').waitFor();
       await shot('media-empty');
-      await page.getByRole('article', { name: /Abonnement Kanal Nordlicht/ }).getByRole('button', { name: 'Medien', exact: true }).click();
+      await page.getByRole('link', { name: 'Abonnements' }).click();
+      await page.getByRole('button', { name: 'Atelier Mori öffnen' }).click();
 
       // The run that is still going is the queued run of Atelier Mori: "Jetzt ausführen" shows it live.
-      await mara.getByRole('button', { name: 'Jetzt ausführen' }).click();
-      const live = mara.getByRole('region', { name: 'Lauf live' });
+      await page.getByRole('button', { name: 'Jetzt ausführen' }).click();
+      const live = page.getByRole('region', { name: 'Lauf live' });
       await live.getByText('1 wird geladen').waitFor();
       await picturesLoaded(page);
       await shot('live-run');
@@ -324,7 +344,13 @@ async function main() {
       await page.getByRole('form', { name: 'Limits bearbeiten' }).waitFor();
       await shot('limits');
 
-      await navigate(page, 'Konto');
+      if (variant.width >= 1024) {
+        await page.getByRole('button', { name: /^Konto:/ }).click();
+        await page.getByRole('menuitem', { name: 'Konto' }).click();
+      } else {
+        await page.getByRole('button', { name: 'Mehr', exact: true }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Konto', exact: true }).click();
+      }
       await page.getByRole('heading', { name: 'Passwort ändern' }).waitFor();
       await shot('account');
 

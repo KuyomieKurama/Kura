@@ -81,17 +81,18 @@ try {
 
   // --- the viewer with the keyboard -----------------------------------------------------------------------
   await page.goto(stack.origin);
-  await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Abonnements', exact: true }).click();
-  await page.getByRole('button', { name: 'Medien', exact: true }).click();
-  const cell = page.getByRole('button', { name: /^Bild illustration_01/ });
+  await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Medien', exact: true }).click();
+  // The page lists the newest first; the second-oldest picture has a next and a previous file.
+  const cell = page.getByRole('button', { name: /^Bild illustration_05/ });
   await cell.waitFor();
   await cell.focus();
   await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog');
   await dialog.waitFor();
-  const title = () => dialog.getByRole('heading', { level: 2 }).textContent();
+  // The heading of the viewer is the post; the file shown is the picture or video in the frame.
+  const title = async () => ((await dialog.locator('.viewer-media').first().getAttribute('alt')) ?? (await dialog.locator('.viewer-media').first().getAttribute('aria-label')) ?? '').replace(/^[^:]+: /, '');
   const first = await title();
-  check(first === 'illustration_01.png', `Enter opens the viewer (${first})`);
+  check(first.startsWith('illustration_05'), `Enter opens the viewer (${first})`);
   check(await page.evaluate(() => document.activeElement?.getAttribute('role') === 'dialog'), 'focus moves into the dialog');
   await page.keyboard.press('ArrowRight');
   const second = await title();

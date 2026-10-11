@@ -650,3 +650,8 @@ video.viewer-media {
     --row-h: 140px;
   }
 }
+
+.select-inline select {
+  min-width: 200px;
+  max-width: 320px;
+}

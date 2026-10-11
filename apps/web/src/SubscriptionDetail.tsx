@@ -41,7 +41,7 @@ function Summary({ subscription }: { subscription: Subscription }) {
       {subscription.status === 'paused'
         ? `${amount || last ? '. ' : ''}Pausiert, es werden keine neuen Läufe angelegt.`
         : subscription.nextRunAt
-          ? <>{amount || last ? ', ' : ''}nächster <RelativeTime value={subscription.nextRunAt} />.</>
+          ? <>{amount || last ? ', ' : ''}nächster <RelativeTime value={subscription.nextRunAt} endSentence /></>
           : `${amount || last ? '. ' : ''}Kein Zeitplan, das Abonnement läuft nicht von selbst.`}
     </p>
   );
@@ -189,6 +189,7 @@ export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory
 
   return (
     <>
+      <div className="detail-top">
       <a
         className="back-link"
         href="#/abonnements"
@@ -218,6 +219,7 @@ export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory
       </header>
       {subscription.targetState !== 'valid' && <div className="detail-chip"><StatusChip domain="target" status={subscription.targetState} /></div>}
       <Summary subscription={subscription} />
+      </div>
       {actions.messages}
       {actions.liveRunId && (
         <RunLive key={actions.liveRunId} runId={actions.liveRunId} onFinished={finished} onShowMedia={() => setTab('media')} />

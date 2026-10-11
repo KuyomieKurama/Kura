@@ -157,10 +157,6 @@
   background: var(--surface-sunken);
 }
 
-.nav-item:focus-visible {
-  outline-offset: -2px;
-}
-
 /* The 2px bar on the left is the one signal of the active entry. The text stays ink, there is no fill. */
 .nav-item[aria-current='page']::before {
   content: '';

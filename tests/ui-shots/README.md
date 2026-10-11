@@ -26,9 +26,9 @@ Views the API cannot fill without a worker are served by `page.route` from `fixt
 posts), the Immich test transfer, and the empty, loading and error states of the subscription list.
 Everything else is real API data.
 
-Views: setup, login, login-error, dashboard, menu-open (narrow only), subscriptions, subscriptions-expanded,
+Views: setup, login, login-error, dashboard, menu-open (narrow only), subscriptions, subscriptions-expanded (page of one subscription, tab Zeitpläne),
 subscriptions-adapters, subscriptions-form, subscriptions-empty, subscriptions-loading, subscriptions-error,
-media-grid, media-grid-videos, media-viewer-image, media-viewer-video, media-empty, live-run,
+media-page, media-grid, media-grid-videos, media-viewer-image, media-viewer-video, media-empty, live-run,
 history, history-expanded, history-live, immich, immich-transfer, users, users-dialog, dialog, limits, account.
 
 The media views use real files. `media-seed.mjs` draws sixteen pictures in the browser (canvas, PNG and JPEG) and
@@ -65,3 +65,8 @@ Chromium because `media-src` falls back to `default-src 'none'`; the app embeds 
 `contrast.test.ts` runs with `corepack pnpm test` (root vitest). It reads `apps/web/src/styles/tokens.css` and checks
 WCAG AA for every text/background and border/background pair the stylesheets use, in both colour schemes,
 and guards the radius rule, the colour literals and the single gradient.
+
+
+Since REQ-DL-008 the navigation is the sidebar (from 1024px) or the bottom bar with "Mehr"; `navigate()` in `capture.mjs`
+handles both. The keyboard check and the media check follow the new structure (page "Medien", full-screen viewer whose
+heading is the post, the file shown is the picture or video in the frame).

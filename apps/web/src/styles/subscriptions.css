@@ -12,7 +12,7 @@
 .sub-head,
 .sub-row {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 3fr) minmax(0, 2fr) 72px auto;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 3fr) minmax(0, 2fr) 72px 200px;
   align-items: center;
   column-gap: var(--space-4);
 }
@@ -61,6 +61,7 @@
 }
 
 .sub-cell {
+  align-items: flex-start;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -127,6 +128,14 @@
     align-items: baseline;
     gap: var(--space-2);
     text-align: left;
+  }
+
+  .sub-last {
+    flex-wrap: wrap;
+  }
+
+  .sub-last time {
+    white-space: nowrap;
   }
 
   .sub-next::before {
@@ -265,4 +274,14 @@
   .detail-actions {
     width: 100%;
   }
+}
+
+.detail-top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.detail-top .detail-head {
+  margin-bottom: 0;
 }
