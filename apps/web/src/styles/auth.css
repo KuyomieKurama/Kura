@@ -160,8 +160,10 @@
 }
 
 @media (max-width: 1023px) {
+  /* Rows: the 96px strip, then the form. Without explicit rows the spare height of the page is shared between both rows and opens a gap above the wordmark. */
   .auth-split {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .contact-sheet {

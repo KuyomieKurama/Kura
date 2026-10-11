@@ -11,17 +11,17 @@ import { SettingsSection } from './ui/SettingsSection.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 import { absoluteMinute } from './time-format.js';
 
-/** `unit` is shown behind the number; the stored value stays in this unit. */
-type Field = { key: string; label: string; unit: string; hint?: string; min?: number };
+/** `unit` is shown behind the number. `scale` is how many stored units one displayed unit is (bytes per MiB); without it the stored value is shown as it is. */
+type Field = { key: string; label: string; unit: string; hint?: string; min?: number; scale?: number };
 
-const NO_LIMIT_HINT = 'Leer heißt: kein Limit. 0 heißt: nichts startet.';
+const MIB = 1024 * 1024;
 const DOWNLOAD_FIELDS: Field[] = [
-  { key: 'maxConcurrentGlobal', label: 'Läufe gleichzeitig, insgesamt', unit: 'Läufe', hint: NO_LIMIT_HINT },
-  { key: 'maxConcurrentPerUser', label: 'Läufe gleichzeitig je Benutzer', unit: 'Läufe', hint: NO_LIMIT_HINT },
+  { key: 'maxConcurrentGlobal', label: 'Läufe gleichzeitig, insgesamt', unit: 'Läufe' },
+  { key: 'maxConcurrentPerUser', label: 'Läufe gleichzeitig je Benutzer', unit: 'Läufe' },
   { key: 'maxConcurrentPerSourceAccount', label: 'Läufe gleichzeitig je Quellkonto', unit: 'Läufe' },
   { key: 'maxDownloadsPerDayPerUser', label: 'Downloads pro Tag und Benutzer', unit: 'Downloads', hint: 'Ein Tag zählt von 00:00 bis 24:00 Uhr UTC.' },
-  { key: 'maxBytesPerDayPerUser', label: 'Datenmenge pro Tag und Benutzer', unit: 'Bytes' },
-  { key: 'bandwidthBytesPerSecond', label: 'Bandbreite', unit: 'Bytes pro Sekunde' }
+  { key: 'maxBytesPerDayPerUser', label: 'Datenmenge pro Tag und Benutzer', unit: 'MiB', scale: MIB },
+  { key: 'bandwidthBytesPerSecond', label: 'Bandbreite', unit: 'MiB pro Sekunde', scale: MIB }
 ];
 const WORKER_FIELDS: Field[] = [
   { key: 'downloadSlots', label: 'Downloads gleichzeitig', unit: 'Plätze' },
@@ -32,14 +32,15 @@ const WORKER_FIELDS: Field[] = [
 type Values = Record<string, string>;
 type Overrides = Array<{ userId: string; maxConcurrent: string }>;
 
-const text = (value: number | null) => (value === null ? '' : String(value));
-/** Empty means "no limit" (null) for optional limits. */
-const toNullable = (value: string): number | null => (value.trim() === '' ? null : Number(value));
+const text = (value: number | null, scale = 1) => (value === null ? '' : String(scale === 1 ? value : Math.round((value / scale) * 1000) / 1000));
+/** Empty means "no limit" (null) for optional limits. A scaled field (MiB) is converted back to the stored unit (bytes). */
+const toNullable = (value: string, scale = 1): number | null => (value.trim() === '' ? null : Math.round(Number(value) * scale));
+const scaleOf = (key: string) => DOWNLOAD_FIELDS.find((field) => field.key === key)?.scale ?? 1;
 
 function initialValues(response: RuntimePolicyResponse): { values: Values; overrides: Overrides } {
   const { downloads, workers, retention } = response.policy;
   const values: Values = { finishedRunDays: String(retention.finishedRunDays) };
-  for (const field of DOWNLOAD_FIELDS) values[field.key] = text(downloads[field.key as keyof typeof downloads] as number | null);
+  for (const field of DOWNLOAD_FIELDS) values[field.key] = text(downloads[field.key as keyof typeof downloads] as number | null, field.scale);
   for (const field of WORKER_FIELDS) values[field.key] = String(workers[field.key as keyof typeof workers]);
   const overrides = Object.entries(downloads.perUser).map(([userId, entry]) => ({ userId, maxConcurrent: text(entry.maxConcurrent) }));
   return { values, overrides };
@@ -86,8 +87,8 @@ export function AdminLimitsPage() {
         maxConcurrentPerUser: toNullable(values.maxConcurrentPerUser),
         maxConcurrentPerSourceAccount: toNullable(values.maxConcurrentPerSourceAccount),
         maxDownloadsPerDayPerUser: toNullable(values.maxDownloadsPerDayPerUser),
-        maxBytesPerDayPerUser: toNullable(values.maxBytesPerDayPerUser),
-        bandwidthBytesPerSecond: toNullable(values.bandwidthBytesPerSecond),
+        maxBytesPerDayPerUser: toNullable(values.maxBytesPerDayPerUser, scaleOf('maxBytesPerDayPerUser')),
+        bandwidthBytesPerSecond: toNullable(values.bandwidthBytesPerSecond, scaleOf('bandwidthBytesPerSecond')),
         perAdapter: current.policy.downloads.perAdapter,
         perUser
       },
@@ -139,6 +140,7 @@ export function AdminLimitsPage() {
             name={field.key}
             type="number"
             min={field.min ?? 0}
+            step={field.scale === undefined ? undefined : 'any'}
             placeholder={group === 'downloads' ? 'Kein Limit' : undefined}
             value={values[field.key] ?? ''}
             onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
@@ -195,7 +197,7 @@ export function AdminLimitsPage() {
         lead={`${current.updatedAt ? `Zuletzt geändert am ${absoluteMinute(current.updatedAt)} (Version ${current.version}).` : 'Du hast noch keine Limits gespeichert, es gelten die Standardwerte.'} Gelten mehrere Limits, gewinnt das niedrigste. Eine gesenkte Grenze verhindert nur neue Starts.`}
       />
       <form onSubmit={submit} aria-label="Limits bearbeiten" className="limits-form">
-        <SettingsSection title="Ausführung" explanation="Wie viele Läufe und Downloads gleichzeitig arbeiten dürfen. Ein leeres Feld heißt: kein Limit.">
+        <SettingsSection title="Ausführung" explanation="Wie viele Läufe und Downloads gleichzeitig arbeiten dürfen und wie viel Datenmenge dabei fließt. Leer heißt: kein Limit. 0 heißt: nichts startet.">
           {notEnforced('downloads', DOWNLOAD_FIELDS)}
           <div className="form-grid">{DOWNLOAD_FIELDS.map((field) => input(field, 'downloads'))}</div>
         </SettingsSection>

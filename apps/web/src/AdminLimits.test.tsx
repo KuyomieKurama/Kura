@@ -122,3 +122,24 @@ it('offers to reload when another administrator saved first', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Aktuelle Version laden' }));
   await waitFor(() => expect(screen.getByText(/\(Version 3\)/)).toBeInTheDocument());
 });
+
+it('shows data limits in MiB and converts to bytes on save', async () => {
+  const response = policyResponse(0, { ...defaults, downloads: { ...defaults.downloads, maxBytesPerDayPerUser: 5 * 1024 * 1024 } });
+  const fetch = mockApi((init) => init?.method === 'PUT' ? json(policyResponse(1)) : json(response));
+  await openLimits();
+  const daily = screen.getByLabelText(/Datenmenge pro Tag und Benutzer/);
+  expect(daily).toHaveValue(5);
+  expect(daily.closest('.input-unit')).toHaveTextContent('MiB');
+  expect(screen.getByLabelText(/Bandbreite/).closest('.input-unit')).toHaveTextContent('MiB pro Sekunde');
+  fireEvent.change(screen.getByLabelText(/Bandbreite/), { target: { value: '1.5' } });
+  fireEvent.submit(screen.getByRole('form', { name: 'Limits bearbeiten' }));
+  await screen.findByText(/Limits gespeichert/);
+  const body = JSON.parse(String(puts(fetch)[0][1]?.body));
+  expect(body.policy.downloads).toMatchObject({ maxBytesPerDayPerUser: 5 * 1024 * 1024, bandwidthBytesPerSecond: 1.5 * 1024 * 1024 });
+});
+
+it('says what an empty or zero limit means only once', async () => {
+  mockApi(() => json(policyResponse(0)));
+  await openLimits();
+  expect(screen.getAllByText(/Leer heißt: kein Limit/)).toHaveLength(1);
+});
