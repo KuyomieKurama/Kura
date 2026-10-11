@@ -9,6 +9,15 @@ export function absoluteShort(date: Date, timeZone?: string): string {
   return date.toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) });
 }
 
+/** "Mo., 12.10., 02:30", the year only when it is not the current one. No seconds: for stated times in lists and settings. */
+export function absoluteMinute(value: string | Date, now: Date = new Date(), timeZone?: string): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  const year = (day: Date) => day.toLocaleString('de-DE', { year: 'numeric', ...(timeZone ? { timeZone } : {}) });
+  return date.toLocaleString('de-DE', {
+    weekday: 'short', day: '2-digit', month: '2-digit', ...(year(date) === year(now) ? {} : { year: 'numeric' }), hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {})
+  });
+}
+
 export function absoluteFull(date: Date, timeZone?: string): string {
   return date.toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', ...(timeZone ? { timeZone } : {}) });
 }

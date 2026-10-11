@@ -1,30 +1,32 @@
-import { ArrowsClockwise, FloppyDisk, Info } from '@phosphor-icons/react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { ArrowsClockwise, FloppyDisk } from '@phosphor-icons/react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { api, type ApiError, type RuntimePolicyResponse, type User } from './api.js';
 import { labels } from './labels.js';
 import { Banner, type BannerTone } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { DataTable, type Column } from './ui/DataTable.js';
 import { Field } from './ui/Field.js';
-import { Glyph } from './ui/Glyph.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { SettingsSection } from './ui/SettingsSection.js';
 import { SkeletonRows } from './ui/Skeleton.js';
+import { absoluteMinute } from './time-format.js';
 
-type Field = { key: string; label: string; hint?: string; min?: number };
+/** `unit` is shown behind the number; the stored value stays in this unit. */
+type Field = { key: string; label: string; unit: string; hint?: string; min?: number };
 
+const NO_LIMIT_HINT = 'Leer heißt: kein Limit. 0 heißt: nichts startet.';
 const DOWNLOAD_FIELDS: Field[] = [
-  { key: 'maxConcurrentGlobal', label: 'Gleichzeitige Läufe gesamt', hint: 'Leer = kein Limit, 0 = nichts startet.' },
-  { key: 'maxConcurrentPerUser', label: 'Gleichzeitige Läufe je Benutzer', hint: 'Leer = kein Limit, 0 = nichts startet.' },
-  { key: 'maxConcurrentPerSourceAccount', label: 'Gleichzeitige Läufe je Quellkonto' },
-  { key: 'maxDownloadsPerDayPerUser', label: 'Downloads pro Tag und Benutzer (UTC-Tag)' },
-  { key: 'maxBytesPerDayPerUser', label: 'Bytes pro Tag und Benutzer (UTC-Tag)' },
-  { key: 'bandwidthBytesPerSecond', label: 'Bandbreite in Bytes pro Sekunde' }
+  { key: 'maxConcurrentGlobal', label: 'Läufe gleichzeitig, insgesamt', unit: 'Läufe', hint: NO_LIMIT_HINT },
+  { key: 'maxConcurrentPerUser', label: 'Läufe gleichzeitig je Benutzer', unit: 'Läufe', hint: NO_LIMIT_HINT },
+  { key: 'maxConcurrentPerSourceAccount', label: 'Läufe gleichzeitig je Quellkonto', unit: 'Läufe' },
+  { key: 'maxDownloadsPerDayPerUser', label: 'Downloads pro Tag und Benutzer', unit: 'Downloads', hint: 'Ein Tag zählt von 00:00 bis 24:00 Uhr UTC.' },
+  { key: 'maxBytesPerDayPerUser', label: 'Datenmenge pro Tag und Benutzer', unit: 'Bytes' },
+  { key: 'bandwidthBytesPerSecond', label: 'Bandbreite', unit: 'Bytes pro Sekunde' }
 ];
 const WORKER_FIELDS: Field[] = [
-  { key: 'downloadSlots', label: 'Download-Slots' },
-  { key: 'transferSlots', label: 'Transfer-Slots' },
-  { key: 'lifecycleReservedSlots', label: 'Reservierte Slots für Aufräum- und Freigabeaufgaben' }
+  { key: 'downloadSlots', label: 'Downloads gleichzeitig', unit: 'Plätze' },
+  { key: 'transferSlots', label: 'Übergaben an Immich gleichzeitig', unit: 'Plätze' },
+  { key: 'lifecycleReservedSlots', label: 'Für Aufräumen und Freigaben reserviert', unit: 'Plätze' }
 ];
 
 type Values = Record<string, string>;
@@ -111,6 +113,13 @@ export function AdminLimitsPage() {
     }
   }
 
+  // Dirty: the form differs from what was loaded or saved last.
+  const dirty = useMemo(() => {
+    if (!current) return false;
+    const initial = initialValues(current);
+    return JSON.stringify([initial.values, initial.overrides]) !== JSON.stringify([values, overrides]);
+  }, [current, values, overrides]);
+
   if (!current) {
     return (
       <>
@@ -121,36 +130,31 @@ export function AdminLimitsPage() {
   }
 
   const enforced = new Set(current.enforced);
-  const input = (field: Field, group: 'downloads' | 'workers' | 'retention') => {
-    const isEnforced = enforced.has(`${group}.${field.key}`);
-    const hint = field.hint || !isEnforced
-      ? (
-        <>
-          {field.hint && <span className="hint-line">{field.hint}</span>}
-          {!isEnforced && (
-            <span className="hint-line hint-notice">
-              <Glyph icon={Info} size={14} />
-              Wird gespeichert, aber noch nicht durchgesetzt.
-            </span>
-          )}
-        </>
-      )
-      : undefined;
-    return (
-      <Field key={field.key} label={field.label} hint={hint}>
-        {(control) => (
+  const input = (field: Field, group: 'downloads' | 'workers' | 'retention') => (
+    <Field key={field.key} label={field.label} hint={field.hint}>
+      {(control) => (
+        <span className="input-unit">
           <input
             {...control}
             name={field.key}
             type="number"
             min={field.min ?? 0}
+            placeholder={group === 'downloads' ? 'Kein Limit' : undefined}
             value={values[field.key] ?? ''}
             onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
             required={group !== 'downloads'}
           />
-        )}
-      </Field>
-    );
+          <span className="input-unit-text">{field.unit}</span>
+        </span>
+      )}
+    </Field>
+  );
+  /** One sentence over the group instead of one note under every field: which of these values do not act yet. */
+  const notEnforced = (group: 'downloads' | 'workers' | 'retention', fields: Field[]) => {
+    const names = fields.filter((field) => !enforced.has(`${group}.${field.key}`)).map((field) => field.label);
+    return names.length === 0
+      ? null
+      : <p className="settings-note">{`Wird gespeichert, wirkt aber noch nicht: ${names.join(', ')}.`}</p>;
   };
   const availableUsers = users.filter((user) => !overrides.some((entry) => entry.userId === user.id));
   const userName = (userId: string) => users.find((user) => user.id === userId)?.display_name ?? userId;
@@ -159,15 +163,19 @@ export function AdminLimitsPage() {
     { key: 'user', header: labels.userNameColumn, render: (entry) => userName(entry.userId) },
     {
       key: 'limit',
-      header: 'Gleichzeitige Läufe',
+      header: 'Läufe gleichzeitig',
       render: (entry) => (
-        <input
-          aria-label={`Limit für ${userName(entry.userId)}`}
-          type="number"
-          min="0"
-          value={entry.maxConcurrent}
-          onChange={(event) => setOverrides(overrides.map((item) => item.userId === entry.userId ? { ...item, maxConcurrent: event.target.value } : item))}
-        />
+        <span className="input-unit">
+          <input
+            aria-label={`Limit für ${userName(entry.userId)}`}
+            type="number"
+            min="0"
+            placeholder="Kein Limit"
+            value={entry.maxConcurrent}
+            onChange={(event) => setOverrides(overrides.map((item) => item.userId === entry.userId ? { ...item, maxConcurrent: event.target.value } : item))}
+          />
+          <span className="input-unit-text">Läufe</span>
+        </span>
       )
     },
     {
@@ -184,10 +192,11 @@ export function AdminLimitsPage() {
     <>
       <PageHeader
         title={labels.limits}
-        lead={`Version ${current.version}${current.updatedAt ? `, zuletzt geändert am ${new Date(current.updatedAt).toLocaleString('de-DE')}` : ' (Standardwerte, noch nie gespeichert)'}. Das niedrigste anwendbare Limit gewinnt. Eine abgesenkte Grenze verhindert nur neue Starts.`}
+        lead={`${current.updatedAt ? `Zuletzt geändert am ${absoluteMinute(current.updatedAt)} (Version ${current.version}).` : 'Du hast noch keine Limits gespeichert, es gelten die Standardwerte.'} Gelten mehrere Limits, gewinnt das niedrigste. Eine gesenkte Grenze verhindert nur neue Starts.`}
       />
       <form onSubmit={submit} aria-label="Limits bearbeiten" className="limits-form">
-        <SettingsSection title="Ausführung" explanation="Wie viele Läufe und Downloads gleichzeitig arbeiten dürfen. Leere Felder bedeuten: keine Grenze.">
+        <SettingsSection title="Ausführung" explanation="Wie viele Läufe und Downloads gleichzeitig arbeiten dürfen. Ein leeres Feld heißt: kein Limit.">
+          {notEnforced('downloads', DOWNLOAD_FIELDS)}
           <div className="form-grid">{DOWNLOAD_FIELDS.map((field) => input(field, 'downloads'))}</div>
         </SettingsSection>
 
@@ -213,13 +222,14 @@ export function AdminLimitsPage() {
           )}
         </SettingsSection>
 
-        <SettingsSection title="Worker-Kapazität" explanation="Was ein einzelner Worker gleichzeitig bearbeitet.">
+        <SettingsSection title="Gleichzeitige Arbeit" explanation="Wie viel Arbeit Kura auf einmal erledigt.">
+          {notEnforced('workers', WORKER_FIELDS)}
           <div className="form-grid">{WORKER_FIELDS.map((field) => input(field, 'workers'))}</div>
         </SettingsSection>
 
         <SettingsSection title="Aufbewahrung" explanation="Wie lange beendete Läufe im Verlauf bleiben. Heruntergeladene Dateien sind davon nicht betroffen.">
           <div className="form-grid">
-            {input({ key: 'finishedRunDays', label: 'Beendete Läufe aufbewahren (Tage, 1 bis 3650)', min: 1 }, 'retention')}
+            {input({ key: 'finishedRunDays', label: 'Beendete Läufe aufbewahren', unit: 'Tage', hint: 'Von 1 bis 3650 Tagen.', min: 1 }, 'retention')}
           </div>
         </SettingsSection>
 
@@ -231,10 +241,17 @@ export function AdminLimitsPage() {
             </Banner>
           )
           : notice && <Banner tone={noticeTone}>{notice}</Banner>}
-        <div className="form-actions settings-actions">
-          <Button variant="primary" type="submit" icon={FloppyDisk}>Limits speichern</Button>
-          {stale && <Button icon={ArrowsClockwise} onClick={() => void load()}>Aktuelle Version laden</Button>}
-        </div>
+        {/* Sticky at the bottom, only while there is something to save (or the saved version is out of date). */}
+        {(dirty || stale) && (
+          <div className="dirty-bar" role="region" aria-label="Änderungen">
+            <span className="dirty-bar-text">{stale ? 'Die gespeicherte Version hat sich geändert.' : 'Nicht gespeicherte Änderungen'}</span>
+            <div className="form-actions">
+              {stale && <Button icon={ArrowsClockwise} onClick={() => void load()}>Aktuelle Version laden</Button>}
+              <Button variant="primary" type="submit" icon={FloppyDisk}>Limits speichern</Button>
+              {dirty && !stale && <Button onClick={() => void load()}>Verwerfen</Button>}
+            </div>
+          </div>
+        )}
       </form>
     </>
   );

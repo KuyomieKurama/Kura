@@ -49,18 +49,38 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('shows the plan defaults, empty meaning "no limit", and marks values that are not enforced yet', async () => {
   mockApi(() => json(policyResponse(0)));
   await openLimits();
-  expect(screen.getByLabelText(/Gleichzeitige Läufe gesamt/)).toHaveValue(null);
-  expect(screen.getByLabelText(/Download-Slots/)).toHaveValue(4);
+  expect(screen.getByLabelText(/Läufe gleichzeitig, insgesamt/)).toHaveValue(null);
+  expect(screen.getByLabelText(/Downloads gleichzeitig/)).toHaveValue(4);
   expect(screen.getByLabelText(/Beendete Läufe aufbewahren/)).toHaveValue(90);
-  expect(screen.getByText(/Version 0.*Standardwerte, noch nie gespeichert/)).toBeInTheDocument();
-  // Stored but not enforced: slots, per source account, daily budgets, bandwidth.
-  expect(screen.getAllByText(/Wird gespeichert, aber noch nicht durchgesetzt/)).toHaveLength(7);
+  expect(screen.getByText(/Du hast noch keine Limits gespeichert, es gelten die Standardwerte/)).toBeInTheDocument();
+  // Empty fields say so, and each number has its unit behind it.
+  expect(screen.getByLabelText(/Läufe gleichzeitig, insgesamt/)).toHaveAttribute('placeholder', 'Kein Limit');
+  expect(screen.getByLabelText(/Beendete Läufe aufbewahren/).closest('.input-unit')).toHaveTextContent('Tage');
+  // Stored but not enforced: said once per group, naming the fields, not once under each field.
+  const notes = screen.getAllByText(/Wird gespeichert, wirkt aber noch nicht/);
+  expect(notes).toHaveLength(2);
+  expect(notes[0]).toHaveTextContent('Läufe gleichzeitig je Quellkonto');
+  expect(notes[0]).toHaveTextContent('Bandbreite');
+  expect(notes[0]).not.toHaveTextContent('Läufe gleichzeitig, insgesamt');
+  expect(notes[1]).toHaveTextContent('Downloads gleichzeitig');
+  // No save bar while nothing changed.
+  expect(screen.queryByRole('button', { name: 'Limits speichern' })).toBeNull();
+});
+
+it('shows the save bar only when something changed, with a way to discard', async () => {
+  mockApi(() => json(policyResponse(0)));
+  await openLimits();
+  fireEvent.change(screen.getByLabelText(/Beendete Läufe aufbewahren/), { target: { value: '30' } });
+  expect(await screen.findByText('Nicht gespeicherte Änderungen')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }));
+  await waitFor(() => expect(screen.queryByText('Nicht gespeicherte Änderungen')).toBeNull());
+  expect(screen.getByLabelText(/Beendete Läufe aufbewahren/)).toHaveValue(90);
 });
 
 it('saves with the version it loaded, null for empty fields, and keeps the adapter limits it does not edit', async () => {
   const fetch = mockApi((init) => init?.method === 'PUT' ? json(policyResponse(1)) : json(policyResponse(0)));
   await openLimits();
-  fireEvent.change(screen.getByLabelText(/Gleichzeitige Läufe gesamt/), { target: { value: '6' } });
+  fireEvent.change(screen.getByLabelText(/Läufe gleichzeitig, insgesamt/), { target: { value: '6' } });
   fireEvent.change(screen.getByLabelText(/Beendete Läufe aufbewahren/), { target: { value: '30' } });
   fireEvent.change(screen.getByLabelText('Ausnahme hinzufügen'), { target: { value: bob.id } });
   fireEvent.change(screen.getByLabelText('Limit für Bob'), { target: { value: '1' } });
@@ -82,7 +102,7 @@ it('lists every validation problem returned by the server', async () => {
     ? json({ error: { code: 'VALIDATION_ERROR', message: 'Die Limits sind ungültig.', problems: ['downloads.maxConcurrentGlobal must be null or an integer between 0 and 10000', 'retention.finishedRunDays must be an integer between 1 and 3650'] } }, 400)
     : json(policyResponse(0)));
   await openLimits();
-  fireEvent.change(screen.getByLabelText(/Gleichzeitige Läufe gesamt/), { target: { value: '-1' } });
+  fireEvent.change(screen.getByLabelText(/Läufe gleichzeitig, insgesamt/), { target: { value: '-1' } });
   fireEvent.submit(screen.getByRole('form', { name: 'Limits bearbeiten' }));
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('downloads.maxConcurrentGlobal must be null or an integer between 0 and 10000');
@@ -100,5 +120,5 @@ it('offers to reload when another administrator saved first', async () => {
   fireEvent.submit(screen.getByRole('form', { name: 'Limits bearbeiten' }));
   expect(await screen.findByText(/zwischenzeitlich geändert/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Aktuelle Version laden' }));
-  await waitFor(() => expect(screen.getByText(/Version 3/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/\(Version 3\)/)).toBeInTheDocument());
 });

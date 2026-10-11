@@ -13,6 +13,7 @@ import { FileField } from './ui/FileField.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { SettingsSection } from './ui/SettingsSection.js';
 import { StatusChip } from './ui/StatusChip.js';
+import { absoluteMinute } from './time-format.js';
 
 type Notice = { tone: BannerTone; text: string };
 
@@ -59,7 +60,7 @@ function ImmichEndpointApprovals() {
 
   const columns: Column<ImmichEndpointApproval>[] = [
     { key: 'endpoint', header: 'Endpunkt', render: (approval) => `${approval.host}:${approval.port}`, mono: true },
-    { key: 'approved', header: 'Freigegeben am', render: (approval) => new Date(approval.approvedAt).toLocaleString('de-DE'), date: true },
+    { key: 'approved', header: 'Freigegeben am', render: (approval) => absoluteMinute(approval.approvedAt), date: true },
     {
       key: 'actions',
       header: labels.userActionsColumn,
@@ -73,7 +74,7 @@ function ImmichEndpointApprovals() {
   return (
     <SettingsSection
       title="Freigaben für private Immich-Endpunkte"
-      explanation="Ziele in privaten Netzen oder auf diesem Rechner werden nur nach Freigabe von Host und Port durch einen Administrator kontaktiert. Link-Local- und Metadaten-Adressen sind immer gesperrt."
+      explanation="Kura kontaktiert Server in privaten Netzen oder auf diesem Rechner nur, wenn ein Administrator Host und Port freigegeben hat. Interne Systemadressen, etwa die von Cloud-Anbietern, sind immer gesperrt."
     >
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
       {approvals.length === 0
@@ -107,11 +108,13 @@ export function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
   const [connectionUrl, setConnectionUrl] = useState('');
   const [result, setResult] = useState<Notice | null>(null);
   const [transfer, setTransfer] = useState<ImmichTransfer | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     api.immichConnection()
       .then(({ connection }) => setConnectionUrl(connection?.serverUrl ?? ''))
-      .catch((cause) => setResult({ tone: 'danger', text: errorMessage(cause) }));
+      .catch((cause) => setResult({ tone: 'danger', text: errorMessage(cause) }))
+      .finally(() => setLoaded(true));
   }, []);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -174,7 +177,13 @@ export function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <>
-      <PageHeader title="Immich" lead="Lokale Originale werden bei diesem Test niemals gelöscht." />
+      <PageHeader title="Immich" lead="Kura übergibt gespeicherte Dateien an deine Immich-Bibliothek. Lokale Originale löscht Kura nie." />
+      {/* One sentence for the state of the connection. It says what is saved, not whether the server answers: that is what "Verbindung testen" is for. */}
+      {loaded && (
+        <p className="settings-state" role="status">
+          {connectionUrl ? <>Gespeicherte Verbindung: <span className="mono">{connectionUrl}</span>. Ob der Server antwortet, zeigt „Verbindung testen“.</> : 'Noch keine Verbindung eingerichtet.'}
+        </p>
+      )}
       {result && <Banner tone={result.tone}>{result.text}</Banner>}
 
       <SettingsSection title="Verbindung" explanation="Adresse und API-Schlüssel deines Immich-Servers. Der Schlüssel wird verschlüsselt gespeichert und nicht wieder angezeigt.">

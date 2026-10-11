@@ -10,6 +10,7 @@ import { Dialog } from './ui/Dialog.js';
 import { Field } from './ui/Field.js';
 import { FileField } from './ui/FileField.js';
 import { SettingsSection } from './ui/SettingsSection.js';
+import { absoluteMinute } from './time-format.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 import { StatusChip } from './ui/StatusChip.js';
 import { useToast } from './ui/Toast.js';
@@ -91,7 +92,7 @@ function readText(file: File): Promise<string> {
   });
 }
 
-const formatDate = (value: string) => new Date(value).toLocaleString('de-DE');
+const formatDate = (value: string) => absoluteMinute(value);
 
 /** "Instagram-Cookies" or "Pixiv-Token". */
 const secretName = (texts: PlatformTexts) => `${texts.label}-${texts.kind === 'token' ? 'Token' : 'Cookies'}`;

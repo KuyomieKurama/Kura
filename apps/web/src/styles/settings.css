@@ -215,3 +215,61 @@
     justify-self: start;
   }
 }
+
+/* A number with its unit behind it. */
+.input-unit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.input-unit input {
+  flex: 0 1 200px;
+  width: 200px;
+  min-width: 0;
+}
+
+.input-unit-text {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+/* One sentence above a group: a state of the whole group, not a note under every field. */
+.settings-note,
+.settings-state {
+  max-width: var(--prose-width);
+  margin: 0;
+  color: var(--ink-muted);
+  text-wrap: pretty;
+}
+
+.settings-state {
+  margin-bottom: var(--space-5);
+}
+
+/* The bar for unsaved changes: sticks to the bottom of the viewport while the form is open; the only other shadowed surface besides popovers and dialogs. */
+.dirty-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-popover);
+}
+
+.dirty-bar .form-actions {
+  margin: 0;
+}
+
+@media (max-width: 639px) {
+  .dirty-bar {
+    bottom: calc(var(--bottomnav-height) + env(safe-area-inset-bottom, 0px));
+  }
+}

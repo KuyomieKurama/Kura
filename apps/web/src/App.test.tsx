@@ -62,7 +62,8 @@ it('opens the Immich page with connection and test-file controls', async () => {
   expect(screen.getByLabelText('Server-URL')).toBeInTheDocument();
   expect(screen.getByLabelText('API-Schlüssel')).toHaveAttribute('type', 'password');
   expect(screen.getByLabelText('Testdatei')).toHaveAttribute('type', 'file');
-  expect(screen.getByText('Lokale Originale werden bei diesem Test niemals gelöscht.')).toBeInTheDocument();
+  expect(screen.getByText(/Lokale Originale löscht Kura nie/)).toBeInTheDocument();
+  expect(await screen.findByText(/Noch keine Verbindung eingerichtet|Gespeicherte Verbindung/)).toBeInTheDocument();
 });
 it('shows verification evidence after a verified test upload', async () => {
   const verified = { id: 'transfer-1', status: 'verified', localOriginalRetained: true, evidence: { serverVersion: '3.2.1', byteLength: 4, album: 'none' } };
