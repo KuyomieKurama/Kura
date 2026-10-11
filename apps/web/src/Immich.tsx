@@ -6,6 +6,7 @@ import { labels } from './labels.js';
 import { Banner, type BannerTone } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { DataTable, type Column } from './ui/DataTable.js';
+import { Dialog } from './ui/Dialog.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { Field } from './ui/Field.js';
 import { FileField } from './ui/FileField.js';
@@ -19,6 +20,7 @@ type Notice = { tone: BannerTone; text: string };
 function ImmichEndpointApprovals() {
   const [approvals, setApprovals] = useState<ImmichEndpointApproval[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [revoking, setRevoking] = useState<ImmichEndpointApproval | null>(null);
 
   async function reload() {
     try {
@@ -45,6 +47,7 @@ function ImmichEndpointApprovals() {
   }
 
   async function revoke(approval: ImmichEndpointApproval) {
+    setRevoking(null);
     try {
       await api.revokeImmichEndpoint(approval);
       setNotice({ tone: 'ok', text: 'Freigabe entzogen.' });
@@ -62,7 +65,7 @@ function ImmichEndpointApprovals() {
       header: labels.userActionsColumn,
       actions: true,
       render: (approval) => (
-        <Button variant="danger-ghost" icon={ProhibitInset} onClick={() => void revoke(approval)}>Freigabe entziehen</Button>
+        <Button variant="danger-ghost" icon={ProhibitInset} aria-label={`Freigabe für ${approval.host}:${approval.port} entziehen`} onClick={() => setRevoking(approval)}>Freigabe entziehen</Button>
       )
     }
   ];
@@ -76,6 +79,15 @@ function ImmichEndpointApprovals() {
       {approvals.length === 0
         ? <EmptyState title="Keine Freigaben vorhanden." hint="Gib unten Host und Port deines Immich-Servers frei." />
         : <DataTable label="Freigaben" columns={columns} rows={approvals} rowKey={(approval) => `${approval.host}:${approval.port}`} />}
+      {revoking && (
+        <Dialog title={`Freigabe für ${revoking.host}:${revoking.port} entziehen`} close={() => setRevoking(null)}>
+          <p>Kura kontaktiert {revoking.host}:{revoking.port} danach nicht mehr. Übertragungen zu diesem Immich-Server schlagen fehl, bis du den Endpunkt erneut freigibst.</p>
+          <div className="form-actions">
+            <Button variant="danger-solid" icon={ProhibitInset} onClick={() => void revoke(revoking)}>Freigabe entziehen</Button>
+            <Button data-autofocus onClick={() => setRevoking(null)}>{labels.cancel}</Button>
+          </div>
+        </Dialog>
+      )}
       <form onSubmit={approve} className="form-grid form-inline-actions">
         <Field label="Host">
           {(control) => <input {...control} name="host" required autoComplete="off" className="input-mono" />}

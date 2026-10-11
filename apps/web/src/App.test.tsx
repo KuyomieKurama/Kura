@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { App } from './App.js';
 
@@ -154,7 +154,12 @@ it('lets an administrator approve and revoke private Immich endpoints', async ()
   const post = fetch.mock.calls.find(([, init]) => init?.method === 'POST' && String(init.body).includes('10.0.0.5'));
   expect(JSON.parse(String(post?.[1]?.body))).toEqual({ host: '10.0.0.5', port: 2283 });
 
-  fireEvent.click(screen.getAllByRole('button', { name: 'Freigabe entziehen' })[0]!);
+  fireEvent.click(screen.getByRole('button', { name: 'Freigabe für 192.168.1.20:2283 entziehen' }));
+  // The dialog names the endpoint and puts the focus on "Abbrechen"; nothing is sent before the confirmation.
+  const dialog = await screen.findByRole('dialog', { name: 'Freigabe für 192.168.1.20:2283 entziehen' });
+  expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toHaveFocus();
+  expect(fetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Freigabe entziehen' }));
   expect(await screen.findByText('Keine Freigaben vorhanden.')).toBeInTheDocument();
   expect(fetch.mock.calls.some(([input, init]) => String(input).endsWith('/admin/immich/endpoint-approvals/192.168.1.20/2283') && init?.method === 'DELETE')).toBe(true);
 });
@@ -166,4 +171,28 @@ it('does not offer Immich endpoint approval to a normal user', async () => {
   await screen.findByRole('heading', { name: 'Immich' });
   expect(screen.queryByRole('button', { name: 'Endpunkt freigeben' })).not.toBeInTheDocument();
   expect(screen.queryByText('Freigaben für private Immich-Endpunkte')).not.toBeInTheDocument();
+});
+
+it('asks before locking a user, names the person and puts the focus on "Abbrechen"', async () => {
+  const other = { id: 'u2', display_name: 'Mara Muster', username: 'mara', role: 'user', status: 'active', created_at: '2026-01-02T00:00:00Z' };
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith('/auth/state')) return response({ configured: true, authenticated: true, role: 'admin', csrfToken: 'csrf', passwordChangeRequired: false });
+    if (path.endsWith('/api/v1/users')) return response({ users: [admin, other] });
+    if (path.endsWith('/users/u2/status') && init?.method === 'PATCH') return response({ user: { ...other, status: 'locked' } });
+    if (path === '/healthz') return response({ status: 'ok' });
+    if (path.endsWith('/api/v1/status')) return response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } });
+    return response({}, 404);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Benutzerverwaltung' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Mara Muster sperren' }));
+
+  const dialog = await screen.findByRole('dialog', { name: 'Mara Muster sperren' });
+  expect(within(dialog).getByText(/Mara Muster \(mara\) wird gesperrt/)).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toHaveFocus();
+  expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+  expect(dialog.textContent).not.toMatch(/[—–]/);
 });

@@ -67,7 +67,7 @@ export function UsersPage({ users, currentUserId, reload }: {
       header: labels.userActionsColumn,
       actions: true,
       render: (user) => isLastActiveAdmin(user) ? null : (
-        <Button variant="ghost" icon={user.status === 'active' ? Lock : LockOpen} onClick={() => setConfirmUser(user)}>
+        <Button variant="ghost" icon={user.status === 'active' ? Lock : LockOpen} aria-label={`${user.display_name} ${user.status === 'active' ? 'sperren' : 'entsperren'}`} onClick={() => setConfirmUser(user)}>
           {user.status === 'active' ? labels.lock : labels.unlock}
         </Button>
       )
@@ -120,8 +120,12 @@ export function UsersPage({ users, currentUserId, reload }: {
       )}
 
       {confirmUser && (
-        <Dialog title={confirmUser.status === 'active' ? labels.lock : labels.unlock} close={() => setConfirmUser(null)}>
-          <p>{confirmUser.status === 'active' ? labels.lockConfirm : labels.unlockConfirm}</p>
+        <Dialog title={`${confirmUser.display_name} ${confirmUser.status === 'active' ? 'sperren' : 'entsperren'}`} close={() => setConfirmUser(null)}>
+          <p>
+            {confirmUser.status === 'active'
+              ? `${confirmUser.display_name} (${confirmUser.username}) wird gesperrt und kann sich danach nicht mehr anmelden. Laufende Sitzungen enden. Heruntergeladene Dateien bleiben erhalten.`
+              : `${confirmUser.display_name} (${confirmUser.username}) wird entsperrt und kann sich wieder anmelden.`}
+          </p>
           <div className="form-actions">
             <Button
               variant={confirmUser.status === 'active' ? 'danger-solid' : 'primary'}
@@ -129,7 +133,7 @@ export function UsersPage({ users, currentUserId, reload }: {
             >
               {confirmUser.status === 'active' ? labels.lock : labels.unlock}
             </Button>
-            <Button onClick={() => setConfirmUser(null)}>{labels.cancel}</Button>
+            <Button data-autofocus onClick={() => setConfirmUser(null)}>{labels.cancel}</Button>
           </div>
         </Dialog>
       )}

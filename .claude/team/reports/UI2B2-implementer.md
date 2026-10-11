@@ -1,7 +1,7 @@
 # UI2-B2 Redesign Teil 2: Bericht (Implementer)
 
 req_id REQ-DL-008, req_hash b838cb501c2e1aa5, Branch ui/next, Worktree /work/wt/ui2. Nichts gepusht.
-Zwei Commits: d6c0a75 (Sichtprüfung UI2-B1, Punkte 1 bis 11) und der Commit mit AC25 bis AC28 (siehe git log).
+Commits auf ui/next: d6c0a75 (Sichtprüfung UI2-B1, Punkte 1 bis 11), 0dab471 (AC25 bis AC28) und der Abschluss-Commit mit AC16-Rest, AC30-Test und diesem Bericht (siehe git log).
 
 ## Sichtprüfung UI2-B1 (Orchestrator asuna), abgehakt
 
@@ -24,16 +24,53 @@ Zwei Commits: d6c0a75 (Sichtprüfung UI2-B1, Punkte 1 bis 11) und der Commit mit
 - AC27 Einstellungen: neue Bausteine SettingsSection (280px Erklärung, Formular höchstens 640px, unter 1280px untereinander) und FileField (deutscher Knopf "Datei wählen", "Keine Datei gewählt"). Angewendet auf Immich, Limits, Konto (Passwort, Über Kura) und Zugänge.
 - AC28 Zugänge: eine Liste mit vier Zeilen (Name, Chip, Fakten, Aktion). Hinterlegen, Ersetzen und Löschen im Dialog; der Risikohinweis steht genau einmal je Dialog. Erfolg als Toast.
 
-## Tests und Prüfung
+## Weitere Schließungen aus dem UI2B1-Bericht
 
-- corepack pnpm check: exit 0 (76 Testdateien, 1593 Tests, 1 übersprungen).
-- Neue oder umgebaute Tests: Credentials.test.tsx (Liste, Dialoge, Pixiv, Löschen, fehlender Schlüssel), Media.test.tsx (AC25), Sources.test.tsx (AC26), Subscriptions.test.tsx (Punkte 4, 8, 9).
-- Screenshots geprüft: live-run, history, history-live, immich, limits, account, account-dialog (hell 1440, dunkel, hell 390).
+- AC16 Rest: "Freigabe entziehen" (Immich) und "Benutzer sperren/entsperren" öffnen jetzt einen Bestätigungsdialog, der das Objekt beim Namen nennt (Endpunkt bzw. Anzeigename und Benutzername), Fokus auf Abbrechen. Die Knöpfe in den Tabellenzeilen tragen aria-label mit dem Objekt. Tests: App.test.tsx.
+- AC30: styles/motion.test.ts prüft, dass keine Endlosanimation existiert und dass prefers-reduced-motion Animationen, Übergänge und die Dauer-Tokens abschaltet.
+
+## AC-Liste AC1 bis AC40
+
+- AC1 bis AC5, AC7 bis AC9: erfüllt wie im UI2B1-Bericht (unverändert; contrast.test.ts grün, keine Farbliterale außerhalb tokens.css, Schrift selbst gehostet). Neue CSS in settings.css, ledger.css, media.css nutzt nur Tokens.
+- AC6: teilweise. tabular-nums an den Zahlenbausteinen, neue Zähler (Satz der Live-Ansicht, Segmentzeile, Kopf der Verlaufszeile) tragen die Klasse num. Nicht jede Seite einzeln vermessen.
+- AC10: erfüllt für alle in dieser Karte gebauten Seiten (390 px Screenshots live-run, history, immich, limits, account); keyboard.mjs grün. Kein horizontales Scrollen in den Aufnahmen gesehen, aber keine automatische Messung.
+- AC11 bis AC15: erfüllt (UI2B1) und durch die Sichtprüfungspunkte 1 bis 11 nachgebessert.
+- AC16: erfüllt (Abo löschen, Zeitplan löschen, Freigabe entziehen, Benutzer sperren, Zugänge löschen: alle mit Dialog, Objektname, Fokus auf Abbrechen).
+- AC17, AC18, AC20, AC23, AC24: erfüllt (UI2B1; media-check.mjs und keyboard.mjs grün).
+- AC19: erfüllt für Gruppierung je Beitrag und Tag; relative Zeit im Beitragskopf der Medienansicht nicht erneut geprüft.
+- AC21: erfüllt. MediaTile (Vorschau, Original, Glyph und Text) und neue Zustandskacheln für wartet, lädt, fehlgeschlagen. Platzhalter aus averageColor, sonst surface-sunken. Test: Media.test.tsx.
+- AC22: teilweise. Fokus und Pfeiltasten wie bisher; Hover-Caption nicht per Screenshot belegt.
+- AC25: erfüllt (Satz, Balken role=progressbar, Kachelreihe über Gallery, Zustandskacheln, Ansage höchstens alle 5 s per useThrottledText). Die Ansage ist nur per Quelltext und einem Rollen-Test belegt, die 5-Sekunden-Drosselung selbst ist nicht per Fake-Timer getestet.
+- AC26: erfüllt (Tagesgruppen, 56px-Bild, Segmentbalken, Chips nur bei Abweichung, Prüfsumme unter Technische Details). Test: Sources.test.tsx.
+- AC27: erfüllt für Immich, Limits, Konto; auch Zugänge und Über Kura. Benutzer (Tabelle) und Version haben keine Formularspalte und nutzen das Seitenlayout ohne SettingsSection.
+- AC28: erfüllt. Test: Credentials.test.tsx (vier Zeilen, Dialog, Risikohinweis genau einmal je Dialog).
+- AC29: erfüllt (UI2B1).
+- AC30: erfüllt (motion.test.ts). View Transitions werden nicht eingesetzt; der Betrachter hat den Rückfall ohne.
+- AC31: erfüllt. grep über Quellen ohne Treffer, zusätzlich prüft capture.mjs jeden Screenshot gegen alle gerenderten Texte und Attribute (Gedankenstrich, Emoji, Mittelpunkt, Sie-Form).
+- AC32: erfüllt (UI2B1).
+- AC33: erfüllt für Zugänge (Erfolg als Toast, Fehler als Banner im Dialog); Verhalten des Toast-Bausteins (6 s, Pause bei Hover und Fokus) unverändert, nicht neu getestet.
+- AC34: teilweise. Zustände laden, leer, Fehler für Zugänge, Live-Ansicht und Verlauf vorhanden; Immich und Limits haben nur die vorhandenen Zustände.
+- AC35: erfüllt (UI2B1).
+- AC36: erfüllt nach Beobachtung. Keine CSP-Meldungen; die drei Konsolenmeldungen sind 401 (absichtlich falsche Anmeldung), 500 (gemockter Fehler) und 404 (Vorschau fehlt, Rückfall auf Original). Daher endet capture.mjs mit Exit 2, das ist die vorhandene Regel bei Konsolenmeldungen.
+- AC37: teilweise (unverändert: Vorschaubilder, lazy, decoding=async, aspect-ratio; Tagesgruppen ohne content-visibility, weil der sticky Kopf sonst nicht haftet). Das 56px-Bild im Verlauf lädt lazy und async.
+- AC38: erfüllt (dunkle Screenshots von live-run und history gesichtet).
+- AC39: erfüllt (siehe unten).
+- AC40: erfüllt (keine neue Abhängigkeit).
+
+## Befehle und Ergebnisse
+
+- corepack pnpm check: exit 0 (76 Testdateien, 1593 Tests, 1 übersprungen). Hinweis: Dieses Root-Vitest enthält die Tests unter apps/web nicht.
+- cd apps/web und vitest run: 19 Dateien, 134 Tests grün. Davon neu oder umgebaut: Credentials.test.tsx (15), Media.test.tsx (AC25), Sources.test.tsx (AC26), Subscriptions.test.tsx, App.test.tsx (Freigabe, Benutzer sperren), styles/motion.test.ts.
+- node tests/ui-shots/capture.mjs --skip-build --out=/work/shots-ui2: 88 Screenshots (hell 1440, dunkel 1440, hell 390), Exit 2 wegen der drei erklärten Konsolenmeldungen. Neue Aufnahme account-dialog.
+- node tests/ui-shots/keyboard.mjs --skip-build: alle Prüfungen grün. node tests/ui-shots/media-check.mjs --skip-build: alle Prüfungen grün.
+- Gesichtet und korrigiert: live-run, history, history-live, immich, limits, account, account-dialog (hell, dunkel, 390). Nicht jede der 88 Aufnahmen einzeln angesehen.
 
 ## Hinweise und offen
 
-- Die Screenshots der Vollseite zeigen bei 390 px die fixe Bottom-Navigation mitten im Bild und bei Dialogen ein Overlay nur bis zur Viewport-Höhe. Das ist ein Artefakt der Vollseiten-Aufnahme, nicht der Oberfläche.
-- Der Screenshot-Lauf brach einmal mit einem Timeout beim Laden der Übersicht ab und lief beim Wiederholen durch. Ursache nicht untersucht.
-- Die Konsolenmeldungen 401, 500 und 404 im Screenshot-Lauf stammen aus den absichtlichen Fehlerfällen der Harness (Login-Fehler und andere), nicht überprüft je Eintrag.
+- Aufnahmen der Vollseite: bei 390 px liegt die fixe Bottom-Navigation mitten im Bild, bei Dialogen endet das Overlay auf Viewport-Höhe. Artefakt der Vollseiten-Aufnahme.
+- In der dunklen Aufnahme des Abo-Details zeigen einige Kacheln unterhalb des Falzes nur die Platzhalterfarbe (averageColor), weil die Bilder lazy laden und der Screenshot vor dem Nachladen entsteht. Kein leerer Kasten, aber die Harness wartet nicht auf alle Bilder.
+- Ein Screenshot-Lauf brach einmal mit Timeout beim Laden der Übersicht ab und lief beim Wiederholen durch; Ursache nicht untersucht.
+- Die Punkte (1), (5), (6), (10) der Sichtprüfung sind per Screenshot und CSS bestätigt, aber nicht mit eigenen Tests belegt.
 - Immich.tsx hat apiKey-Felder; Werte werden nirgends protokolliert.
-- Nicht verifiziert: Browser außer dem Chromium der Harness.
+- Nicht verifiziert: andere Browser als das Chromium der Harness.
+- Rückweg: git revert der Commits d6c0a75 bis zum Abschluss-Commit auf ui/next; keine Migration, keine Abhängigkeit, keine Änderung in apps/api.
