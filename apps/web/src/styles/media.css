@@ -246,3 +246,134 @@
     min-height: 44px;
   }
 }
+
+/*
+ * Tile (REQ-DL-008 "Kachel"): picture on the average colour, caption on a scrim at hover and keyboard focus,
+ * video badge, and the states that are not a picture. The scrim is the only gradient of the interface.
+ */
+.tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--tile-color, var(--surface-sunken));
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tile-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out), transform 240ms var(--ease-out);
+}
+
+.tile-image[data-loaded='true'] {
+  opacity: 1;
+}
+
+.tile:active .tile-image {
+  transform: scale(0.99);
+  transition-duration: 80ms;
+}
+
+.tile-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.tile-name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-micro);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tile-micro {
+  font-size: var(--text-micro);
+}
+
+.tile-badge {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--badge-bg);
+  color: var(--on-media);
+  font-size: var(--text-micro);
+  line-height: 16px;
+}
+
+.tile-caption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) var(--space-2) var(--space-2);
+  background: var(--scrim);
+  color: var(--on-media);
+  font-size: var(--text-micro);
+  line-height: 16px;
+  text-align: left;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.tile-caption-title {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile:focus-visible .tile-caption {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tile:hover .tile-caption {
+    opacity: 1;
+  }
+
+  .tile:hover .tile-image {
+    transform: scale(1.02);
+  }
+}
+
+@media (hover: none) {
+  .tile-badge {
+    opacity: 1;
+  }
+}
