@@ -212,7 +212,7 @@ export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory
           </div>
         </div>
         <div className="detail-actions">
-          <Button variant="primary" icon={actions.primary.icon} disabled={actions.primary.disabled} title={actions.primary.hint} onClick={() => void actions.primary.run()}>
+          <Button variant="primary" className="btn-action" icon={actions.primary.icon} disabled={actions.primary.disabled} title={actions.primary.hint} onClick={() => void actions.primary.run()}>
             {actions.primary.label}
           </Button>
           <Menu label={`Weitere Aktionen für ${subscription.name}`} trigger={<DotsThree size={20} weight="bold" aria-hidden="true" />} items={actions.menuItems} />

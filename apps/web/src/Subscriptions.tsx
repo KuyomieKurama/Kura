@@ -73,9 +73,9 @@ function SubscriptionRow({ subscription, reload, onOpen, queued }: { subscriptio
         <Cover subscription={subscription} size={64} />
         <span className="sub-name">
           <span className="sub-title truncate" title={subscription.name}>{subscription.name}</span>
-          <span className="sub-platform" title={subscription.targetUrl ?? undefined}>
+          <span className="sub-platform">
             <PlatformSeal platform={platform} />
-            <span className="meta truncate">{platformName(platform)}{subscription.targetUrl ? `, ${shortAddress(subscription.targetUrl)}` : ''}</span>
+            <span className="meta truncate" title={subscription.targetUrl ? `${platformName(platform)}: ${subscription.targetUrl}` : platformName(platform)}>{platformName(platform)}{subscription.targetUrl ? `, ${shortAddress(subscription.targetUrl)}` : ''}</span>
           </span>
           {paused && <Chip tone="neutral" icon={PauseCircle}>Pausiert</Chip>}
           {subscription.targetState === 'invalid' && <StatusChip domain="target" status="invalid" />}
@@ -90,7 +90,7 @@ function SubscriptionRow({ subscription, reload, onOpen, queued }: { subscriptio
       </div>
       <div className="sub-cell sub-count num">{subscription.mediaCount?.all ?? 0}</div>
       <div className="sub-actions">
-        <Button variant="secondary" icon={actions.primary.icon} disabled={actions.primary.disabled} title={actions.primary.hint} onClick={() => void actions.primary.run()}>
+        <Button variant="secondary" className="btn-action" icon={actions.primary.icon} disabled={actions.primary.disabled} title={actions.primary.hint} onClick={() => void actions.primary.run()}>
           {actions.primary.label}
         </Button>
         <Menu label={`Weitere Aktionen für ${subscription.name}`} trigger={<DotsThree size={20} weight="bold" aria-hidden="true" />} items={actions.menuItems} />

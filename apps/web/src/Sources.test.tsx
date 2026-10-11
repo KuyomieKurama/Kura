@@ -361,3 +361,14 @@ describe('a live run without any file yet', () => {
     expect(within(region).queryByText(/0 gespeichert/)).not.toBeInTheDocument();
   });
 });
+
+it('gives the shortened address in the list its full text as title and the swapping button one shared width class', async () => {
+  const long = 'https://www.youtube.com/@a-very-long-channel-name/videos?view=0&sort=dd&shelf_id=0';
+  mockApi('user', (path) => (path.endsWith('/subscriptions') ? json({ subscriptions: [{ ...subscription, targetUrl: long }, { ...subscription, id: 's2', name: 'Pausiert', status: 'paused', targetUrl: long }] }) : undefined));
+  await open('Abonnements');
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  expect(row.querySelector(`[title$=": ${long}"]`)).not.toBeNull();
+  const paused = screen.getByRole('article', { name: 'Abonnement Pausiert' });
+  expect(within(row).getByRole('button', { name: 'Jetzt ausführen' })).toHaveClass('btn-action');
+  expect(within(paused).getByRole('button', { name: 'Fortsetzen' })).toHaveClass('btn-action');
+});

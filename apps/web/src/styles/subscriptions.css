@@ -96,6 +96,11 @@
   max-width: 100%;
 }
 
+/* "Fortsetzen" and "Jetzt ausführen" swap in the same place: the same minimum width keeps the button from changing size and the menu next to it from jumping. */
+.btn-action {
+  min-width: 168px;
+}
+
 .sub-actions {
   display: flex;
   align-items: center;
