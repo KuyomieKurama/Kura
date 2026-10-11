@@ -62,7 +62,9 @@ export function RunProgress({ runId, width = 120 }: { runId: string; width?: num
  * Everything one can do with a subscription, shared by the row and the detail page: the actions, their dialogs
  * (edit, delete with the name of the object) and their messages. `onChanged` reloads the data, `onDeleted` leaves the page.
  */
-export function useSubscriptionActions(subscription: Subscription, onChanged: () => Promise<void> | void, onDeleted: () => void) {
+export type QueuedRuns = { runs: Record<string, string>; remember: (subscriptionId: string, runId: string) => void };
+
+export function useSubscriptionActions(subscription: Subscription, onChanged: () => Promise<void> | void, onDeleted: () => void, queued: QueuedRuns) {
   const toast = useToast();
   const [dialog, setDialog] = useState<'edit' | 'delete' | null>(null);
   const [error, setError] = useState('');
@@ -84,6 +86,7 @@ export function useSubscriptionActions(subscription: Subscription, onChanged: ()
 
   const runNow = () => attempt(async () => {
     const result = await api.runSubscriptionNow(subscription.id);
+    queued.remember(subscription.id, result.run.id);
     toast({
       message: result.coalesced
         ? `Für „${subscription.name}“ gibt es schon einen offenen Lauf. Es wird kein zweiter angelegt.`
@@ -120,7 +123,7 @@ export function useSubscriptionActions(subscription: Subscription, onChanged: ()
 
   const primary = paused
     ? { label: 'Fortsetzen', icon: Play, run: togglePause, disabled: busy }
-    : { label: 'Jetzt ausführen', icon: Play, run: runNow, disabled: busy || Boolean(subscription.activeRunId) };
+    : { label: 'Jetzt ausführen', icon: Play, run: runNow, disabled: busy };
 
   const dialogs = (
     <>
@@ -148,5 +151,6 @@ export function useSubscriptionActions(subscription: Subscription, onChanged: ()
     </>
   );
   const hasMessages = Boolean((error && dialog !== 'delete') || validation);
-  return { menuItems, primary, dialogs, messages, hasMessages, paused, busy };
+  const liveRunId = subscription.activeRunId ?? queued.runs[subscription.id] ?? null;
+  return { menuItems, primary, dialogs, messages, hasMessages, liveRunId, paused, busy };
 }

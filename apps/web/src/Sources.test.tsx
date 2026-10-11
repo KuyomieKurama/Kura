@@ -43,7 +43,7 @@ async function open(page: 'Abonnements' | 'Verlauf') {
   await screen.findByRole('heading', { name: page });
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.location.hash = ''; });
 
 it('checks an address without saving and shows platform, capabilities and the missing tool', async () => {
   const fetch = mockApi('user', (path, init) => {
@@ -96,8 +96,24 @@ it('validates the saved address after saving and shows the stored result on the 
   fireEvent.change(screen.getByLabelText('Ziel-URL'), { target: { value: subscription.targetUrl } });
   fireEvent.submit(screen.getByRole('form', { name: 'Abonnement anlegen' }));
   await waitFor(() => expect(calls(fetch, 'POST', '/subscriptions/s1/validate')).toHaveLength(1));
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  expect(await within(card).findByText(/Adresse erkannt und unterstützt/)).toBeInTheDocument();
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  // A valid address is the normal case and says nothing; the stored state is read from the list again.
+  await waitFor(() => expect(calls(fetch, 'GET', '/subscriptions').length).toBeGreaterThan(1));
+  expect(within(row).queryByText(/Adresse wird nicht unterstützt/)).not.toBeInTheDocument();
+});
+
+it('marks a subscription whose address is not supported in the list and on its page', async () => {
+  mockApi('user', (path) => {
+    if (path.endsWith('/subscriptions/s1/media')) return json({ items: [], nextCursor: null, counts: { all: 0, image: 0, video: 0 } });
+    if (path.endsWith('/subscriptions')) return json({ subscriptions: [{ ...subscription, targetState: 'invalid' }] });
+    return undefined;
+  });
+  await open('Abonnements');
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  expect(within(row).getByText('Adresse wird nicht unterstützt')).toBeInTheDocument();
+  fireEvent.click(within(row).getByRole('button', { name: 'Creator A öffnen' }));
+  expect(await screen.findByRole('heading', { name: 'Creator A' })).toBeInTheDocument();
+  expect(screen.getByText('Adresse wird nicht unterstützt')).toBeInTheDocument();
 });
 
 it('queues a run with "Jetzt ausführen", shows its progress live; it explains a coalesced click', async () => {
@@ -114,11 +130,14 @@ it('queues a run with "Jetzt ausführen", shows its progress live; it explains a
   await open('Abonnements');
   const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
   fireEvent.click(within(card).getByRole('button', { name: 'Jetzt ausführen' }));
-  expect(await within(card).findByText(/Der Lauf wurde eingereiht/)).toBeInTheDocument();
-  expect(await within(card).findByRole('region', { name: 'Lauf live' })).toBeInTheDocument();
-  expect(await within(card).findByText('Der Lauf ist eingereiht und wartet auf einen freien Worker.')).toBeInTheDocument();
-  fireEvent.click(within(card).getByRole('button', { name: 'Jetzt ausführen' }));
-  expect(await within(card).findByText(/Es gibt bereits einen offenen Lauf .* Es wird kein zweiter angelegt/)).toBeInTheDocument();
+  expect(await screen.findByText('Lauf für „Creator A“ eingereiht.')).toBeInTheDocument();
+  // The list shows the progress of the queued run; the live view with the files is on the page of the subscription.
+  expect(await within(card).findByText('Wird vorbereitet')).toBeInTheDocument();
+  fireEvent.click(within(card).getByRole('button', { name: 'Creator A öffnen' }));
+  expect(await screen.findByRole('region', { name: 'Lauf live' })).toBeInTheDocument();
+  expect(await screen.findByText('Der Lauf ist eingereiht und wartet auf einen freien Worker.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Jetzt ausführen' }));
+  expect(await screen.findByText(/Für „Creator A“ gibt es schon einen offenen Lauf\. Es wird kein zweiter angelegt\./)).toBeInTheDocument();
   expect(calls(fetch, 'POST', '/subscriptions/s1/run-now')).toHaveLength(2);
 });
 
@@ -126,7 +145,9 @@ it('does not offer "Jetzt ausführen" for a paused subscription', async () => {
   mockApi('user', (path) => path.endsWith('/subscriptions') ? json({ subscriptions: [{ ...subscription, status: 'paused' }] }) : undefined);
   await open('Abonnements');
   const card = await screen.findByRole('article', { name: /Abonnement Creator A/ });
-  expect(within(card).getByRole('button', { name: 'Jetzt ausführen' })).toBeDisabled();
+  // A paused subscription offers "Fortsetzen" as its action; a run on demand would be a second way around the pause.
+  expect(within(card).queryByRole('button', { name: 'Jetzt ausführen' })).not.toBeInTheDocument();
+  expect(within(card).getByRole('button', { name: 'Fortsetzen' })).toBeEnabled();
 });
 
 const storedAsset = {
@@ -225,22 +246,21 @@ it('does not show the kill switch controls to normal users', async () => {
   expect(screen.queryByRole('form', { name: 'Adapter abschalten' })).not.toBeInTheDocument();
 });
 
-it('opens the media section of a subscription from its row', async () => {
+it('opens the media tab on the page of a subscription', async () => {
   const fetch = mockApi('user', (path) => {
     if (path.endsWith('/subscriptions/s1/media')) return json({ items: [], nextCursor: null, counts: { all: 0, image: 0, video: 0 } });
     if (path.endsWith('/subscriptions')) return json({ subscriptions: [subscription] });
     return undefined;
   });
   await open('Abonnements');
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  const toggle = within(card).getByRole('button', { name: 'Medien' });
-  expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  fireEvent.click(toggle);
-  expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  expect(await within(card).findByText('Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen.')).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Creator A öffnen' }));
+  expect(await screen.findByRole('tab', { name: /^Medien/ })).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByText('Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen.')).toBeInTheDocument();
   expect(calls(fetch, 'GET', '/subscriptions/s1/media')).toHaveLength(1);
-  fireEvent.click(toggle);
-  expect(within(card).queryByRole('region', { name: 'Medien' })).not.toBeInTheDocument();
+  // Back to the list: the address is the list again and "back" of the browser works.
+  fireEvent.click(screen.getByRole('link', { name: 'Abonnements' }));
+  expect(await screen.findByRole('button', { name: 'Creator A öffnen' })).toBeInTheDocument();
+  expect(window.location.hash).toBe('#/abonnements');
 });
 
 it('shows a running run of the history live and leaves finished runs alone', async () => {

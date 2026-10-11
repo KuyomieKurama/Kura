@@ -39,21 +39,34 @@ async function openSubscriptions() {
   fireEvent.click(screen.getByRole('button', { name: 'Abonnements' }));
   await screen.findByRole('heading', { name: 'Abonnements' });
 }
+/** Opens the detail view of Creator A from the list and selects a tab. */
+async function openDetail(tab?: 'Zeitpläne' | 'Läufe' | 'Medien') {
+  fireEvent.click(await screen.findByRole('button', { name: 'Creator A öffnen' }));
+  await screen.findByRole('heading', { name: 'Creator A' });
+  if (tab) fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${tab}`) }));
+}
+async function chooseFromMenu(scope: HTMLElement | null, entry: string) {
+  const root = scope ?? document.body;
+  fireEvent.click(within(root).getByRole('button', { name: /^Weitere Aktionen für Creator A/ }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: entry }));
+}
 const calls = (fetch: ReturnType<typeof vi.fn>, method: string, suffix: string) =>
   fetch.mock.calls.filter(([input, init]) => String(input).endsWith(suffix) && (init?.method ?? 'GET') === method);
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.location.hash = ''; });
 
-it('lists subscriptions with target, platform, validation state and schedule summary', async () => {
-  mockApi('user', (path) => path.endsWith('/subscriptions') ? json({ subscriptions: [baseSubscription] }) : path.endsWith('/subscriptions/s1/runs') ? json({ runs: [] }) : undefined);
+it('lists subscriptions with platform and address, and opens the detail view with schedules and runs', async () => {
+  mockApi('user', (path) => path.endsWith('/subscriptions') ? json({ subscriptions: [baseSubscription] }) : path.endsWith('/subscriptions/s1/runs') ? json({ runs: [] }) : path.endsWith('/subscriptions/s1/media') ? json({ items: [], nextCursor: null, counts: { all: 0, image: 0, video: 0 } }) : undefined);
   await openSubscriptions();
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  expect(within(card).getByText('Ziel: https://example.test/creator-a')).toBeInTheDocument();
-  expect(within(card).getByText(/Noch nicht geprüft/)).toBeInTheDocument();
-  expect(within(card).getByText('Status: Aktiv')).toBeInTheDocument();
-  fireEvent.click(within(card).getByRole('button', { name: 'Zeitpläne und Läufe' }));
-  expect(await within(card).findByText('Täglich um 02:30 Uhr (Europe/Berlin)')).toBeInTheDocument();
-  expect(within(card).getByText('Noch keine Läufe.')).toBeInTheDocument();
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  expect(within(row).getByText(/YouTube, example\.test\/creator-a/)).toBeInTheDocument();
+  expect(within(row).getByRole('button', { name: 'Jetzt ausführen' })).toBeInTheDocument();
+  await openDetail('Zeitpläne');
+  expect(await screen.findByText('Täglich um 02:30 Uhr (Europe/Berlin)')).toBeInTheDocument();
+  expect(screen.getByRole('switch', { name: 'Aktiv' })).toBeChecked();
+  expect(window.location.hash).toBe('#/abonnements/s1');
+  fireEvent.click(screen.getByRole('tab', { name: /^Läufe/ }));
+  expect(await screen.findByText('Noch keine Läufe.')).toBeInTheDocument();
 });
 
 it('creates a subscription with the entered target and the platform hint', async () => {
@@ -98,13 +111,15 @@ it('pauses and resumes a subscription', async () => {
     return undefined;
   });
   await openSubscriptions();
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  fireEvent.click(within(card).getByRole('button', { name: 'Pausieren' }));
-  expect(await screen.findByText('Status: Pausiert: Es werden keine neuen Läufe angelegt.')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Creator A (pausiert)' })).toBeInTheDocument();
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  await chooseFromMenu(row, 'Pausieren');
+  expect(await screen.findByText('„Creator A“ ist pausiert.')).toBeInTheDocument();
+  expect(await within(row).findByText('Creator A (pausiert)')).toBeInTheDocument();
+  expect(within(row).queryByRole('button', { name: 'Jetzt ausführen' })).not.toBeInTheDocument();
   expect(calls(fetch, 'POST', '/subscriptions/s1/pause')).toHaveLength(1);
-  fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen' }));
-  expect(await screen.findByText('Status: Aktiv')).toBeInTheDocument();
+  fireEvent.click(within(row).getByRole('button', { name: 'Fortsetzen' }));
+  expect(await screen.findByText('„Creator A“ läuft wieder.')).toBeInTheDocument();
+  expect(await within(row).findByRole('button', { name: 'Jetzt ausführen' })).toBeInTheDocument();
 });
 
 it('asks before deleting and deletes only after confirmation', async () => {
@@ -115,11 +130,15 @@ it('asks before deleting and deletes only after confirmation', async () => {
     return undefined;
   });
   await openSubscriptions();
-  fireEvent.click(await screen.findByRole('button', { name: 'Löschen' }));
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  await chooseFromMenu(row, 'Abonnement löschen');
+  const dialog = await screen.findByRole('dialog', { name: '„Creator A“ löschen?' });
   expect(calls(fetch, 'DELETE', '/subscriptions/s1')).toHaveLength(0);
-  expect(screen.getByText(/Heruntergeladene Medien bleiben unberührt/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Endgültig löschen' }));
+  expect(within(dialog).getByText(/Heruntergeladene Medien bleiben unberührt/)).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toHaveFocus();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abonnement löschen' }));
   expect(await screen.findByText('Noch keine Abonnements.')).toBeInTheDocument();
+  expect(calls(fetch, 'DELETE', '/subscriptions/s1')).toHaveLength(1);
 });
 
 it('previews the next runs and marks the skipped DST occurrence', async () => {
@@ -136,9 +155,8 @@ it('previews the next runs and marks the skipped DST occurrence', async () => {
     return undefined;
   });
   await openSubscriptions();
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  fireEvent.click(within(card).getByRole('button', { name: 'Zeitpläne und Läufe' }));
-  fireEvent.click(await within(card).findByRole('button', { name: 'Zeitplan hinzufügen' }));
+  await openDetail('Zeitpläne');
+  fireEvent.click(await screen.findByRole('button', { name: 'Zeitplan hinzufügen' }));
   fireEvent.change(screen.getByLabelText('Zeitzone'), { target: { value: 'Europe/Berlin' } });
   fireEvent.change(screen.getByLabelText('Uhrzeit'), { target: { value: '02:30' } });
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau der nächsten Läufe' }));
@@ -160,9 +178,8 @@ it('sends the selected gap policy and cron preset when saving a schedule', async
     return undefined;
   });
   await openSubscriptions();
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  fireEvent.click(within(card).getByRole('button', { name: 'Zeitpläne und Läufe' }));
-  fireEvent.click(await within(card).findByRole('button', { name: 'Zeitplan hinzufügen' }));
+  await openDetail('Zeitpläne');
+  fireEvent.click(await screen.findByRole('button', { name: 'Zeitplan hinzufügen' }));
   fireEvent.change(screen.getByLabelText('Art des Zeitplans'), { target: { value: 'weekdays' } });
   fireEvent.change(screen.getByLabelText('Uhrzeit'), { target: { value: '06:00' } });
   fireEvent.change(screen.getByLabelText('Zeitzone'), { target: { value: 'Europe/Berlin' } });
@@ -188,9 +205,8 @@ it('shows recent runs with German status texts', async () => {
     return undefined;
   });
   await openSubscriptions();
-  const card = await screen.findByRole('article', { name: 'Abonnement Creator A' });
-  fireEvent.click(within(card).getByRole('button', { name: 'Zeitpläne und Läufe' }));
-  const runs = await within(card).findByRole('region', { name: 'Letzte Läufe' });
+  await openDetail('Läufe');
+  const runs = await screen.findByRole('region', { name: 'Letzte Läufe' });
   expect(await within(runs).findByText('Fehlgeschlagen')).toBeInTheDocument();
   expect(within(runs).getByText('Quelle nicht erreichbar')).toBeInTheDocument();
   expect(within(runs).getByText('Erfolgreich')).toBeInTheDocument();

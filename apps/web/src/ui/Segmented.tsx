@@ -10,7 +10,7 @@ export function Segmented<T extends string>({ label, options, value, onChange }:
   return (
     <div className="segmented" role="group" aria-label={label}>
       {options.map((option) => (
-        <button key={option.value} type="button" className="segmented-option" aria-pressed={option.value === value} onClick={() => onChange(option.value)}>
+        <button key={option.value} type="button" className="segmented-option" aria-label={option.count !== undefined ? `${option.label} (${option.count})` : undefined} aria-pressed={option.value === value} onClick={() => onChange(option.value)}>
           {option.label}
           {option.count !== undefined && <span className="segmented-count">{option.count}</span>}
         </button>

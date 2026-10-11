@@ -6,7 +6,7 @@ import { labels } from './labels.js';
 import { RunLive } from './RunLive.js';
 import { ScheduleForm } from './ScheduleForm.js';
 import { describeRule, formatInstant } from './schedule-format.js';
-import { platformOf, shortAddress, useSubscriptionActions } from './SubscriptionParts.js';
+import { platformOf, type QueuedRuns, shortAddress, useSubscriptionActions } from './SubscriptionParts.js';
 import { SubscriptionMedia } from './SubscriptionMedia.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
@@ -174,15 +174,16 @@ function RunsTab({ subscription, onOpenHistory }: { subscription: Subscription; 
 }
 
 /** The own view of one subscription: header with the one action, a sentence, the live run, and three tabs. */
-export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory }: {
+export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory, queued }: {
   subscription: Subscription;
+  queued: QueuedRuns;
   reload: () => Promise<void>;
   onBack: () => void;
   onOpenHistory: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('media');
   const [mediaReload, setMediaReload] = useState(0);
-  const actions = useSubscriptionActions(subscription, reload, onBack);
+  const actions = useSubscriptionActions(subscription, reload, onBack, queued);
   const platform = platformOf(subscription);
   const finished = useCallback(() => { setMediaReload((count) => count + 1); void reload(); }, [reload]);
 
@@ -215,10 +216,11 @@ export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory
           <Menu label={`Weitere Aktionen für ${subscription.name}`} trigger={<DotsThree size={20} weight="bold" aria-hidden="true" />} items={actions.menuItems} />
         </div>
       </header>
+      {subscription.targetState !== 'valid' && <div className="detail-chip"><StatusChip domain="target" status={subscription.targetState} /></div>}
       <Summary subscription={subscription} />
       {actions.messages}
-      {subscription.activeRunId && (
-        <RunLive key={subscription.activeRunId} runId={subscription.activeRunId} onFinished={finished} onShowMedia={() => setTab('media')} />
+      {actions.liveRunId && (
+        <RunLive key={actions.liveRunId} runId={actions.liveRunId} onFinished={finished} onShowMedia={() => setTab('media')} />
       )}
       <Tabs
         label="Bereiche des Abonnements"

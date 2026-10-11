@@ -7,7 +7,7 @@ import { errorMessage } from './error-message.js';
 import { labels } from './labels.js';
 import { SubscriptionDetail } from './SubscriptionDetail.js';
 import { SubscriptionForm } from './SubscriptionForm.js';
-import { Cover, platformOf, RunProgress, shortAddress, subscriptionRoute, useSubscriptionActions } from './SubscriptionParts.js';
+import { Cover, platformOf, type QueuedRuns, RunProgress, shortAddress, subscriptionRoute, useSubscriptionActions } from './SubscriptionParts.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { Chip } from './ui/Chip.js';
@@ -18,6 +18,7 @@ import { PageHeader } from './ui/PageHeader.js';
 import { platformName } from './ui/PlatformSeal.js';
 import { RelativeTime } from './ui/RelativeTime.js';
 import { SkeletonRows } from './ui/Skeleton.js';
+import { StatusChip } from './ui/StatusChip.js';
 import { Warning, PauseCircle } from '@phosphor-icons/react';
 
 const LIST_ROUTE = '#/abonnements';
@@ -63,8 +64,8 @@ function lastRunCell(subscription: Subscription) {
   );
 }
 
-function SubscriptionRow({ subscription, reload, onOpen }: { subscription: Subscription; reload: () => Promise<void>; onOpen: () => void }) {
-  const actions = useSubscriptionActions(subscription, reload, () => void reload());
+function SubscriptionRow({ subscription, reload, onOpen, queued }: { subscription: Subscription; reload: () => Promise<void>; onOpen: () => void; queued: QueuedRuns }) {
+  const actions = useSubscriptionActions(subscription, reload, () => void reload(), queued);
   const platform = platformOf(subscription);
   const paused = actions.paused;
   return (
@@ -76,11 +77,12 @@ function SubscriptionRow({ subscription, reload, onOpen }: { subscription: Subsc
           <span className="meta truncate" title={subscription.targetUrl ?? undefined}>
             {platformName(platform)}{subscription.targetUrl ? `, ${shortAddress(subscription.targetUrl)}` : ''}
           </span>
+          {subscription.targetState === 'invalid' && <StatusChip domain="target" status="invalid" />}
         </span>
       </button>
       <div className="sub-cell sub-last">
         {lastRunCell(subscription)}
-        {subscription.activeRunId && <RunProgress runId={subscription.activeRunId} />}
+        {actions.liveRunId && <RunProgress runId={actions.liveRunId} />}
       </div>
       <div className="sub-cell sub-next">
         {paused ? <span className="muted">Pausiert</span> : subscription.nextRunAt ? <RelativeTime value={subscription.nextRunAt} capitalize /> : <span className="muted">Kein Zeitplan</span>}
@@ -103,6 +105,11 @@ export function SubscriptionsPage({ isAdmin = false, onOpenHistory }: { isAdmin?
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [detailId, go] = useDetailRoute();
+  const [queuedRuns, setQueuedRuns] = useState<Record<string, string>>({});
+  const queued: QueuedRuns = {
+    runs: queuedRuns,
+    remember: (subscriptionId, runId) => setQueuedRuns((current) => ({ ...current, [subscriptionId]: runId }))
+  };
 
   const reload = useCallback(async () => {
     try {
@@ -136,7 +143,7 @@ export function SubscriptionsPage({ isAdmin = false, onOpenHistory }: { isAdmin?
     );
   }
   if (detailId && detail) {
-    return <SubscriptionDetail subscription={detail} reload={reload} onBack={() => { go(null); void reload(); }} onOpenHistory={() => onOpenHistory?.()} />;
+    return <SubscriptionDetail subscription={detail} queued={queued} reload={reload} onBack={() => { go(null); void reload(); }} onOpenHistory={() => onOpenHistory?.()} />;
   }
 
   const createButton = <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Abonnement anlegen</Button>;
@@ -169,7 +176,7 @@ export function SubscriptionsPage({ isAdmin = false, onOpenHistory }: { isAdmin?
                 <span>Abonnement</span><span>Letzter Lauf</span><span>Nächster Lauf</span><span className="sub-count">Medien</span><span />
               </div>
               {subscriptions.map((subscription) => (
-                <SubscriptionRow key={subscription.id} subscription={subscription} reload={reload} onOpen={() => go(subscription.id)} />
+                <SubscriptionRow key={subscription.id} subscription={subscription} reload={reload} onOpen={() => go(subscription.id)} queued={queued} />
               ))}
             </div>
           )}
