@@ -146,6 +146,19 @@ async function main() {
       if (only && !only.has(name)) return;
       const file = `${name}-${variant.theme}-${variant.width}.png`;
       await page.evaluate(() => window.scrollTo(0, 0));
+      // Rendered text rule check (REQ-DL-008 AC31): visible text and the accessible attributes, composed strings included.
+      const offenders = await page.evaluate(() => {
+        const found = new Set();
+        const rule = /[\u2013\u2014]|\p{Extended_Pictographic}|\u00b7|\b(Sie|Ihr|Ihre|Ihren|Ihnen|Ihrem|Ihrer)\b/u;
+        const check = (text) => { const match = rule.exec(text ?? ''); if (match) found.add(`"${match[0]}" in "${text.trim().slice(0, 80)}"`); };
+        const walker = document.createTreeWalker(document.body, 4 /* NodeFilter.SHOW_TEXT */);
+        while (walker.nextNode()) if (walker.currentNode.parentElement?.closest('script,style') === null) check(walker.currentNode.textContent);
+        for (const element of document.querySelectorAll('[title],[aria-label],[placeholder],[alt]')) {
+          for (const name of ['title', 'aria-label', 'placeholder', 'alt']) check(element.getAttribute(name));
+        }
+        return [...found];
+      });
+      for (const offender of offenders) problems.push(`text rule (${name}-${variant.theme}-${variant.width}): ${offender}`);
       await page.screenshot({ path: resolve(outDirectory, file), fullPage: !viewportOnly });
       written.push(file);
     };
@@ -288,8 +301,9 @@ async function main() {
       await page.getByRole('link', { name: 'Abonnements' }).click();
       await page.getByRole('button', { name: 'Atelier Mori öffnen' }).click();
 
-      // The run that is still going is the queued run of Atelier Mori: "Jetzt ausführen" shows it live.
-      await page.getByRole('button', { name: 'Jetzt ausführen' }).click();
+      // The run that is still going is the queued run of Atelier Mori. Starting a second one is not offered while it runs.
+      await page.getByRole('button', { name: 'Jetzt ausführen' }).waitFor();
+      if (!(await page.getByRole('button', { name: 'Jetzt ausführen' }).isDisabled())) throw new Error('Jetzt ausführen must be disabled while a run is active');
       const live = page.getByRole('region', { name: 'Lauf live' });
       await live.getByText('1 wird geladen').waitFor();
       await picturesLoaded(page);

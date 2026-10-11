@@ -91,15 +91,18 @@
 }
 
 .sidebar {
-  position: sticky;
-  top: 0;
   grid-column: 1;
   grid-row: 2;
-  align-self: start;
+  border-right: 1px solid var(--line);
+}
+
+/* The divider belongs to the grid cell and runs to the end of the page; the content stays in view while scrolling. */
+.sidebar-sticky {
+  position: sticky;
+  top: 0;
   display: flex;
   flex-direction: column;
   height: calc(100dvh - var(--testbar-height));
-  border-right: 1px solid var(--line);
 }
 
 .sidebar-top {
@@ -290,9 +293,14 @@
 
 .page-lead {
   max-width: var(--prose-width);
+  text-wrap: pretty;
   color: var(--ink-muted);
   font-size: var(--text-title);
   line-height: 24px;
+}
+
+.page-lead time {
+  white-space: nowrap;
 }
 
 .page-lead time,

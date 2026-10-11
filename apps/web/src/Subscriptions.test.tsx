@@ -114,12 +114,28 @@ it('pauses and resumes a subscription', async () => {
   const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
   await chooseFromMenu(row, 'Pausieren');
   expect(await screen.findByText('„Creator A“ ist pausiert.')).toBeInTheDocument();
-  expect(await within(row).findByText('Creator A (pausiert)')).toBeInTheDocument();
+  // The state is said once, as a chip; the name stays the name and the last run is not replaced by it.
+  expect(await within(row).findByText('Pausiert')).toBeInTheDocument();
+  expect(within(row).getAllByText('Pausiert')).toHaveLength(1);
+  expect(within(row).getByText('Kein Lauf geplant')).toBeInTheDocument();
   expect(within(row).queryByRole('button', { name: 'Jetzt ausführen' })).not.toBeInTheDocument();
   expect(calls(fetch, 'POST', '/subscriptions/s1/pause')).toHaveLength(1);
   fireEvent.click(within(row).getByRole('button', { name: 'Fortsetzen' }));
   expect(await screen.findByText('„Creator A“ läuft wieder.')).toBeInTheDocument();
   expect(await within(row).findByRole('button', { name: 'Jetzt ausführen' })).toBeInTheDocument();
+});
+
+it('disables "Jetzt ausführen" with a reason while a run is active', async () => {
+  mockApi('user', (path, init) => {
+    if (path.endsWith('/subscriptions') && !init?.method) return json({ subscriptions: [{ ...baseSubscription, activeRunId: 'r1' }] });
+    return undefined;
+  });
+  await openSubscriptions();
+  const row = await screen.findByRole('article', { name: 'Abonnement Creator A' });
+  const button = within(row).getByRole('button', { name: 'Jetzt ausführen' });
+  expect(button).toBeDisabled();
+  expect(button).toHaveAttribute('title', 'Es läuft bereits ein Lauf');
+  expect(within(row).getByRole('button', { name: 'Weitere Aktionen für Creator A' })).toBeInTheDocument();
 });
 
 it('asks before deleting and deletes only after confirmation', async () => {

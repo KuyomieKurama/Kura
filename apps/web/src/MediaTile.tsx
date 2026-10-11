@@ -25,10 +25,12 @@ export function MediaTile({ asset, onOpen, label, width = 480, eager = false }: 
   width?: 480 | 960;
   eager?: boolean;
 }) {
-  const [broken, setBroken] = useState(false);
+  // Preview first; when the server cannot deliver it, a picture falls back to the original, then to the broken state.
+  const [stage, setStage] = useState<'preview' | 'original' | 'broken'>('preview');
   const [loaded, setLoaded] = useState(false);
   const kind = asset.mediaKind;
-  const preview = asset.hasThumbnail ? thumbnailUrl(asset.id, width) : kind === 'image' ? contentUrl(asset.id) : null;
+  const preview = asset.hasThumbnail && stage === 'preview' ? thumbnailUrl(asset.id, width) : kind === 'image' ? contentUrl(asset.id) : null;
+  const broken = stage === 'broken';
   const showsPicture = (kind === 'image' || kind === 'video') && preview !== null && !broken;
   const style = asset.averageColor ? ({ '--tile-color': asset.averageColor } as CSSProperties) : undefined;
 
@@ -44,7 +46,7 @@ export function MediaTile({ asset, onOpen, label, width = 480, eager = false }: 
         decoding="async"
         {...(asset.width && asset.height ? { width: asset.width, height: asset.height } : {})}
         onLoad={() => setLoaded(true)}
-        onError={() => setBroken(true)}
+        onError={() => setStage(stage === 'preview' && asset.hasThumbnail && kind === 'image' ? 'original' : 'broken')}
       />
     );
   } else if (broken || (kind === 'image' && preview === null)) {
@@ -59,6 +61,8 @@ export function MediaTile({ asset, onOpen, label, width = 480, eager = false }: 
     body = (
       <span className="tile-state" role="img" aria-label={altText(asset)}>
         <Glyph icon={Play} size={28} />
+        <span className="tile-name">{asset.originalName}</span>
+        <span className="tile-micro">Video ohne Vorschau</span>
       </span>
     );
   } else {

@@ -1,7 +1,6 @@
 import { Warning } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type HistoryRun, type MediaAsset, type Overview } from './api.js';
-import { formatBytes } from './history-labels.js';
 import { labels } from './labels.js';
 import { errorMessage } from './error-message.js';
 import { MediaTile } from './MediaTile.js';
@@ -190,6 +189,7 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
       )}
       {overview && !empty && (
         <div className="overview-columns">
+          <div className="overview-stack">
           <section className="section" aria-labelledby="running-heading">
             <h2 id="running-heading">{labels.runningNow}</h2>
             {overview.activeRuns.length === 0
@@ -208,14 +208,13 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
                       <li key={run.runId} className="running-row">
                         <div className="row-line">
                           <PlatformSeal platform={run.platform} />
-                          <span className="row-name">{run.subscriptionName}</span>
+                          <span className="row-name" title={run.subscriptionName}>{run.subscriptionName}</span>
                         </div>
                         <div className="row-line row-between">
-                          <span className="accent-text">{total > 0 ? `Lädt Datei ${Math.min(done + 1, total)} von ${total}` : 'Wird vorbereitet'}</span>
+                          <span className="accent-text">{total > 0 ? `${done} von ${total} Dateien geladen` : 'Wird vorbereitet'}</span>
                           {total > 0 && <span className="num">{percent} %</span>}
                         </div>
                         {total > 0 && <ProgressBar value={done} max={total} label={`Fortschritt ${run.subscriptionName}`} />}
-                        {run.bytesStored > 0 && <span className="meta">{`${formatBytes(run.bytesStored)} gespeichert`}</span>}
                       </li>
                     );
                   })}
@@ -230,37 +229,38 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
                 <ul className="plain-list">
                   {overview.upcoming.map((entry) => (
                     <li key={`${entry.subscriptionId}-${entry.dueAt}`} className="list-row">
-                      <span className="row-name">{entry.subscriptionName}</span>
+                      <span className="row-name" title={entry.subscriptionName}>{entry.subscriptionName}</span>
                       <span className="muted"><RelativeTime value={entry.dueAt} capitalize /></span>
                     </li>
                   ))}
                 </ul>
               )}
           </section>
-        </div>
-      )}
-      {overview && overview.lastRuns.length > 0 && (
-        <section className="section" aria-labelledby="last-heading">
-          <div className="section-head">
-            <h2 id="last-heading">{labels.lastRan}</h2>
-            <button type="button" className="text-link" onClick={() => onNavigate('history')}>{labels.openHistory}</button>
           </div>
-          <ul className="plain-list">
-            {overview.lastRuns.map((run) => {
-              const result = runResult(run);
-              return (
-                <li key={run.id} className="list-row last-run">
-                  <span className="muted last-run-time">{run.finishedAt ? <RelativeTime value={run.finishedAt} capitalize /> : <StatusChip domain="run" status={run.state} />}</span>
-                  <span className="row-name">{run.subscriptionName}</span>
-                  <span className={result.tone === 'plain' ? 'muted' : `tone-${result.tone}`}>
-                    {result.tone !== 'plain' && <Warning size={14} aria-hidden="true" className="inline-glyph" />}
-                    {result.text}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+          {overview.lastRuns.length > 0 && (
+          <section className="section" aria-labelledby="last-heading">
+            <div className="section-head">
+              <h2 id="last-heading">{labels.lastRan}</h2>
+              <button type="button" className="text-link" onClick={() => onNavigate('history')}>{labels.openHistory}</button>
+            </div>
+            <ul className="plain-list">
+              {overview.lastRuns.map((run) => {
+                const result = runResult(run);
+                return (
+                  <li key={run.id} className="list-row last-run">
+                    <span className="row-name" title={run.subscriptionName}>{run.subscriptionName}</span>
+                    <span className={result.tone === 'plain' ? 'muted last-run-result' : `tone-${result.tone} last-run-result`}>
+                      {result.tone !== 'plain' && <Warning size={14} aria-hidden="true" className="inline-glyph" />}
+                      {result.text}
+                    </span>
+                    <span className="muted last-run-time">{run.finishedAt ? <RelativeTime value={run.finishedAt} capitalize /> : <StatusChip domain="run" status={run.state} />}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+          )}
+        </div>
       )}
       <details className="technik">
         <summary>{labels.technical}</summary>

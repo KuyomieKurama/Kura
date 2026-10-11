@@ -50,7 +50,6 @@ function useDetailRoute(): [string | null, (id: string | null) => void] {
 }
 
 function lastRunCell(subscription: Subscription) {
-  if (subscription.status === 'paused') return <Chip tone="neutral" icon={PauseCircle}>Pausiert</Chip>;
   const run = subscription.lastRun;
   if (!run) return <span className="muted">Noch nicht gelaufen</span>;
   const result = runResult({ state: run.state, assetsStored: run.assetsStored, assetsFailed: run.assetsFailed });
@@ -73,10 +72,11 @@ function SubscriptionRow({ subscription, reload, onOpen, queued }: { subscriptio
       <button type="button" className="sub-open" onClick={onOpen} aria-label={`${subscription.name} öffnen`}>
         <Cover subscription={subscription} size={64} />
         <span className="sub-name">
-          <span className="sub-title truncate" title={subscription.name}>{subscription.name}{paused ? ' (pausiert)' : ''}</span>
+          <span className="sub-title truncate" title={subscription.name}>{subscription.name}</span>
           <span className="meta truncate" title={subscription.targetUrl ?? undefined}>
             {platformName(platform)}{subscription.targetUrl ? `, ${shortAddress(subscription.targetUrl)}` : ''}
           </span>
+          {paused && <Chip tone="neutral" icon={PauseCircle}>Pausiert</Chip>}
           {subscription.targetState === 'invalid' && <StatusChip domain="target" status="invalid" />}
         </span>
       </button>
@@ -85,11 +85,11 @@ function SubscriptionRow({ subscription, reload, onOpen, queued }: { subscriptio
         {actions.liveRunId && <RunProgress runId={actions.liveRunId} />}
       </div>
       <div className="sub-cell sub-next">
-        {paused ? <span className="muted">Pausiert</span> : subscription.nextRunAt ? <RelativeTime value={subscription.nextRunAt} capitalize /> : <span className="muted">Kein Zeitplan</span>}
+        {paused ? <span className="muted">Kein Lauf geplant</span> : subscription.nextRunAt ? <RelativeTime value={subscription.nextRunAt} capitalize /> : <span className="muted">Kein Zeitplan</span>}
       </div>
       <div className="sub-cell sub-count num">{subscription.mediaCount?.all ?? 0}</div>
       <div className="sub-actions">
-        <Button variant={paused ? 'secondary' : 'secondary'} icon={actions.primary.icon} disabled={actions.primary.disabled} onClick={() => void actions.primary.run()}>
+        <Button variant="secondary" icon={actions.primary.icon} disabled={actions.primary.disabled} title={actions.primary.hint} onClick={() => void actions.primary.run()}>
           {actions.primary.label}
         </Button>
         <Menu label={`Weitere Aktionen für ${subscription.name}`} trigger={<DotsThree size={20} weight="bold" aria-hidden="true" />} items={actions.menuItems} />

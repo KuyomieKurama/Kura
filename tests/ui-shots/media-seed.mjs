@@ -20,7 +20,10 @@ const PALETTES = [
   ['#335c67', '#fff3b0', '#e09f3e', '#9e2a2b']
 ];
 
-/** Draws one picture per spec in a page and returns the encoded bytes. */
+/**
+ * Draws one picture per spec in a page and returns the encoded bytes, a 480px WebP preview and the average colour,
+ * the same facts the worker derives with ffmpeg (UI2-A), so the screenshots show real aspect ratios and previews.
+ */
 async function renderPictures(browser, specs) {
   const page = await browser.newPage();
   try {
@@ -53,12 +56,31 @@ async function renderPictures(browser, specs) {
         context.fill();
       }
       context.globalAlpha = 1;
-      context.fillStyle = light;
-      context.font = `${Math.round(spec.height * 0.06)}px sans-serif`;
-      context.fillText(spec.label, spec.width * 0.05, spec.height * 0.94);
-      return canvas.toDataURL(spec.mime, 0.86).split(',')[1];
+      const previewWidth = Math.min(480, spec.width);
+      const preview = document.createElement('canvas');
+      preview.width = previewWidth;
+      preview.height = Math.max(1, Math.round((spec.height * previewWidth) / spec.width));
+      preview.getContext('2d').drawImage(canvas, 0, 0, preview.width, preview.height);
+      const dot = document.createElement('canvas');
+      dot.width = 1;
+      dot.height = 1;
+      const dotContext = dot.getContext('2d');
+      dotContext.drawImage(canvas, 0, 0, 1, 1);
+      const [red, green, blue] = dotContext.getImageData(0, 0, 1, 1).data;
+      const averageColor = `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+      return {
+        original: canvas.toDataURL(spec.mime, 0.86).split(',')[1],
+        preview: preview.toDataURL('image/webp', 0.8).split(',')[1],
+        averageColor
+      };
     }), specs);
-    return encoded.map((base64) => Buffer.from(base64, 'base64'));
+    return encoded.map((entry, index) => ({
+      bytes: Buffer.from(entry.original, 'base64'),
+      preview: Buffer.from(entry.preview, 'base64'),
+      averageColor: entry.averageColor,
+      width: specs[index].width,
+      height: specs[index].height
+    }));
   } finally {
     await page.close();
   }
@@ -125,15 +147,17 @@ export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
     const pictureSpecs = Array.from({ length: 16 }, (_, index) => ({
       seed: index + 1,
       palette: PALETTES[index % PALETTES.length],
-      width: [1200, 900, 1000, 800][index % 4],
-      height: [800, 1200, 750, 1100][index % 4],
+      // Landscape 3:2, portrait 3:4, 4:3, portrait 8:11, a panorama and a square: the gallery needs mixed ratios.
+      width: [1200, 900, 1000, 800, 1600, 1000][index % 6],
+      height: [800, 1200, 750, 1100, 700, 1000][index % 6],
       mime: index % 3 === 1 ? 'image/jpeg' : 'image/png',
       label: `Studie ${String(index + 1).padStart(2, '0')}`
     }));
-    const pictures = await renderPictures(browser, pictureSpecs);
+    const pictures = await renderPictures(browser, [...pictureSpecs, { seed: 40, palette: PALETTES[2], width: 480, height: 270, mime: 'image/png', label: 'Zeitraffer' }]);
+    const poster = pictures[pictureSpecs.length];
     const video = await renderVideo(browser);
     const pictureFor = (index) => ({
-      bytes: pictures[index],
+      ...pictures[index],
       mime: pictureSpecs[index].mime,
       name: `illustration_${String(index + 1).padStart(2, '0')}.${pictureSpecs[index].mime === 'image/png' ? 'png' : 'jpg'}`
     });
@@ -177,6 +201,17 @@ export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
             sha256: createHash('sha256').update(file.bytes).digest('hex'), sha1: createHash('sha1').update(file.bytes).digest('hex'),
             byteSize: file.bytes.length, blobObjectId
           });
+          // What the worker derives after storing: dimensions, duration, average colour and the 480px preview.
+          await pool.query(
+            `INSERT INTO asset_media_info (asset_id, status, width, height, duration_seconds, average_color, has_thumbnail)
+             VALUES ($1, 'done', $2, $3, $4, $5, $6)`,
+            [record.id, file.width ?? null, file.height ?? null, file.duration ?? null, file.averageColor ?? null, Boolean(file.preview)]
+          );
+          if (file.preview) {
+            for (const width of [480, 960]) {
+              await pool.query('INSERT INTO asset_thumbnails (asset_id, width, mime_type, data) VALUES ($1, $2, $3, $4)', [record.id, width, 'image/webp', file.preview]);
+            }
+          }
           if (file.verified) {
             const transferId = randomUUID();
             await pool.query(
@@ -202,7 +237,7 @@ export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
     await addPost(finishedRun, '118840002', 'Hafen bei Nacht', 50, [
       { ...pictureFor(5), handover: 'uploaded_unverified' },
       pictureFor(6),
-      { bytes: video, mime: 'video/webm', name: 'hafen_zeitraffer.webm' }
+      { bytes: video, mime: 'video/webm', name: 'hafen_zeitraffer.webm', preview: poster.preview, averageColor: poster.averageColor, width: 480, height: 270, duration: 2.4 }
     ]);
     await addPost(finishedRun, '118840003', 'Skizzenbuch Oktober', 46, [pictureFor(7)]);
     await addPost(finishedRun, '118840004', 'Studie: Katze am Fenster', 44, [pictureFor(8)]);

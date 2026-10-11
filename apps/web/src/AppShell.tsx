@@ -118,6 +118,7 @@ export function AppShell({ items, active, onNavigate, userName, userRole, onLogo
       {desktop
         ? (
           <aside className="sidebar">
+            <div className="sidebar-sticky">
             <header className="sidebar-top"><Wordmark /></header>
             <div className="sidebar-body">
               <nav aria-label={labels.mainNavigation}>
@@ -150,6 +151,7 @@ export function AppShell({ items, active, onNavigate, userName, userRole, onLogo
                 />
                 {version && <VersionButton version={version} onOpen={() => { setMoreOpen(false); version.onOpen(); document.getElementById('main')?.focus(); }} />}
               </div>
+            </div>
             </div>
           </aside>
         )

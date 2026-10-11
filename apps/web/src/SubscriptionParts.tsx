@@ -43,7 +43,7 @@ export function Cover({ subscription, size }: { subscription: Subscription; size
   return <span className="cover cover-empty" style={style} aria-hidden="true"><PlatformSeal platform={platformOf(subscription)} /></span>;
 }
 
-/** "Lädt 3 von 5" and a 4px bar for a running run. Renders nothing before the first answer. */
+/** "3 von 5 geladen" and a 4px bar for a running run, one line. The numbers and the bar come from the same counts. */
 export function RunProgress({ runId, width = 120 }: { runId: string; width?: number }) {
   const { data } = useRunAssets(runId);
   if (!data || !data.active) return null;
@@ -52,7 +52,7 @@ export function RunProgress({ runId, width = 120 }: { runId: string; width?: num
   const done = data.counts.stored + data.counts.failed;
   return (
     <span className="run-progress">
-      <span className="accent-text num">{`Lädt ${Math.min(done + 1, total)} von ${total}`}</span>
+      <span className="accent-text num">{`${done} von ${total} geladen`}</span>
       <ProgressBar value={done} max={total} label="Fortschritt des Laufs" width={width} />
     </span>
   );
@@ -121,9 +121,11 @@ export function useSubscriptionActions(subscription: Subscription, onChanged: ()
     { label: 'Abonnement löschen', icon: Trash, tone: 'danger', separatorBefore: true, onSelect: () => setDialog('delete') }
   ];
 
-  const primary = paused
+  // A run that is already active cannot be started a second time: the button says why instead of vanishing.
+  const running = Boolean(subscription.activeRunId);
+  const primary: { label: string; icon: typeof Play; run: () => Promise<void>; disabled: boolean; hint?: string } = paused
     ? { label: 'Fortsetzen', icon: Play, run: togglePause, disabled: busy }
-    : { label: 'Jetzt ausführen', icon: Play, run: runNow, disabled: busy };
+    : { label: 'Jetzt ausführen', icon: Play, run: runNow, disabled: busy || running, ...(running ? { hint: 'Es läuft bereits ein Lauf' } : {}) };
 
   const dialogs = (
     <>

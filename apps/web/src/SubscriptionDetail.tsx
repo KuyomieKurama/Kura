@@ -1,4 +1,4 @@
-import { CaretLeft, DotsThree, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
+import { CaretLeft, DotsThree, PauseCircle, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Schedule, type Subscription, type SubscriptionRun, type SyncState } from './api.js';
 import { errorMessage } from './error-message.js';
@@ -10,6 +10,7 @@ import { platformOf, type QueuedRuns, shortAddress, useSubscriptionActions } fro
 import { SubscriptionMedia } from './SubscriptionMedia.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
+import { Chip } from './ui/Chip.js';
 import { Dialog } from './ui/Dialog.js';
 import { Menu } from './ui/Menu.js';
 import { PlatformSeal, platformName } from './ui/PlatformSeal.js';
@@ -202,7 +203,7 @@ export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory
         <div className="detail-title">
           <PlatformSeal platform={platform} size="lg" />
           <div className="detail-name">
-            <h1 className="truncate" title={subscription.name}>{subscription.name}{actions.paused ? ' (pausiert)' : ''}</h1>
+            <h1 className="truncate" title={subscription.name}>{subscription.name}</h1>
             {subscription.targetUrl && (
               <a className="mono address" href={subscription.targetUrl} target="_blank" rel="noreferrer noopener" title={`${platformName(platform)}: ${subscription.targetUrl}`}>
                 {shortAddress(subscription.targetUrl)}
@@ -211,13 +212,18 @@ export function SubscriptionDetail({ subscription, reload, onBack, onOpenHistory
           </div>
         </div>
         <div className="detail-actions">
-          <Button variant="primary" icon={actions.primary.icon} disabled={actions.primary.disabled} onClick={() => void actions.primary.run()}>
+          <Button variant="primary" icon={actions.primary.icon} disabled={actions.primary.disabled} title={actions.primary.hint} onClick={() => void actions.primary.run()}>
             {actions.primary.label}
           </Button>
           <Menu label={`Weitere Aktionen für ${subscription.name}`} trigger={<DotsThree size={20} weight="bold" aria-hidden="true" />} items={actions.menuItems} />
         </div>
       </header>
-      {subscription.targetState !== 'valid' && <div className="detail-chip"><StatusChip domain="target" status={subscription.targetState} /></div>}
+      {(actions.paused || subscription.targetState !== 'valid') && (
+        <div className="detail-chip">
+          {actions.paused && <Chip tone="neutral" icon={PauseCircle}>Pausiert</Chip>}
+          {subscription.targetState !== 'valid' && <StatusChip domain="target" status={subscription.targetState} />}
+        </div>
+      )}
       <Summary subscription={subscription} />
       </div>
       {actions.messages}
