@@ -6,6 +6,8 @@ const WEBP_BYTES = Buffer.concat([Buffer.from('RIFF'), Buffer.from([4, 0, 0, 0])
 
 async function sleep(ms: number) { await new Promise((resolve) => setTimeout(resolve, ms)); }
 
+// Loosely typed on purpose: these are parsed JSON / database rows that the tests only inspect.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = Record<string, any>;
 
 describe('UI2-A: derived media fields, /media, subscription summary, /overview, thumbnails', () => {

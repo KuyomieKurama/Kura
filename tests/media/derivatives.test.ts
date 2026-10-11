@@ -17,6 +17,8 @@ import { createMediaFixture, type MediaFixture, type SeededAsset } from './fixtu
 import { installFakeTools, type FakeTools } from './fake-media-tools.js';
 import type { TestLogin } from '../m4b/api-fixture.js';
 
+// Loosely typed on purpose: these are parsed JSON / database rows that the tests only inspect.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
 describe('derived media data: pure helpers', () => {
