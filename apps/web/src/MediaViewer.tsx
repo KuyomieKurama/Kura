@@ -171,10 +171,10 @@ export function MediaViewer({ items, index, onNavigate, onClose, hasMore = false
   return (
     <div className="viewer-screen" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog} data-info={info} data-enter={enter}>
       <header className="viewer-bar">
-        <Button variant="ghost" icon={X} className="viewer-close" onClick={onClose}>{labels.close}</Button>
-        <h2 id={titleId} className="truncate" title={asset.originalName}>{postLabel(asset)}</h2>
+        <Button variant="ghost" icon={X} className="viewer-close" aria-label={labels.close} onClick={onClose}><span className="viewer-btn-label">{labels.close}</span></Button>
+        <h2 id={titleId} className="viewer-title" title={asset.originalName}>{postLabel(asset)}</h2>
         <p className="meta viewer-position num" aria-live="polite">{`${index + 1} von ${items.length}${hasMore ? '+' : ''}`}</p>
-        <Button variant="ghost" icon={Info} aria-pressed={info} onClick={() => setInfo(!info)}>Info</Button>
+        <Button variant="ghost" icon={Info} className="viewer-info-toggle" aria-label="Info" aria-pressed={info} onClick={() => setInfo(!info)}><span className="viewer-btn-label">Info</span></Button>
       </header>
       <div className="viewer-stage">
         <div className="viewer-frame"><Stage asset={asset} /></div>

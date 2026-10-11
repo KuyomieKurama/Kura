@@ -187,6 +187,13 @@
   order: 1;
 }
 
+/* One line with an ellipsis where there is room; the narrow bar lets the title wrap (see the max-width: 639px block). */
+.viewer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .viewer-bar .viewer-position {
   order: 2;
   color: var(--viewer-ink-muted);
@@ -218,7 +225,8 @@
   display: grid;
   min-height: 0;
   place-items: center;
-  padding: 0 var(--space-4);
+  /* Room on both sides: the arrows sit beside the picture, not on it. */
+  padding: 0 calc(var(--space-4) + 56px);
 }
 
 .viewer-frame {
@@ -253,19 +261,22 @@ video.viewer-media {
 .viewer-arrow {
   position: absolute;
   top: 50%;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 48px;
   height: 48px;
-  border: 0;
+  /* The edge (viewer-ink-muted on viewer-bg, about 8:1) and the glyph make the control visible on any picture. */
+  border: 1px solid var(--viewer-ink-muted);
   border-radius: var(--radius-md);
-  background: var(--viewer-hover);
+  background: var(--viewer-arrow-bg);
   color: var(--viewer-ink);
   cursor: pointer;
   transform: translateY(-50%);
 }
 
 .viewer-arrow:hover:not(:disabled) {
+  border-color: var(--viewer-ink);
   background: var(--viewer-hover-strong);
 }
 
@@ -415,6 +426,64 @@ video.viewer-media {
   .viewer-arrow {
     width: 44px;
     height: 44px;
+  }
+
+  /* Narrow: the arrows lie over the picture's edge (the picture needs the width); the bar has two 44px icon buttons and a title that wraps. */
+  .viewer-stage {
+    padding: 0 var(--space-2);
+  }
+
+  .viewer-arrow-prev {
+    left: var(--space-2);
+  }
+
+  .viewer-arrow-next {
+    right: var(--space-2);
+  }
+
+  .viewer-bar {
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .viewer-bar h2 {
+    align-self: center;
+    overflow: visible;
+    font-size: var(--text-body);
+    line-height: 20px;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .viewer-bar .viewer-position {
+    align-self: center;
+    white-space: nowrap;
+  }
+
+  .viewer-bar .viewer-info-toggle,
+  .viewer-bar .viewer-close {
+    flex: none;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .viewer-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .viewer-strip {
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   }
 }
 

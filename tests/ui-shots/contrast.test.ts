@@ -32,7 +32,7 @@ const COLOR_TOKENS = [
   'viewer-ink', 'viewer-ink-muted', 'viewer-hover', 'viewer-hover-strong', 'viewer-line'
 ];
 /** Tokens that must exist in both schemes but are not plain hex colours. */
-const OTHER_TOKENS = ['scrim', 'shadow-popover', 'shadow-dialog', 'backdrop', 'focus'];
+const OTHER_TOKENS = ['scrim', 'shadow-popover', 'shadow-dialog', 'backdrop', 'focus', 'viewer-arrow-bg'];
 
 function channel(value: number): number {
   const normalized = value / 255;
@@ -134,6 +134,15 @@ describe.each([['light', light], ['dark', dark]] as const)('design tokens, %s sc
     const shade = Math.round(255 * (1 - 0.62));
     const hex = `#${shade.toString(16).padStart(2, '0').repeat(3)}`;
     expect(contrastRatio('#ffffff', hex)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the viewer arrows visible: the glyph reaches 3:1 on the arrow surface over a white photo, the edge on the viewer ground', () => {
+    const alpha = Number(/rgb\(0 0 0 \/ ([0-9.]+)\)/.exec(tokens['viewer-arrow-bg']!)?.[1]);
+    expect(alpha).toBeGreaterThan(0);
+    const shade = Math.round(255 * (1 - alpha));
+    const hex = `#${shade.toString(16).padStart(2, '0').repeat(3)}`;
+    expect(contrastRatio(tokens['viewer-ink']!, hex)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(tokens['viewer-ink-muted']!, tokens['viewer-bg']!)).toBeGreaterThanOrEqual(3);
   });
 
   it('uses neither pure black nor pure white as text colour', () => {

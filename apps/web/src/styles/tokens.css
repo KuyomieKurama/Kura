@@ -45,6 +45,7 @@
   --viewer-hover: #26232a;
   --viewer-hover-strong: #36323d;
   --viewer-line: #36323d;
+  --viewer-arrow-bg: rgb(0 0 0 / 0.55);
   --scrim: linear-gradient(to top, rgb(0 0 0 / 0.66), rgb(0 0 0 / 0) 60%);
   --backdrop: rgb(29 27 31 / 0.45);
   /* Text and badges that sit on photos: always white on black, in both schemes. */
@@ -174,6 +175,7 @@
     --viewer-hover: #26232a;
     --viewer-hover-strong: #36323d;
     --viewer-line: #36323d;
+    --viewer-arrow-bg: rgb(0 0 0 / 0.55);
     --backdrop: rgb(0 0 0 / 0.6);
     --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -6px rgb(0 0 0 / 0.5);
     --shadow-dialog: 0 24px 64px -16px rgb(0 0 0 / 0.7);

@@ -109,6 +109,52 @@ async function signIn(context, origin) {
   if (!login.ok()) throw new Error(`login failed: ${login.status()} ${await login.text()}`);
 }
 
+/**
+ * Brings the page to its end state before a shot (REQ-DL-008 UI2-F): the mouse is parked away from the navigation (no
+ * hover fill), every font is loaded, every animation and transition has finished, and content-visibility is switched
+ * off so a full-page shot paints all groups. For the viewer it also proves the end state: opacity 1 and nothing of the
+ * page behind it (navigation, top bar, wordmark) is hit at the corners and the bottom edge.
+ */
+async function settle(page, variant, name, problems) {
+  // The right edge in the middle of the page: no navigation, no tile, no viewer button there.
+  await page.mouse.move(variant.width - 2, Math.floor(variant.height / 2));
+  await page.evaluate(() => {
+    if (document.adoptedStyleSheets.some((sheet) => sheet.kura === 'capture')) return;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync('*, *::before, *::after { content-visibility: visible !important; contain-intrinsic-size: none !important; }');
+    sheet.kura = 'capture';
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  });
+  await page.evaluate(() => document.fonts.ready);
+  // Finding 17: technical values must be set in Geist Mono, not in the fallback. If anything is set in the mono family,
+  // at least one face of it has to be loaded by now.
+  const mono = await page.evaluate(() => {
+    const used = [...document.querySelectorAll('body *')].some((element) => getComputedStyle(element).fontFamily.includes('Geist Mono'));
+    const loaded = [...document.fonts].filter((face) => face.family.includes('Geist Mono') && face.status === 'loaded').length;
+    return { used, loaded };
+  });
+  if (mono.used && mono.loaded === 0) problems.push(`font (${name}-${variant.theme}-${variant.width}): Geist Mono is used but not loaded`);
+  const finished = await page.evaluate(async () => {
+    const settled = Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))).then(() => true);
+    const timeout = new Promise((done) => setTimeout(() => done(false), 5000));
+    return Promise.race([settled, timeout]);
+  });
+  if (!finished) problems.push(`animations (${name}-${variant.theme}-${variant.width}): did not finish within 5 s`);
+  // A second frame after the last animation, so the compositor has painted the end state.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  const viewer = await page.evaluate(() => {
+    const screen = document.querySelector('.viewer-screen');
+    if (!screen) return null;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const points = [[4, 4], [width - 4, 4], [width / 2, 28], [4, height - 4], [width / 2, height - 4], [width - 4, height - 4], [width / 2, height - 32], [40, 20]];
+    const hit = points.map(([x, y]) => document.elementFromPoint(x, y)?.closest('.viewer-screen') !== null);
+    return { opacity: Number(getComputedStyle(screen).opacity), covered: hit.every(Boolean), pointsOutside: points.filter((_, index) => !hit[index]).map(([x, y]) => `${x},${y}`) };
+  });
+  if (viewer && viewer.opacity !== 1) problems.push(`viewer (${name}-${variant.theme}-${variant.width}): opacity ${viewer.opacity}, not the end state`);
+  if (viewer && !viewer.covered) problems.push(`viewer (${name}-${variant.theme}-${variant.width}): the page shows at ${viewer.pointsOutside.join(' ')}`);
+}
+
 /** Waits until every picture on the page is decoded, so a screenshot never shows a half loaded grid. */
 async function picturesLoaded(page) {
   // Lazy pictures below the fold are not fetched by a full-page screenshot; the grid is shot as it looks when scrolled.
@@ -146,6 +192,7 @@ async function main() {
       if (only && !only.has(name)) return;
       const file = `${name}-${variant.theme}-${variant.width}.png`;
       await page.evaluate(() => window.scrollTo(0, 0));
+      await settle(page, variant, name, problems);
       // Rendered text rule check (REQ-DL-008 AC31): visible text and the accessible attributes, composed strings included.
       const offenders = await page.evaluate(() => {
         const found = new Set();
