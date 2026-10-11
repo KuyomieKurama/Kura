@@ -15,6 +15,7 @@ import {
   type ScheduleRule,
   type SubscriptionRecord
 } from '@kura/scheduler';
+import { emptySummary, loadSubscriptionSummaries, type SubscriptionSummary } from './overview-routes.js';
 import { responseError, type Audit, type RequireSession, type RouteSession } from './route-helpers.js';
 
 const MAX_NAME_LENGTH = 200;
@@ -125,7 +126,7 @@ function presentSchedule(schedule: ScheduleRecord) {
   };
 }
 
-function presentSubscription(subscription: SubscriptionRecord, schedules?: ScheduleRecord[]) {
+function presentSubscription(subscription: SubscriptionRecord, schedules?: ScheduleRecord[], summary?: SubscriptionSummary) {
   return {
     id: subscription.id,
     name: subscription.name,
@@ -136,7 +137,9 @@ function presentSubscription(subscription: SubscriptionRecord, schedules?: Sched
     pausedAt: subscription.pausedAt,
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
-    ...(schedules ? { schedules: schedules.map(presentSchedule) } : {})
+    ...(schedules ? { schedules: schedules.map(presentSchedule) } : {}),
+    // Only the list asks for it (one batch for all subscriptions, no query per row).
+    ...(summary ? { platform: summary.platform ?? subscription.platformHint, lastRun: summary.lastRun, nextRunAt: summary.nextRunAt, mediaCount: summary.mediaCount, coverAssetId: summary.coverAssetId, activeRunId: summary.activeRunId } : {})
   };
 }
 
@@ -204,13 +207,18 @@ export function registerScheduleRoutes(input: {
   const idOf = (request: FastifyRequest) => checkedId((request.params as { id: string }).id);
 
   app.get('/api/v1/subscriptions', authenticated(async (_request, _reply, session) => {
-    const [list, schedules] = await Promise.all([
+    const [list, schedules, summaries] = await Promise.all([
       subscriptions.listSubscriptions(session.userId),
-      subscriptions.listSchedules(session.userId)
+      subscriptions.listSchedules(session.userId),
+      loadSubscriptionSummaries(pool, session.userId)
     ]);
     return {
       subscriptions: list.map((subscription) =>
-        presentSubscription(subscription, schedules.filter((schedule) => schedule.subscriptionId === subscription.id)))
+        presentSubscription(
+          subscription,
+          schedules.filter((schedule) => schedule.subscriptionId === subscription.id),
+          summaries.get(subscription.id) ?? emptySummary()
+        ))
     };
   }));
 

@@ -13,6 +13,7 @@ import { resolveBuildInfo } from './build-info.js';
 import { registerImmichRoutes } from './immich-routes.js';
 import { registerCredentialRoutes } from './credential-routes.js';
 import { registerMediaRoutes } from './media-routes.js';
+import { registerOverviewRoutes } from './overview-routes.js';
 import { loggerOptions } from './logging.js';
 import { registerRuntimePolicyRoutes } from './runtime-policy-routes.js';
 import { registerScheduleRoutes } from './schedule-routes.js';
@@ -200,6 +201,7 @@ export function buildApp(config: ApiConfig, pool: Pool, webDirectory?: string, c
   registerRuntimePolicyRoutes({ app, pool, requireSession, audit: auditRoute });
   registerSourceRoutes({ app, pool, clock, requireSession, audit: auditRoute });
   registerMediaRoutes({ app, pool, blobstore, requireSession });
+  registerOverviewRoutes({ app, pool, requireSession });
   // Without an explicit update configuration (tests) the check is off and makes no request to GitHub.
   const updateChecker = dependencies.updateChecker ?? new UpdateChecker({
     build: buildInfo,

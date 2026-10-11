@@ -34,6 +34,11 @@ export interface DownloadConfig {
     /** Optional PATH for the tools, for example a directory with a pinned ffmpeg. */
     toolPath?: string;
   };
+  /**
+   * Derived data of stored files (dimensions, duration, previews; ffprobe/ffmpeg from the tool PATH), also for files stored
+   * before it existed. Absent = switched off (WORKER_DERIVATIVES=false). `pollIntervalMs` is the pause when nothing is left to do.
+   */
+  derivatives?: { pollIntervalMs: number };
   /** How often the worker checks again whether the tools are usable. */
   adapterRecheckMs: number;
   /**
@@ -129,6 +134,9 @@ export function loadDownloadConfig(environment: NodeJS.ProcessEnv = process.env)
       galleryDl: tool('gallery-dl', 'KURA_GALLERYDL_PATH', 'KURA_GALLERYDL_SHA256', environment),
       toolPath: environment.KURA_TOOL_PATH || undefined
     },
+    derivatives: toggle('WORKER_DERIVATIVES', environment.WORKER_DERIVATIVES, true)
+      ? { pollIntervalMs: integerInRange('WORKER_DERIVATIVES_POLL_SECONDS', environment.WORKER_DERIVATIVES_POLL_SECONDS, 30, 5, 3600) * 1000 }
+      : undefined,
     adapterRecheckMs: integerInRange('WORKER_ADAPTER_RECHECK_SECONDS', environment.WORKER_ADAPTER_RECHECK_SECONDS, 600, 30, 86_400) * 1000,
     instagramMaxPostsPerRun: integerInRange('KURA_INSTAGRAM_MAX_POSTS_PER_RUN', environment.KURA_INSTAGRAM_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT),
     patreonMaxPostsPerRun: integerInRange('KURA_PATREON_MAX_POSTS_PER_RUN', environment.KURA_PATREON_MAX_POSTS_PER_RUN, FEED_DEFAULT_MAX_POSTS_PER_RUN, 1, FEED_MAX_POSTS_PER_RUN_LIMIT),

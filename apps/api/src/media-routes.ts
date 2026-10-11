@@ -19,7 +19,9 @@ const DEFAULT_PAGE_SIZE = 48;
 const MAX_PAGE_SIZE = 100;
 const MAX_RUN_ASSETS = 200;
 const TYPE_FILTERS = { all: null, image: 'image/%', video: 'video/%' } as const;
-const OPEN_QUEUE_STATES = ['queued', 'leased', 'retry_wait'];
+export const OPEN_QUEUE_STATES = ['queued', 'leased', 'retry_wait'];
+
+const THUMBNAIL_WIDTHS = [480, 960] as const;
 
 const NOT_FOUND = () => responseError('NOT_FOUND', 'Nicht gefunden.');
 
@@ -29,12 +31,14 @@ const ASSET_SELECT = `
   a.error_code, a.error_message, a.stored_at, a.handover_state, a.updated_at,
   to_char(a.stored_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stored_cursor,
   p.run_id, p.subscription_id, p.platform, p.platform_post_id, p.title AS post_title, p.source_url AS post_url,
-  p.creator_name, p.published_at, t.verified_at AS immich_verified_at`;
+  p.creator_name, p.published_at, t.verified_at AS immich_verified_at,
+  m.width, m.height, m.duration_seconds, m.average_color, COALESCE(m.has_thumbnail, false) AS has_thumbnail`;
 
 const ASSET_JOINS = `
   FROM download_assets a
   JOIN download_posts p ON p.id = a.post_id AND p.user_id = a.user_id
-  LEFT JOIN immich_transfers t ON t.id = a.transfer_id AND t.user_id = a.user_id`;
+  LEFT JOIN immich_transfers t ON t.id = a.transfer_id AND t.user_id = a.user_id
+  LEFT JOIN asset_media_info m ON m.asset_id = a.id`;
 
 /**
  * One entry per stored file in a subscription: rows with the same checksum are copies of the same file (the same
@@ -71,10 +75,15 @@ interface AssetRow {
   creator_name: string | null;
   published_at: Date | null;
   immich_verified_at: Date | null;
+  width: number | null;
+  height: number | null;
+  duration_seconds: number | null;
+  average_color: string | null;
+  has_thumbnail: boolean;
   copies?: number;
 }
 
-function presentAsset(row: AssetRow) {
+export function presentAsset(row: AssetRow) {
   return {
     id: row.id,
     postId: row.post_id,
@@ -96,6 +105,12 @@ function presentAsset(row: AssetRow) {
     errorCode: row.error_code,
     errorMessage: row.error_message,
     storedAt: row.stored_at,
+    // Derived by the worker after the file was stored (ffprobe/ffmpeg); null / false until then or when the tools are missing.
+    width: row.width,
+    height: row.height,
+    durationSeconds: row.duration_seconds,
+    averageColor: row.average_color,
+    hasThumbnail: row.has_thumbnail,
     immich: {
       state: row.handover_state,
       // Verified only counts with the evidence record of exactly this original (plan 05).
@@ -105,7 +120,7 @@ function presentAsset(row: AssetRow) {
   };
 }
 
-class BadRequest extends Error {}
+export class BadRequest extends Error {}
 
 const firstHeader = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value);
 
@@ -136,6 +151,60 @@ function decodeCursor(raw: unknown): Cursor | null {
     // falls through to the error below
   }
   throw new BadRequest('Der Seitenzeiger ist ungültig.');
+}
+
+/** A deleted subscription keeps its history, so the history counts as proof of ownership too. */
+async function ownsSubscription(pool: Pool, userId: string, subscriptionId: string): Promise<boolean> {
+  const owned = await pool.query(
+    `SELECT 1 FROM subscriptions WHERE id = $1 AND user_id = $2
+     UNION ALL SELECT 1 FROM download_runs WHERE subscription_id = $1 AND user_id = $2 LIMIT 1`,
+    [subscriptionId, userId]
+  );
+  return (owned.rowCount ?? 0) > 0;
+}
+
+/**
+ * One page of the stored files of a user, newest first, optionally limited to one subscription. Rows with the same
+ * checksum inside the selection are one file (see DISTINCT_FILES). The first page (no cursor) carries the totals of
+ * the selection, independent of the type filter, for the filter chips.
+ */
+export async function loadMediaPage(pool: Pool, input: {
+  userId: string;
+  subscriptionId: string | null;
+  likePattern: string | null;
+  pageSize: number;
+  cursor: Cursor | null;
+}) {
+  const { userId, subscriptionId, likePattern, pageSize, cursor } = input;
+  const rows = await pool.query<AssetRow>(
+    `SELECT * FROM (
+       ${DISTINCT_FILES} ${ASSET_JOINS}
+        WHERE a.user_id = $1 AND ($2::uuid IS NULL OR p.subscription_id = $2) AND a.state = 'stored' AND a.sha256 IS NOT NULL
+          AND ($3::text IS NULL OR a.media_type LIKE $3)
+     ) files
+      WHERE copy_rank = 1 AND ($4::timestamptz IS NULL OR (stored_at, id) < ($4::timestamptz, $5::uuid))
+      ORDER BY stored_at DESC, id DESC
+      LIMIT $6`,
+    [userId, subscriptionId, likePattern, cursor?.storedAt ?? null, cursor?.id ?? null, pageSize + 1]
+  );
+  const page = rows.rows.slice(0, pageSize);
+  const last = page.at(-1);
+  const hasMore = rows.rows.length > pageSize && last !== undefined;
+
+  const counts = cursor ? null : (await pool.query<{ total: number; images: number; videos: number }>(
+    `SELECT count(DISTINCT a.sha256)::int AS total,
+            (count(DISTINCT a.sha256) FILTER (WHERE a.media_type LIKE 'image/%'))::int AS images,
+            (count(DISTINCT a.sha256) FILTER (WHERE a.media_type LIKE 'video/%'))::int AS videos
+       FROM download_assets a JOIN download_posts p ON p.id = a.post_id AND p.user_id = a.user_id
+      WHERE a.user_id = $1 AND ($2::uuid IS NULL OR p.subscription_id = $2) AND a.state = 'stored' AND a.sha256 IS NOT NULL`,
+    [userId, subscriptionId]
+  )).rows[0]!;
+
+  return {
+    items: page.map(presentAsset),
+    nextCursor: hasMore ? encodeCursor({ storedAt: last.stored_cursor!, id: last.id }) : null,
+    ...(counts ? { counts: { all: counts.total, image: counts.images, video: counts.videos } } : {})
+  };
 }
 
 export function registerMediaRoutes(input: {
@@ -177,43 +246,26 @@ export function registerMediaRoutes(input: {
     const cursor = decodeCursor(query.cursor);
 
     // A deleted subscription keeps its history, so the history counts as proof of ownership too.
-    const owned = await pool.query(
-      `SELECT 1 FROM subscriptions WHERE id = $1 AND user_id = $2
-       UNION ALL SELECT 1 FROM download_runs WHERE subscription_id = $1 AND user_id = $2 LIMIT 1`,
-      [subscriptionId, userId]
-    );
-    if (!owned.rowCount) return reply.code(404).send(NOT_FOUND());
+    if (!(await ownsSubscription(pool, userId, subscriptionId))) return reply.code(404).send(NOT_FOUND());
 
-    const rows = await pool.query<AssetRow>(
-      `SELECT * FROM (
-         ${DISTINCT_FILES} ${ASSET_JOINS}
-          WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.state = 'stored' AND a.sha256 IS NOT NULL
-            AND ($3::text IS NULL OR a.media_type LIKE $3)
-       ) files
-        WHERE copy_rank = 1 AND ($4::timestamptz IS NULL OR (stored_at, id) < ($4::timestamptz, $5::uuid))
-        ORDER BY stored_at DESC, id DESC
-        LIMIT $6`,
-      [userId, subscriptionId, likePattern, cursor?.storedAt ?? null, cursor?.id ?? null, pageSize + 1]
-    );
-    const page = rows.rows.slice(0, pageSize);
-    const last = page.at(-1);
-    const hasMore = rows.rows.length > pageSize && last !== undefined;
+    return loadMediaPage(pool, { userId, subscriptionId, likePattern, pageSize, cursor });
+  }));
 
-    // The totals belong to the subscription, not to the filter, so the filter chips can show them.
-    const counts = cursor ? null : (await pool.query<{ total: number; images: number; videos: number }>(
-      `SELECT count(DISTINCT a.sha256)::int AS total,
-              (count(DISTINCT a.sha256) FILTER (WHERE a.media_type LIKE 'image/%'))::int AS images,
-              (count(DISTINCT a.sha256) FILTER (WHERE a.media_type LIKE 'video/%'))::int AS videos
-         FROM download_assets a JOIN download_posts p ON p.id = a.post_id AND p.user_id = a.user_id
-        WHERE a.user_id = $1 AND p.subscription_id = $2 AND a.state = 'stored' AND a.sha256 IS NOT NULL`,
-      [userId, subscriptionId]
-    )).rows[0]!;
+  // --- stored assets over all subscriptions of the user, newest first ----------------------------
 
-    return {
-      items: page.map(presentAsset),
-      nextCursor: hasMore ? encodeCursor({ storedAt: last.stored_cursor!, id: last.id }) : null,
-      ...(counts ? { counts: { all: counts.total, image: counts.images, video: counts.videos } } : {})
-    };
+  app.get('/api/v1/media', guarded(async (request, reply, userId) => {
+    const query = request.query as { kind?: string; limit?: string; cursor?: string; subscriptionId?: string };
+    const kindKey = query.kind ?? 'all';
+    if (!Object.hasOwn(TYPE_FILTERS, kindKey)) throw new BadRequest('Der Typfilter ist ungültig.');
+    const pageSize = pageSizeOf(query.limit);
+    const cursor = decodeCursor(query.cursor);
+    let subscriptionId: string | null = null;
+    if (query.subscriptionId !== undefined && query.subscriptionId !== '') {
+      if (!UUID_PATTERN.test(query.subscriptionId)) return reply.code(404).send(NOT_FOUND());
+      subscriptionId = query.subscriptionId.toLowerCase();
+      if (!(await ownsSubscription(pool, userId, subscriptionId))) return reply.code(404).send(NOT_FOUND());
+    }
+    return loadMediaPage(pool, { userId, subscriptionId, likePattern: TYPE_FILTERS[kindKey as keyof typeof TYPE_FILTERS], pageSize, cursor });
   }));
 
   // --- the assets of one run, including those still in progress (live view) ----------------------
@@ -352,12 +404,54 @@ export function registerMediaRoutes(input: {
       return reply.send(Readable.from(blobstore.openReadRange(reference, start, end), { objectMode: false }));
     })
   });
+
+  // --- the preview of one stored object (derived by the worker; the original is never touched) -----
+
+  /**
+   * 404 when no preview exists (not derived yet, ffmpeg missing, file not decodable): the interface then falls back
+   * to /content. Same ownership rule as /content, so a foreign id and an unknown id are indistinguishable.
+   */
+  app.route({
+    method: ['GET', 'HEAD'],
+    url: '/api/v1/assets/:id/thumbnail',
+    handler: guarded(async (request, reply, userId) => {
+      const id = idParam(request);
+      if (!id) return reply.code(404).send(NOT_FOUND());
+      const rawWidth = (request.query as { w?: string }).w ?? String(THUMBNAIL_WIDTHS[0]);
+      const width = Number(rawWidth);
+      if (!THUMBNAIL_WIDTHS.includes(width as (typeof THUMBNAIL_WIDTHS)[number])) throw new BadRequest('Die Breite muss 480 oder 960 sein.');
+
+      const found = await pool.query<{ mime_type: string; data: Buffer; sha256: string; created_ms: string }>(
+        `SELECT t.mime_type, t.data, a.sha256, (extract(epoch FROM t.created_at) * 1000)::bigint::text AS created_ms
+           FROM asset_thumbnails t JOIN download_assets a ON a.id = t.asset_id
+          WHERE t.asset_id = $1 AND t.width = $2 AND a.user_id = $3 AND a.state = 'stored'`,
+        [id, width, userId]
+      );
+      const thumbnail = found.rows[0];
+      if (!thumbnail) return reply.code(404).send(NOT_FOUND());
+
+      const etag = `"th-${thumbnail.sha256}-${width}-${thumbnail.created_ms}"`;
+      reply.headers({
+        ...CONTENT_SECURITY_HEADERS,
+        // Derived data does not change; an hour without asking again keeps a grid of tiles cheap.
+        'Cache-Control': 'private, max-age=3600',
+        ETag: etag
+      });
+      if (etagMatches(firstHeader(request.headers['if-none-match']), etag)) return reply.code(304).send();
+      reply.headers({
+        'Content-Type': thumbnail.mime_type,
+        'Content-Length': String(thumbnail.data.length),
+        'Content-Disposition': 'inline'
+      });
+      return request.method === 'HEAD' ? reply.send() : reply.send(thumbnail.data);
+    })
+  });
 }
 
-const RUN_COLUMNS = `id, job_run_id, subscription_id, subscription_name, trigger_kind, platform, state, error_code, error_message,
+export const RUN_COLUMNS = `id, job_run_id, subscription_id, subscription_name, trigger_kind, platform, state, error_code, error_message,
   posts_found, posts_skipped, assets_stored, assets_failed, bytes_stored, started_at, finished_at`;
 
-interface RunRow {
+export interface RunRow {
   id: string;
   job_run_id: string;
   subscription_id: string;
@@ -376,7 +470,7 @@ interface RunRow {
   finished_at: Date | null;
 }
 
-function presentRun(row: RunRow) {
+export function presentRun(row: RunRow) {
   return {
     id: row.id,
     jobRunId: row.job_run_id,

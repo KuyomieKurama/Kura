@@ -10,6 +10,7 @@ import {
 import { Pool } from 'pg';
 import { AdapterCatalog, approveNothing, type DirectUrlSettings } from './catalog.js';
 import type { WorkerConfig } from './config.js';
+import { DerivationLoop, MediaDeriver } from './derivatives.js';
 import { DownloadLoop } from './download-loop.js';
 import { JobExecutor } from './executor.js';
 import { ImmichHandover } from './handover.js';
@@ -107,6 +108,14 @@ export class Worker implements WorkerLifecycle {
         workerName: dependencies.workerName
       })
     );
+    if (downloads.derivatives) {
+      this.lifecycles.push(new DerivationLoop({
+        deriver: new MediaDeriver({ pool: this.pool, blobstore, workDir: downloads.workDir, toolPath: downloads.tools.toolPath, logger }),
+        pollIntervalMs: downloads.derivatives.pollIntervalMs,
+        logger,
+        wait: dependencies.wait
+      }));
+    }
   }
 
   async start(): Promise<void> {
