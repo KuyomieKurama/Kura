@@ -4,11 +4,13 @@
 // Real sizes instead of 160px placeholders: the post "Grosse Formate" holds photos of 4000x6000, 6000x1000 and
 // 1000x6000, a 5000x3000 picture the API knows no dimensions of, and videos of 1080x1920 and 3840x2160.
 // For every viewport (390, 768, 1024, 1440, 1920 wide, 1440x700 and the phone on its side, 844x390) it checks
-//   1. the media page, the page of a subscription and the overview: the page never scrolls sideways
+//   1. the overview and the media page: the page never scrolls sideways
 //      (documentElement.scrollWidth <= clientWidth) and no tile leaves the viewport width;
 //   2. the viewer, for every one of those files and a normal one, with and without the info column: the box of
 //      .viewer-media lies completely inside window.innerWidth x window.innerHeight (at the scroll position the
 //      viewer opens at), has a usable size, and the viewer itself does not scroll sideways.
+// The measurement runs with prefers-reduced-motion (no View Transition when the viewer opens); --motion switches the
+// transition on again.
 // With --out=dir it also writes a viewport shot of each viewer case. Exits with 1 when a check fails.
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -32,6 +34,11 @@ const VIEWPORTS = [
   { name: '844x390', width: 844, height: 390 }
 ];
 
+if (args.has('size')) {
+  const [width, height] = args.get('size').split('x').map(Number);
+  VIEWPORTS.push({ name: args.get('size'), width, height });
+}
+
 const FILES = [
   { name: 'portrait_4000x6000.jpg', label: 'portrait' },
   { name: 'panorama_6000x1000.jpg', label: 'panorama' },
@@ -54,7 +61,10 @@ const px = (value) => Math.round(value * 10) / 10;
 const { chromium } = await loadPlaywright();
 const stack = await startStack({ skipBuild: args.has('skip-build') });
 // --disable-dev-shm-usage: a container's /dev/shm is small and a 4K video decode fills it.
-const browser = await chromium.launch({ args: args.has('shm') ? ['--disable-dev-shm-usage'] : [] });
+// --num-raster-threads=1: the software GL of the sandbox crashes the renderer when several raster threads scale a
+// 24 megapixel picture at once (seen at 844x390 and 1920x1080, with the old and the new layout alike).
+const launchOptions = { args: ['--num-raster-threads=1', ...(args.get('chromium') ?? '').split(',').filter(Boolean)] };
+const browser = await chromium.launch(launchOptions);
 
 /** Page level: does the document scroll sideways, and does anything stick out on the right. */
 const measurePage = () => {
@@ -109,8 +119,11 @@ try {
 
   if (outDirectory) await mkdir(outDirectory, { recursive: true });
 
-  for (const viewport of VIEWPORTS.filter((entry) => !only || only.has(entry.name))) {
-    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, colorScheme: 'dark', locale: 'de-DE', timezoneId: 'Europe/Berlin' });
+  // One browser per viewport and one retry when the renderer of this sandbox (software GL) crashes: it does so now and
+  // then after many decodes of 24 megapixel pictures, also on the old layout. A retry is printed, never hidden.
+  const runViewport = async (viewport, browser) => {
+    let crashed = false;
+    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, colorScheme: 'dark', reducedMotion: args.has('motion') ? 'no-preference' : 'reduce', locale: 'de-DE', timezoneId: 'Europe/Berlin' });
     await context.addCookies(cookie.split('; ').map((pair) => {
       const [name, ...rest] = pair.split('=');
       return { name, value: rest.join('='), url: stack.origin };
@@ -146,7 +159,7 @@ try {
       }
 
       // The viewer, file by file, with and without the info column.
-      await page.getByRole('button', { name: /^Bild portrait_4000x6000/ }).click();
+      await page.getByRole('button', { name: new RegExp(`^(Bild|Video) ${args.get('first') ?? 'portrait_4000x6000'}`) }).click();
       const dialog = page.getByRole('dialog');
       await dialog.waitFor();
       for (const file of [...FILES, { name: 'illustration_01.png', label: 'normal' }].filter((entry) => !onlyFiles || onlyFiles.has(entry.label))) {
@@ -187,9 +200,23 @@ try {
       }
       await page.keyboard.press('Escape');
     } catch (error) {
-      check(false, `${tag}: script error ${String(error.message).split('\n')[0]}`);
+      if (/crashed/i.test(error.message)) crashed = true;
+      else check(false, `${tag}: script error ${String(error.message).split('\n')[0]}`);
     }
-    await context.close();
+    await context.close().catch(() => undefined);
+    return crashed;
+  };
+  for (const viewport of VIEWPORTS.filter((entry) => !only || only.has(entry.name))) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const own = await chromium.launch(launchOptions);
+      const mark = failures.length;
+      const crashed = await runViewport(viewport, own);
+      await own.close();
+      if (!crashed) break;
+      failures.length = mark;
+      if (attempt === 2) check(false, `${viewport.name}: the renderer crashed twice`);
+      else console.log(`note ${viewport.name}: the renderer crashed (known flake of the sandbox), measuring again in a fresh browser`);
+    }
   }
 } finally {
   await browser.close();
