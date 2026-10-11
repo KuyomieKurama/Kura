@@ -60,6 +60,21 @@ cell of the file shown last; a video in the viewer decodes, seeks with Range req
 controls. Exits with 1 when a step fails. Known and intended: a video opened on its own in a tab is refused by
 Chromium because `media-src` falls back to `default-src 'none'`; the app embeds videos in the viewer.
 
+## Browser limits of the media views
+
+    node tests/ui-shots/media-limits.mjs [--skip-build] [--out=dir] [--viewports=390,1440x700] [--files=portrait,video-quer] [--motion]
+
+Seeds the post "Grosse Formate" (`seedMedia({ large: true })`): real JPEGs of 4000x6000, 6000x1000 and 1000x6000, a
+5000x3000 picture whose dimensions and preview the API does not know, and WebM videos of 1080x1920 and 3840x2160. For
+390, 768, 1024, 1440, 1920 (wide), 1440x700 and 844x390 it checks that the overview and the media page do not scroll
+sideways (`scrollWidth <= clientWidth`), and that in the viewer, for each of these files and a normal one, with and
+without the info column, the box of `.viewer-media` lies inside `innerWidth x innerHeight`, has a usable size, the
+strip keeps the height of its tiles and is not covered by the info column, and the viewer does not scroll sideways.
+`--out` also writes a viewport shot of each case. Runs without the View Transition (`prefers-reduced-motion`);
+`--motion` turns it on. Chromium runs with `--num-raster-threads=1`, because the software GL of the sandbox crashes its
+renderer when several raster threads scale a 24 megapixel picture; a crash is retried once in a fresh browser and
+printed as a note. Exits with 1 when a check fails.
+
 ## Contrast test
 
 `contrast.test.ts` runs with `corepack pnpm test` (root vitest). It reads `apps/web/src/styles/tokens.css` and checks
