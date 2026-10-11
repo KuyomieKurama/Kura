@@ -87,10 +87,13 @@ const measureViewer = () => {
   const box = media.getBoundingClientRect();
   const stage = screen.querySelector('.viewer-stage')?.getBoundingClientRect();
   const strip = screen.querySelector('.viewer-strip')?.getBoundingClientRect();
+  const infoElement = screen.querySelector('.viewer-info');
+  const info = infoElement && !infoElement.hidden ? infoElement.getBoundingClientRect() : null;
   return {
     box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height },
     stage: stage ? { top: stage.top, bottom: stage.bottom, height: stage.height } : null,
-    strip: strip ? { top: strip.top, bottom: strip.bottom } : null,
+    strip: strip ? { top: strip.top, bottom: strip.bottom, height: strip.height } : null,
+    info: info ? { top: info.top, left: info.left, bottom: info.bottom } : null,
     innerWidth: window.innerWidth,
     innerHeight: window.innerHeight,
     screenScrollWidth: screen.scrollWidth,
@@ -189,9 +192,13 @@ try {
           const inside = m.box.left >= -0.5 && m.box.top >= -0.5 && m.box.right <= m.innerWidth + 0.5 && m.box.bottom <= m.innerHeight + 0.5;
           const usable = m.box.width >= 60 && m.box.height >= 60;
           const noSideways = m.screenScrollWidth <= m.screenClientWidth;
-          rows.push({ viewport: tag, view: `viewer ${file.label} info-${infoOn ? 'on' : 'off'}`, box: m.box, stage: m.stage, strip: m.strip, natural: m.natural });
+          rows.push({ viewport: tag, view: `viewer ${file.label} info-${infoOn ? 'on' : 'off'}`, box: m.box, stage: m.stage, strip: m.strip, info: m.info, natural: m.natural });
           check(inside, `${label}: medium inside the viewport (box ${px(m.box.left)},${px(m.box.top)} to ${px(m.box.right)},${px(m.box.bottom)} = ${px(m.box.width)}x${px(m.box.height)}; window ${m.innerWidth}x${m.innerHeight}; natural ${m.natural.join('x')})`);
           check(usable, `${label}: medium has a usable size (${px(m.box.width)}x${px(m.box.height)})`);
+          // Under the picture (narrow) the info column must not cover the strip; beside it (wide) it must not cover the stage.
+          const overlaps = m.info && m.strip && m.info.left <= 1 && m.strip.bottom > m.info.top + 0.5;
+          check(!overlaps, `${label}: the strip is not covered by the info column${m.strip && m.info ? ` (strip bottom ${px(m.strip.bottom)}, info top ${px(m.info.top)})` : ''}`);
+          check(!m.strip || m.strip.height >= 56 + 2, `${label}: the strip keeps the height of its tiles (${m.strip ? px(m.strip.height) : 'no strip'} >= 58)`);
           check(noSideways, `${label}: viewer does not scroll sideways (${m.screenScrollWidth} <= ${m.screenClientWidth})`);
           if (outDirectory && file.label !== 'normal') {
             await page.screenshot({ path: resolve(outDirectory, `media-viewer-${file.label}-info-${infoOn ? 'on' : 'off'}-dark-${tag}.png`) });

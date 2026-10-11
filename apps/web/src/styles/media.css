@@ -163,7 +163,8 @@
   z-index: 60;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* max-content for the strip: it scrolls sideways, so an auto row would let it shrink to its padding. */
+  grid-template-rows: auto minmax(0, 1fr) max-content;
   grid-template-areas: 'bar bar' 'stage info' 'strip info';
   background: var(--viewer-bg);
   color: var(--viewer-ink);
@@ -461,7 +462,7 @@
   .viewer-screen[data-info='false'] {
     grid-template-columns: minmax(0, 1fr);
     /* The stage keeps 60dvh; when the info column is under it the screen scrolls, the picture stays whole at the top. */
-    grid-template-rows: auto minmax(60dvh, 1fr) auto auto;
+    grid-template-rows: auto minmax(60dvh, 1fr) max-content auto;
     grid-template-areas: 'bar' 'stage' 'strip' 'info';
     overflow-y: auto;
   }
