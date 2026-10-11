@@ -75,6 +75,19 @@ strip keeps the height of its tiles and is not covered by the info column, and t
 renderer when several raster threads scale a 24 megapixel picture; a crash is retried once in a fresh browser and
 printed as a note. Exits with 1 when a check fails.
 
+## Sidebar stays put while scrolling
+
+    node tests/ui-shots/sidebar-sticky.mjs [--skip-build] [--out=dir] [--json]
+
+From 1024px (1440x900 and 1024x700), with the test strip and with the strip removed from the DOM, on the pages Medien,
+Verlauf and the subscription detail, it scrolls the document to 0, 50px, 400px and the very bottom and compares
+`getBoundingClientRect()` of the wordmark, the first navigation entry and the sidebar foot with their positions at
+scroll 0 (tolerance 0.5px). It also checks that the sidebar fills the height without a gap (top = strip bottom, bottom =
+viewport bottom), that the strip stays visible at the top, and that the sticky day heading of the media page sits
+directly under the strip. A page that cannot scroll 400px gets a 2400px spacer in `.page` (the output marks it
+"[padded]"). At 390x844 it checks that nothing changed: the top bar stays on top, the bottom navigation at the bottom,
+the strip scrolls away. `--out` writes a viewport shot at scroll 400px per case. Exits with 1 when a check fails.
+
 ## Contrast test
 
 `contrast.test.ts` runs with `corepack pnpm test` (root vitest). It reads `apps/web/src/styles/tokens.css` and checks

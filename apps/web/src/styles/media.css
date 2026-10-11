@@ -761,6 +761,13 @@
   line-height: 30px;
 }
 
+/* From 1024px there is no top bar; the heading sits directly under the test strip. */
+@media (min-width: 1024px) {
+  .day-heading {
+    top: var(--strip-offset, 0px);
+  }
+}
+
 .media-more {
   flex-direction: column;
   align-items: center;
