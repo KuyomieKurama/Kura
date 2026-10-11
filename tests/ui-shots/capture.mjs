@@ -1,4 +1,4 @@
-/* global process, console, fetch, setTimeout, document, window, Buffer */
+/* global process, console, fetch, setTimeout, document, window, Buffer, CSSStyleSheet, getComputedStyle, requestAnimationFrame */
 // Screenshot capture for the Kura web UI: node tests/ui-shots/capture.mjs [--skip-build] [--only=name,name] [--out=dir]
 // Starts the real API with the built web files, completes first-run setup through the API, seeds data through
 // the API where possible and writes PNG files named view-theme-width.png. See tests/ui-shots/README.md.
