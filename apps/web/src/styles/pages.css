@@ -194,7 +194,6 @@ td:has(.cell-note) {
 .limits-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
 }
 
 .hint-line {

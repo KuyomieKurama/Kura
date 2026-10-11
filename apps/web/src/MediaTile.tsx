@@ -1,4 +1,4 @@
-import { File, FileAudio, ImageBroken, Play } from '@phosphor-icons/react';
+import { Clock, DownloadSimple, File, FileAudio, ImageBroken, Play, WarningCircle } from '@phosphor-icons/react';
 import { type CSSProperties, useState } from 'react';
 import { contentUrl, type MediaAsset, thumbnailUrl } from './api.js';
 import { altText, kindLabels, postLabel } from './media.js';
@@ -18,7 +18,40 @@ function extension(name: string): string {
  * picture that cannot be loaded shows the file name and "Vorschau nicht verfügbar". Never an empty box.
  * The caption (post title and file number) appears on hover and keyboard focus.
  */
-export function MediaTile({ asset, onOpen, label, width = 480, eager = false }: {
+export function MediaTile(props: {
+  asset: MediaAsset;
+  onOpen: (asset: MediaAsset, opener: HTMLElement) => void;
+  label?: string;
+  width?: 480 | 960;
+  eager?: boolean;
+}) {
+  // Two components, not one with a branch: when a file is stored, its state tile is replaced and the picture fades in.
+  return props.asset.state === 'stored' ? <StoredTile {...props} /> : <StateTile asset={props.asset} />;
+}
+
+/**
+ * A file that is not stored yet (live view of a run): glyph and text for its state, never an empty box. Waiting and
+ * loading sit on surface-sunken, a failed file on danger-soft with the reason as title. Not interactive.
+ */
+function StateTile({ asset }: { asset: MediaAsset }) {
+  const failed = asset.state === 'failed';
+  const loading = asset.state === 'downloading' || asset.state === 'verifying';
+  const text = failed ? 'Fehlgeschlagen' : loading ? 'Wird geladen' : 'Wartet';
+  const icon = failed ? WarningCircle : loading ? DownloadSimple : Clock;
+  return (
+    <div className={failed ? 'tile tile-static tile-failed' : 'tile tile-static'} title={asset.errorMessage ?? undefined} role="group" aria-label={`${kindLabels[asset.mediaKind]} ${asset.originalName}: ${text}`}>
+      <span className="tile-state">
+        <Glyph icon={icon} size={28} />
+        <span className="tile-name">{asset.originalName}</span>
+        <span className="tile-micro">{text}</span>
+      </span>
+      {loading && <span className="tile-bar" aria-hidden="true" />}
+      {asset.errorMessage && <span className="sr-only">{asset.errorMessage}</span>}
+    </div>
+  );
+}
+
+function StoredTile({ asset, onOpen, label, width = 480, eager = false }: {
   asset: MediaAsset;
   onOpen: (asset: MediaAsset, opener: HTMLElement) => void;
   label?: string;

@@ -1,4 +1,4 @@
-import { Trash, UploadSimple } from '@phosphor-icons/react';
+import { PencilSimple, Plus, Trash, UploadSimple } from '@phosphor-icons/react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, type CredentialOverview, type CredentialPlatform, type CredentialStatus } from './api.js';
 import { errorMessage } from './error-message.js';
@@ -8,8 +8,11 @@ import { Button } from './ui/Button.js';
 import { DisclosureSummary } from './ui/DisclosureSummary.js';
 import { Dialog } from './ui/Dialog.js';
 import { Field } from './ui/Field.js';
+import { FileField } from './ui/FileField.js';
+import { SettingsSection } from './ui/SettingsSection.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 import { StatusChip } from './ui/StatusChip.js';
+import { useToast } from './ui/Toast.js';
 
 const MAX_COOKIE_FILE_BYTES = 256 * 1024;
 const MAX_TOKEN_BYTES = 1024;
@@ -109,8 +112,9 @@ function StoredChip({ texts, status }: { texts: PlatformTexts; status: StoredSta
 }
 
 /**
- * The logins of the signed-in user, one row per platform: status, upload (cookies.txt) or token field, delete, help
- * and the account-risk notice. The content of a login is never shown, not even after the upload.
+ * The logins of the signed-in user as one list with a row per platform: name, state, the facts that matter and the
+ * action. Uploading or replacing happens in a dialog that carries the account-risk notice exactly once. The content of
+ * a login is never shown, not even after the upload.
  */
 export function CredentialsSection() {
   const [overview, setOverview] = useState<CredentialOverview | null>(null);
@@ -128,24 +132,29 @@ export function CredentialsSection() {
   useEffect(() => { void reload(); }, []);
 
   return (
-    <section className="section credentials" aria-labelledby="credentials-heading">
-      <h2 id="credentials-heading">Zugänge</h2>
-      <p>Hier hinterlegst du die Anmeldungen deiner eigenen Konten, damit Kura Inhalte laden kann, die du sehen darfst. Alles wird verschlüsselt gespeichert und nicht wieder angezeigt.</p>
+    <SettingsSection
+      title="Zugänge"
+      explanation="Hier hinterlegst du die Anmeldungen deiner eigenen Konten, damit Kura Inhalte laden kann, die du sehen darfst. Alles wird verschlüsselt gespeichert und nicht wieder angezeigt."
+    >
       {loadError && <Banner tone="danger">{loadError}</Banner>}
-      {!overview && !loadError && <SkeletonRows count={3} />}
+      {!overview && !loadError && <SkeletonRows count={4} />}
       {overview && !overview.secretKeyConfigured && (
         <Banner tone="warn">Zugänge können erst gespeichert werden, wenn der Administrator den Schlüssel KURA_SECRET_KEY eingerichtet hat.</Banner>
       )}
-      {overview && PLATFORM_ORDER.map((platform) => (
-        <CredentialRow
-          key={platform}
-          texts={credentialTexts[platform]}
-          status={overview.credentials.find((entry) => entry.platform === platform) ?? { platform, kind: credentialTexts[platform].kind, present: false }}
-          secretKeyConfigured={overview.secretKeyConfigured}
-          reload={reload}
-        />
-      ))}
-    </section>
+      {overview && (
+        <ul className="credential-list">
+          {PLATFORM_ORDER.map((platform) => (
+            <CredentialRow
+              key={platform}
+              texts={credentialTexts[platform]}
+              status={overview.credentials.find((entry) => entry.platform === platform) ?? { platform, kind: credentialTexts[platform].kind, present: false }}
+              secretKeyConfigured={overview.secretKeyConfigured}
+              reload={reload}
+            />
+          ))}
+        </ul>
+      )}
+    </SettingsSection>
   );
 }
 
@@ -155,8 +164,10 @@ function CredentialRow({ texts, status, secretKeyConfigured, reload }: {
   secretKeyConfigured: boolean;
   reload: () => Promise<void>;
 }) {
+  const toast = useToast();
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const headingId = `credential-${texts.platform}-heading`;
   const isToken = texts.kind === 'token';
@@ -167,9 +178,10 @@ function CredentialRow({ texts, status, secretKeyConfigured, reload }: {
     try {
       const result = await api.saveCredential(texts.platform, text);
       form.reset();
-      setNotice({
-        tone: 'ok',
-        text: isToken
+      setNotice(null);
+      setEditing(false);
+      toast({
+        message: isToken
           ? 'Gespeichert: Das Token wird verschlüsselt abgelegt und nicht wieder angezeigt.'
           : `Gespeichert: ${result.cookieCount} Cookies von ${texts.domains}.${result.droppedCount > 0 ? ` ${result.droppedCount} Cookies anderer Seiten wurden verworfen.` : ''} Die Cookies werden verschlüsselt abgelegt und nicht wieder angezeigt.`
       });
@@ -204,62 +216,82 @@ function CredentialRow({ texts, status, secretKeyConfigured, reload }: {
     setConfirmDelete(false);
     try {
       await api.deleteCredential(texts.platform);
-      setNotice({ tone: 'ok', text: `${isToken ? 'Das gespeicherte Pixiv-Token wurde' : `Die gespeicherten ${name} wurden`} gelöscht.` });
+      toast({ message: `${isToken ? 'Das gespeicherte Pixiv-Token wurde' : `Die gespeicherten ${name} wurden`} gelöscht.` });
       await reload();
     } catch (cause) {
       setNotice({ tone: 'danger', text: errorMessage(cause) });
     }
   }
 
+  const closeEditor = () => { setEditing(false); setNotice(null); };
+
   return (
-    <section className="panel credential-row" aria-labelledby={headingId}>
-      <div className="credential-head">
+    <li className="credential-item" aria-labelledby={headingId}>
+      <div className="credential-name">
         <h3 id={headingId}>{texts.label}</h3>
         {status.present && <StoredChip texts={texts} status={status} />}
       </div>
-      <Banner tone="warn" role="status">{texts.risk}</Banner>
-      <p>{texts.howTo}</p>
-      {texts.steps && (
-        <details>
-          <DisclosureSummary>So erzeugst du das Token</DisclosureSummary>
-          <ol className="credential-steps">{texts.steps.map((step) => <li key={step}>{step}</li>)}</ol>
-        </details>
-      )}
-      {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
-
       {status.present ? (
-        <div className="kv-panel" role="group" aria-label={isToken ? 'Status des Pixiv-Tokens' : `Status der ${name}`}>
+        <div className="credential-facts" role="group" aria-label={isToken ? 'Status des Pixiv-Tokens' : `Status der ${name}`}>
           {!isToken && <p>Cookies: {status.cookieCount}</p>}
           {!isToken && <p>Früheste Ablaufzeit: {status.earliestExpiry ? formatDate(status.earliestExpiry) : 'keine (nur Sitzungs-Cookies)'}</p>}
           <p>Zuletzt benutzt: {status.lastUsedAt ? formatDate(status.lastUsedAt) : 'noch nie'}</p>
           <p>Ergebnis: {lastResultText(texts, status)}</p>
-          <div className="form-actions">
-            <Button variant="danger-ghost" icon={Trash} onClick={() => setConfirmDelete(true)}>{isToken ? 'Token löschen' : 'Cookies löschen'}</Button>
-          </div>
         </div>
       ) : (
-        <p className="muted">{isToken ? `Es ist kein ${name} hinterlegt.` : `Es sind keine ${name} hinterlegt.`}{texts.optional ? ' Das ist in Ordnung, die Anmeldung ist optional.' : ''}</p>
+        <p className="credential-facts">{isToken ? `Es ist kein ${name} hinterlegt.` : `Es sind keine ${name} hinterlegt.`}{texts.optional ? ' Das ist in Ordnung, die Anmeldung ist optional.' : ''}</p>
       )}
-
-      <form onSubmit={(event) => void submit(event)} className="form-stack">
-        {isToken ? (
-          <Field label={status.present ? 'Neues Pixiv-Token' : 'Pixiv-Token'} hint="Nur die Zeichenfolge nach refresh-token. Das Token wird verschlüsselt gespeichert und nicht wieder angezeigt.">
-            {(control) => <input {...control} name="token" type="password" autoComplete="off" spellCheck={false} />}
-          </Field>
-        ) : (
-          <Field
-            label={status.present ? 'Neue cookies.txt hochladen' : 'cookies.txt hochladen'}
-            hint={`Höchstens 256 KiB. Gespeichert werden nur Cookies von ${texts.domains}, verschlüsselt.`}
-          >
-            {(control) => <input {...control} name="cookiesFile" type="file" accept=".txt,text/plain" />}
-          </Field>
+      {notice && !editing && <Banner tone={notice.tone}>{notice.text}</Banner>}
+      <div className="credential-actions">
+        <Button
+          variant="secondary"
+          icon={status.present ? PencilSimple : Plus}
+          disabled={!secretKeyConfigured}
+          aria-label={`${name} ${status.present ? 'ersetzen' : 'hinterlegen'}`}
+          onClick={() => setEditing(true)}
+        >
+          {status.present ? 'Ersetzen' : 'Hinterlegen'}
+        </Button>
+        {status.present && (
+          <Button variant="danger-ghost" icon={Trash} aria-label={isToken ? 'Token löschen' : 'Cookies löschen'} onClick={() => setConfirmDelete(true)}>Löschen</Button>
         )}
-        <div className="form-actions">
-          <Button variant="primary" type="submit" icon={UploadSimple} disabled={busy || !secretKeyConfigured}>
-            {busy ? (isToken ? 'Wird gespeichert …' : 'Wird hochgeladen …') : (isToken ? 'Speichern' : 'Hochladen')}
-          </Button>
-        </div>
-      </form>
+      </div>
+
+      {editing && (
+        <Dialog title={`${name} ${status.present ? 'ersetzen' : 'hinterlegen'}`} close={closeEditor}>
+          <div className="form-stack" role="region" aria-label={texts.label}>
+            <Banner tone="warn" role="status">{texts.risk}</Banner>
+            <p>{texts.howTo}</p>
+            {texts.steps && (
+              <details>
+                <DisclosureSummary>So erzeugst du das Token</DisclosureSummary>
+                <ol className="credential-steps">{texts.steps.map((step) => <li key={step}>{step}</li>)}</ol>
+              </details>
+            )}
+            {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
+            <form onSubmit={(event) => void submit(event)} className="form-stack">
+              {isToken ? (
+                <Field label={status.present ? 'Neues Pixiv-Token' : 'Pixiv-Token'} hint="Nur die Zeichenfolge nach refresh-token. Das Token wird verschlüsselt gespeichert und nicht wieder angezeigt.">
+                  {(control) => <input {...control} name="token" type="password" autoComplete="off" spellCheck={false} />}
+                </Field>
+              ) : (
+                <FileField
+                  label={status.present ? 'Neue cookies.txt hochladen' : 'cookies.txt hochladen'}
+                  hint={`Höchstens 256 KiB. Gespeichert werden nur Cookies von ${texts.domains}, verschlüsselt.`}
+                  name="cookiesFile"
+                  accept=".txt,text/plain"
+                />
+              )}
+              <div className="form-actions">
+                <Button variant="primary" type="submit" icon={UploadSimple} disabled={busy || !secretKeyConfigured}>
+                  {busy ? (isToken ? 'Wird gespeichert …' : 'Wird hochgeladen …') : (isToken ? 'Speichern' : 'Hochladen')}
+                </Button>
+                <Button onClick={closeEditor}>{labels.cancel}</Button>
+              </div>
+            </form>
+          </div>
+        </Dialog>
+      )}
 
       {confirmDelete && (
         <Dialog title={`${name} löschen`} close={() => setConfirmDelete(false)}>
@@ -270,10 +302,10 @@ function CredentialRow({ texts, status, secretKeyConfigured, reload }: {
           </p>
           <div className="form-actions">
             <Button variant="danger-solid" icon={Trash} onClick={() => void remove()}>Endgültig löschen</Button>
-            <Button onClick={() => setConfirmDelete(false)}>{labels.cancel}</Button>
+            <Button data-autofocus onClick={() => setConfirmDelete(false)}>{labels.cancel}</Button>
           </div>
         </Dialog>
       )}
-    </section>
+    </li>
   );
 }

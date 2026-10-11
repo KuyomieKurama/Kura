@@ -12,6 +12,7 @@ import { Dialog } from './ui/Dialog.js';
 import type { MenuItem } from './ui/Menu.js';
 import { PlatformSeal } from './ui/PlatformSeal.js';
 import { ProgressBar } from './ui/ProgressBar.js';
+import { runProgress } from './run-progress.js';
 import { useToast } from './ui/Toast.js';
 import type { SourceValidation } from './api.js';
 
@@ -43,17 +44,16 @@ export function Cover({ subscription, size }: { subscription: Subscription; size
   return <span className="cover cover-empty" style={style} aria-hidden="true"><PlatformSeal platform={platformOf(subscription)} /></span>;
 }
 
-/** "3 von 5 geladen" and a 4px bar for a running run, one line. The numbers and the bar come from the same counts. */
+/** "3 von 5 gespeichert" and a 4px bar for a running run, one line. The numbers and the bar come from the same counts. */
 export function RunProgress({ runId, width = 120 }: { runId: string; width?: number }) {
   const { data } = useRunAssets(runId);
   if (!data || !data.active) return null;
-  const total = data.counts.stored + data.counts.failed + data.counts.pending + data.counts.downloading + data.counts.verifying;
+  const { stored, total } = runProgress(data.counts);
   if (total === 0) return <span className="accent-text">Wird vorbereitet</span>;
-  const done = data.counts.stored + data.counts.failed;
   return (
     <span className="run-progress">
-      <span className="accent-text num">{`${done} von ${total} geladen`}</span>
-      <ProgressBar value={done} max={total} label="Fortschritt des Laufs" width={width} />
+      <span className="accent-text num">{`${stored} von ${total} gespeichert`}</span>
+      <ProgressBar value={stored} max={total} label="Fortschritt des Laufs" width={width} />
     </span>
   );
 }

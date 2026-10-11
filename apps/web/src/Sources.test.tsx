@@ -168,6 +168,29 @@ const history = {
   }]
 };
 
+it('AC26: groups posts by day, shows only deviations as chips and the checksum only under Technische Details', async () => {
+  const day2 = { ...history.posts[0], id: 'p2', title: 'Fully stored post', platformPostId: '2', state: 'stored', discoveredAt: '2026-06-02T09:30:00Z', assets: [history.posts[0].assets[0]] };
+  mockApi('user', (path) => (path.endsWith('/history') ? json({ runs: history.runs, posts: [day2, history.posts[0]] }) : undefined));
+  await open('Verlauf');
+
+  const headings = (await screen.findAllByRole('heading', { level: 3 })).filter((h) => h.className.includes('ledger-day-heading'));
+  expect(headings).toHaveLength(2);
+
+  const full = screen.getByRole('article', { name: 'Beitrag Fully stored post' });
+  // A fully stored post carries no status chip.
+  expect(within(full).queryByText('Vollständig gespeichert')).not.toBeInTheDocument();
+  const partial = screen.getByRole('article', { name: 'Beitrag Own test artwork' });
+  expect(within(partial.querySelector('.ledger-head') as HTMLElement).getByText('Teilweise gespeichert')).toBeInTheDocument();
+
+  // The checksum is not a table column any more, only a line under "Technische Details".
+  expect(within(partial).queryByRole('columnheader', { name: /Prüfsumme/ })).not.toBeInTheDocument();
+  const details = within(partial).getByText('Technische Details').closest('details')!;
+  expect(details).not.toHaveAttribute('open');
+  expect(within(details).getAllByText('Prüfsumme (SHA-256)').length).toBeGreaterThan(0);
+  // 56px picture or a glyph, never an empty box.
+  expect(partial.querySelector('.ledger-thumb')).not.toBeNull();
+});
+
 it('shows runs, posts and the state of every file with its Immich evidence', async () => {
   const fetch = mockApi('user', (path) => {
     if (path.endsWith('/history')) return json(history);

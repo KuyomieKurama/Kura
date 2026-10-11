@@ -1,0 +1,164 @@
+/* Settings layout (REQ-DL-008 AC27): explanation 280px on the left, the form at most 640px on the right. */
+
+.settings-section {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 640px);
+  column-gap: var(--space-7);
+  padding: var(--space-6) 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-aside h2 {
+  font-size: var(--text-title);
+  line-height: 24px;
+}
+
+.settings-aside p {
+  max-width: 34ch;
+  text-wrap: pretty;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.settings-body .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .settings-body .form-inline-actions {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  }
+}
+
+.settings-body .form-stack {
+  max-width: none;
+}
+
+@media (max-width: 1279px) {
+  .settings-section {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-4);
+  }
+
+  .settings-aside p {
+    max-width: var(--prose-width);
+  }
+}
+
+/* The file field: the native input covers the control, invisible, and keeps the keyboard and the click. */
+.file-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+}
+
+.file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-face {
+  flex: none;
+  pointer-events: none;
+}
+
+.file-input:focus-visible + .file-face {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The credentials list: four rows, the action opens a dialog. */
+.credential-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.credential-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  max-width: none;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.credential-item:last-child {
+  border-bottom: 0;
+}
+
+.credential-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.credential-facts {
+  grid-column: 1;
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.credential-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 639px) {
+  .credential-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .credential-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* The save button of a page made of settings sections stands under the form column. */
+.settings-actions {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+@media (min-width: 1280px) {
+  .settings-actions {
+    padding-left: calc(280px + var(--space-7));
+  }
+}

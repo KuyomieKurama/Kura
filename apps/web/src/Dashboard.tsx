@@ -2,6 +2,7 @@ import { Warning } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type HistoryRun, type MediaAsset, type Overview } from './api.js';
 import { labels } from './labels.js';
+import { runProgress } from './run-progress.js';
 import { errorMessage } from './error-message.js';
 import { MediaTile } from './MediaTile.js';
 import { MediaViewer } from './MediaViewer.js';
@@ -201,9 +202,7 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
               : (
                 <ul className="plain-list">
                   {overview.activeRuns.map((run) => {
-                    const total = run.counts.stored + run.counts.failed + run.counts.pending + run.counts.downloading + run.counts.verifying;
-                    const done = run.counts.stored + run.counts.failed;
-                    const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+                    const { stored, total, percent } = runProgress(run.counts);
                     return (
                       <li key={run.runId} className="running-row">
                         <div className="row-line">
@@ -211,10 +210,10 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
                           <span className="row-name" title={run.subscriptionName}>{run.subscriptionName}</span>
                         </div>
                         <div className="row-line row-between">
-                          <span className="accent-text">{total > 0 ? `${done} von ${total} Dateien geladen` : 'Wird vorbereitet'}</span>
+                          <span className="accent-text">{total > 0 ? `${stored} von ${total} Dateien gespeichert` : 'Wird vorbereitet'}</span>
                           {total > 0 && <span className="num">{percent} %</span>}
                         </div>
-                        {total > 0 && <ProgressBar value={done} max={total} label={`Fortschritt ${run.subscriptionName}`} />}
+                        {total > 0 && <ProgressBar value={stored} max={total} label={`Fortschritt ${run.subscriptionName}`} />}
                       </li>
                     );
                   })}

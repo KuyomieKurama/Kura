@@ -267,6 +267,31 @@ it('shows progress per file and the stored files as pictures', async () => {
   expect(screen.getByText('Wird heruntergeladen')).toBeInTheDocument();
 });
 
+it('AC25: one sentence, one bar from the same two numbers, state tiles instead of dashed boxes', async () => {
+  mockMedia(() => json(runAssets({
+    counts: { pending: 1, downloading: 1, verifying: 0, stored: 1, failed: 1 },
+    assets: [
+      asset('s1', { assetIndex: 0 }),
+      asset('d1', { assetIndex: 1, state: 'downloading', originalName: 'laedt.mp4', mediaKind: 'video', mimeType: 'video/mp4', storedAt: null }),
+      asset('p1', { assetIndex: 2, state: 'pending', originalName: 'wartet.png', storedAt: null }),
+      asset('f1', { assetIndex: 3, state: 'failed', originalName: 'kaputt.png', storedAt: null, errorMessage: 'Netzwerkfehler beim Abruf.' })
+    ]
+  })));
+  render(<RunLive runId="job-1" />);
+  expect(await screen.findByText('1 gespeichert, 1 wird geladen, 1 wartet, 1 fehlgeschlagen')).toBeInTheDocument();
+  const bar = screen.getByRole('progressbar', { name: 'Fortschritt des Laufs' });
+  expect(bar).toHaveAttribute('aria-valuenow', '1');
+  expect(bar).toHaveAttribute('aria-valuemax', '4');
+  // Every file that is not stored has a tile with glyph and text, none is an empty box.
+  expect(screen.getByRole('group', { name: 'Bild wartet.png: Wartet' })).toHaveTextContent('Wartet');
+  expect(screen.getByRole('group', { name: /laedt\.mp4: Wird geladen/ })).toHaveTextContent('Wird geladen');
+  const failed = screen.getByRole('group', { name: /kaputt\.png: Fehlgeschlagen/ });
+  expect(failed).toHaveTextContent('Fehlgeschlagen');
+  expect(failed).toHaveAttribute('title', 'Netzwerkfehler beim Abruf.');
+  // The announcement for the screen reader is its own region and is throttled; it names the same numbers.
+  expect(screen.getByRole('status')).toBeInTheDocument();
+});
+
 it('says that a queued run waits for a worker', async () => {
   mockMedia(() => json(runAssets({ run: null, queue: { state: 'queued', lastError: null }, assets: [], counts: { pending: 0, downloading: 0, verifying: 0, stored: 0, failed: 0 } })));
   render(<RunLive runId="job-1" />);

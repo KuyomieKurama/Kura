@@ -60,12 +60,30 @@ function mockApi(state: Api, rejectUpload?: { code: string; message: string }) {
   return fetch;
 }
 
+const names: Record<string, string> = { Instagram: 'Instagram-Cookies', Patreon: 'Patreon-Cookies', Pixiv: 'Pixiv-Token', YouTube: 'YouTube-Cookies' };
+
+/** Opens the account page and returns the row of one platform in the list "Zugänge". */
 async function openAccount(platform: string = 'Instagram') {
   render(<App />);
   await screen.findByText('Erreichbar');
   fireEvent.click(screen.getByRole('button', { name: /^Konto:/ }));
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Konto' }));
-  return screen.findByRole('region', { name: platform });
+  await screen.findByRole('region', { name: 'Zugänge' });
+  return rowOf(platform);
+}
+
+async function rowOf(platform: string) {
+  const region = await screen.findByRole('region', { name: 'Zugänge' });
+  const rows = await within(region).findAllByRole('listitem');
+  const row = rows.find((item) => within(item).queryByRole('heading', { name: platform }));
+  if (!row) throw new Error(`no row for ${platform}`);
+  return row;
+}
+
+/** The dialog with the form of one platform; it carries the risk notice and the instruction. */
+async function openEditor(row: HTMLElement, platform: string, stored = false) {
+  fireEvent.click(within(row).getByRole('button', { name: `${names[platform]} ${stored ? 'ersetzen' : 'hinterlegen'}` }));
+  return screen.findByRole('dialog', { name: `${names[platform]} ${stored ? 'ersetzen' : 'hinterlegen'}` });
 }
 
 const callsTo = (fetch: ReturnType<typeof vi.fn>, platform: string, method: string) =>
@@ -75,35 +93,40 @@ const COOKIES = '# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t190
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('shows the "Zugänge" section with one row per platform, each with instruction and risk notice', async () => {
+it('lists the four platforms in one list, with the notice and the instruction only in the dialog of each', async () => {
   mockApi(freshApi());
-  const section = await openAccount();
-
+  const row = await openAccount();
   const all = screen.getByRole('region', { name: 'Zugänge' });
-  for (const platform of ['Instagram', 'Patreon', 'Pixiv', 'YouTube']) expect(within(all).getByRole('region', { name: platform })).toBeInTheDocument();
+  expect(within(all).getAllByRole('listitem')).toHaveLength(4);
+  for (const platform of ['Instagram', 'Patreon', 'Pixiv', 'YouTube']) expect(within(all).getByRole('heading', { name: platform })).toBeInTheDocument();
+  // The risk notice does not stand four times on the page: the list shows only the state.
+  expect(within(all).queryByText(/Kura nutzt deine/)).not.toBeInTheDocument();
+  expect(await within(row).findByText('Es sind keine Instagram-Cookies hinterlegt.')).toBeInTheDocument();
 
-  expect(within(section).getByText('Kura nutzt deine Instagram-Sitzung. Viele oder schnelle Abrufe können zu Sperren deines Kontos führen. Nutze ein eigenes Konto und lade nur Inhalte, die du laden darfst.')).toBeInTheDocument();
-  expect(within(section).getByText('Exportiere die Cookies deines angemeldeten Browsers im Netscape-Format (cookies.txt), z. B. mit einer Browser-Erweiterung deiner Wahl.')).toBeInTheDocument();
-  expect(await within(section).findByText('Es sind keine Instagram-Cookies hinterlegt.')).toBeInTheDocument();
-  expect(within(section).getByLabelText('cookies.txt hochladen')).toHaveAttribute('accept', '.txt,text/plain');
+  const dialog = await openEditor(row, 'Instagram');
+  expect(within(dialog).getAllByText(/Kura nutzt deine Instagram-Sitzung/)).toHaveLength(1);
+  expect(within(dialog).getByText('Exportiere die Cookies deines angemeldeten Browsers im Netscape-Format (cookies.txt), z. B. mit einer Browser-Erweiterung deiner Wahl.')).toBeInTheDocument();
+  expect(within(dialog).getByLabelText('cookies.txt hochladen')).toHaveAttribute('accept', '.txt,text/plain');
+  expect(within(dialog).getByText('Keine Datei gewählt')).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 
-  const patreon = within(all).getByRole('region', { name: 'Patreon' });
+  const patreon = await openEditor(await rowOf('Patreon'), 'Patreon');
   expect(within(patreon).getByText(/Kura nutzt deine Patreon-Sitzung/)).toBeInTheDocument();
   expect(within(patreon).getByText(/Cookie "session_id" von patreon.com/)).toBeInTheDocument();
-  expect(within(patreon).getByText('Es sind keine Patreon-Cookies hinterlegt.')).toBeInTheDocument();
-
   expect(all.textContent).not.toMatch(/[—–]/); // no em or en dashes
+  expect(patreon.textContent).not.toMatch(/[—–]/);
 });
 
 it('explains in plain German how to get the Pixiv token with gallery-dl oauth:pixiv', async () => {
   mockApi(freshApi());
-  const pixiv = await openAccount('Pixiv');
+  const row = await openAccount('Pixiv');
+  expect(within(row).getByText('Es ist kein Pixiv-Token hinterlegt.')).toBeInTheDocument();
+  const pixiv = await openEditor(row, 'Pixiv');
 
   expect(within(pixiv).getByText(/nicht mit Cookies an, sondern mit einem Token/)).toBeInTheDocument();
   expect(within(pixiv).getByText('Gib ein: gallery-dl oauth:pixiv')).toBeInTheDocument();
   expect(within(pixiv).getByText(/lange Zeichenfolge/)).toBeInTheDocument();
   expect(within(pixiv).getByText(/Das Token gibt Zugriff auf dein Pixiv-Konto/)).toBeInTheDocument();
-  expect(within(pixiv).getByText('Es ist kein Pixiv-Token hinterlegt.')).toBeInTheDocument();
   const field = within(pixiv).getByLabelText('Pixiv-Token');
   expect(field).toHaveAttribute('type', 'password');
   expect(field).toHaveAttribute('autocomplete', 'off');
@@ -112,18 +135,21 @@ it('explains in plain German how to get the Pixiv token with gallery-dl oauth:pi
 
 it('says that the YouTube login is optional', async () => {
   mockApi(freshApi());
-  const youtube = await openAccount('YouTube');
-  expect(within(youtube).getByText(/Optional: Öffentliche Videos laden auch ohne Anmeldung/)).toBeInTheDocument();
-  expect(within(youtube).getByText(/Es sind keine YouTube-Cookies hinterlegt. Das ist in Ordnung, die Anmeldung ist optional./)).toBeInTheDocument();
+  const row = await openAccount('YouTube');
+  expect(within(row).getByText(/Es sind keine YouTube-Cookies hinterlegt. Das ist in Ordnung, die Anmeldung ist optional./)).toBeInTheDocument();
+  const dialog = await openEditor(row, 'YouTube');
+  expect(within(dialog).getByText(/Optional: Öffentliche Videos laden auch ohne Anmeldung/)).toBeInTheDocument();
 });
 
-it('uploads the file as plain text and then shows the status without any cookie content', async () => {
+it('uploads the file as plain text, closes the dialog with a toast and shows the status without any cookie content', async () => {
   const fetch = mockApi(freshApi());
-  const section = await openAccount();
-  await within(section).findByText('Es sind keine Instagram-Cookies hinterlegt.');
+  const row = await openAccount();
+  await within(row).findByText('Es sind keine Instagram-Cookies hinterlegt.');
+  const dialog = await openEditor(row, 'Instagram');
 
-  fireEvent.change(within(section).getByLabelText('cookies.txt hochladen'), { target: { files: [new File([COOKIES], 'cookies.txt', { type: 'text/plain' })] } });
-  fireEvent.click(within(section).getByRole('button', { name: 'Hochladen' }));
+  fireEvent.change(within(dialog).getByLabelText('cookies.txt hochladen'), { target: { files: [new File([COOKIES], 'cookies.txt', { type: 'text/plain' })] } });
+  expect(within(dialog).getByText('cookies.txt')).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Hochladen' }));
 
   await waitFor(() => expect(callsTo(fetch, 'instagram', 'PUT')).toHaveLength(1));
   const [, init] = callsTo(fetch, 'instagram', 'PUT')[0]!;
@@ -131,58 +157,60 @@ it('uploads the file as plain text and then shows the status without any cookie 
   expect(new Headers(init.headers).get('Content-Type')).toBe('text/plain; charset=utf-8');
   expect(new Headers(init.headers).get('X-Kura-CSRF')).toBe('csrf');
 
-  const status = await within(section).findByRole('group', { name: 'Status der Instagram-Cookies' });
+  const status = await within(row).findByRole('group', { name: 'Status der Instagram-Cookies' });
   expect(within(status).getByText('Cookies: 3')).toBeInTheDocument();
   expect(within(status).getByText('Zuletzt benutzt: noch nie')).toBeInTheDocument();
-  expect(within(section).getByText('Cookies hinterlegt')).toBeInTheDocument();
-  expect(within(section).getByText(/2 Cookies anderer Seiten wurden verworfen/)).toBeInTheDocument();
-  expect(section.textContent).not.toContain('FAKE-VALUE');
+  expect(within(row).getByText('Cookies hinterlegt')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  // Success is a toast, not a banner.
+  expect(await screen.findByText(/2 Cookies anderer Seiten wurden verworfen/)).toBeInTheDocument();
+  expect(document.body.textContent).not.toContain('FAKE-VALUE');
 });
 
 it('uploads Patreon cookies to the Patreon route and names the domain', async () => {
   const fetch = mockApi(freshApi());
-  const section = await openAccount('Patreon');
-  await within(section).findByText('Es sind keine Patreon-Cookies hinterlegt.');
+  const row = await openAccount('Patreon');
+  const dialog = await openEditor(row, 'Patreon');
 
-  fireEvent.change(within(section).getByLabelText('cookies.txt hochladen'), { target: { files: [new File([COOKIES], 'cookies.txt')] } });
-  fireEvent.click(within(section).getByRole('button', { name: 'Hochladen' }));
+  fireEvent.change(within(dialog).getByLabelText('cookies.txt hochladen'), { target: { files: [new File([COOKIES], 'cookies.txt')] } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Hochladen' }));
 
   await waitFor(() => expect(callsTo(fetch, 'patreon', 'PUT')).toHaveLength(1));
   expect(callsTo(fetch, 'instagram', 'PUT')).toHaveLength(0);
-  expect(await within(section).findByText(/Gespeichert: 3 Cookies von patreon.com/)).toBeInTheDocument();
-  expect(await within(section).findByRole('group', { name: 'Status der Patreon-Cookies' })).toBeInTheDocument();
+  expect(await screen.findByText(/Gespeichert: 3 Cookies von patreon.com/)).toBeInTheDocument();
+  expect(await within(row).findByRole('group', { name: 'Status der Patreon-Cookies' })).toBeInTheDocument();
 });
 
 it('saves the Pixiv token as plain text, trims it, and never shows it again', async () => {
   const fetch = mockApi(freshApi());
-  const section = await openAccount('Pixiv');
-  await within(section).findByText('Es ist kein Pixiv-Token hinterlegt.');
+  const row = await openAccount('Pixiv');
+  const dialog = await openEditor(row, 'Pixiv');
 
-  fireEvent.change(within(section).getByLabelText('Pixiv-Token'), { target: { value: '  FAKE-pixiv_refresh-token-for-tests-ONLY-0123 \n' } });
-  fireEvent.click(within(section).getByRole('button', { name: 'Speichern' }));
+  fireEvent.change(within(dialog).getByLabelText('Pixiv-Token'), { target: { value: '  FAKE-pixiv_refresh-token-for-tests-ONLY-0123 \n' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }));
 
   await waitFor(() => expect(callsTo(fetch, 'pixiv', 'PUT')).toHaveLength(1));
   const [, init] = callsTo(fetch, 'pixiv', 'PUT')[0]!;
   expect(init.body).toBe('FAKE-pixiv_refresh-token-for-tests-ONLY-0123');
   expect(new Headers(init.headers).get('Content-Type')).toBe('text/plain; charset=utf-8');
 
-  const status = await within(section).findByRole('group', { name: 'Status des Pixiv-Tokens' });
-  expect(within(section).getByText('Token hinterlegt')).toBeInTheDocument();
+  const status = await within(row).findByRole('group', { name: 'Status des Pixiv-Tokens' });
+  expect(within(row).getByText('Token hinterlegt')).toBeInTheDocument();
   expect(within(status).queryByText(/Cookies:/)).not.toBeInTheDocument();
   expect(within(status).getByText('Zuletzt benutzt: noch nie')).toBeInTheDocument();
-  expect(section.textContent).not.toContain('FAKE-pixiv');
-  expect((within(section).getByLabelText('Neues Pixiv-Token') as HTMLInputElement).value).toBe('');
+  expect(document.body.textContent).not.toContain('FAKE-pixiv');
 });
 
 it('refuses an empty Pixiv token and a file over 256 KiB without sending anything', async () => {
   const fetch = mockApi(freshApi());
-  const section = await openAccount('Pixiv');
-  await within(section).findByText('Es ist kein Pixiv-Token hinterlegt.');
-  fireEvent.click(within(section).getByRole('button', { name: 'Speichern' }));
-  expect(await within(section).findByText('Bitte füge das Token ein.')).toBeInTheDocument();
+  const row = await openAccount('Pixiv');
+  const dialog = await openEditor(row, 'Pixiv');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+  expect(await within(dialog).findByText('Bitte füge das Token ein.')).toBeInTheDocument();
   expect(callsTo(fetch, 'pixiv', 'PUT')).toHaveLength(0);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 
-  const instagram = screen.getByRole('region', { name: 'Instagram' });
+  const instagram = await openEditor(await rowOf('Instagram'), 'Instagram');
   const big = new File(['x'.repeat(256 * 1024 + 1)], 'cookies.txt', { type: 'text/plain' });
   fireEvent.change(within(instagram).getByLabelText('cookies.txt hochladen'), { target: { files: [big] } });
   fireEvent.click(within(instagram).getByRole('button', { name: 'Hochladen' }));
@@ -190,48 +218,50 @@ it('refuses an empty Pixiv token and a file over 256 KiB without sending anythin
   expect(callsTo(fetch, 'instagram', 'PUT')).toHaveLength(0);
 });
 
-it('shows the server message when the upload is rejected', async () => {
+it('shows the server message in the dialog when the upload is rejected', async () => {
   mockApi(freshApi(), { code: 'COOKIES_INVALID', message: 'Die Datei enthält kein Cookie "session_id" für patreon.com.' });
-  const section = await openAccount('Patreon');
-  await within(section).findByText('Es sind keine Patreon-Cookies hinterlegt.');
+  const row = await openAccount('Patreon');
+  const dialog = await openEditor(row, 'Patreon');
 
-  fireEvent.change(within(section).getByLabelText('cookies.txt hochladen'), { target: { files: [new File(['abc'], 'cookies.txt')] } });
-  fireEvent.click(within(section).getByRole('button', { name: 'Hochladen' }));
+  fireEvent.change(within(dialog).getByLabelText('cookies.txt hochladen'), { target: { files: [new File(['abc'], 'cookies.txt')] } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Hochladen' }));
 
-  expect(await within(section).findByText(/kein Cookie "session_id"/)).toBeInTheDocument();
+  expect(await within(dialog).findByText(/kein Cookie "session_id"/)).toBeInTheDocument();
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
 });
 
 it('asks for confirmation before deleting and then shows the empty state', async () => {
   const fetch = mockApi(freshApi({ instagram: storedStatus('instagram') }));
-  const section = await openAccount();
-  await within(section).findByRole('group', { name: 'Status der Instagram-Cookies' });
+  const row = await openAccount();
+  await within(row).findByRole('group', { name: 'Status der Instagram-Cookies' });
 
-  fireEvent.click(within(section).getByRole('button', { name: 'Cookies löschen' }));
+  fireEvent.click(within(row).getByRole('button', { name: 'Cookies löschen' }));
   const dialog = await screen.findByRole('dialog', { name: 'Instagram-Cookies löschen' });
   expect(callsTo(fetch, 'instagram', 'DELETE')).toHaveLength(0);
+  expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toHaveFocus();
 
   fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(callsTo(fetch, 'instagram', 'DELETE')).toHaveLength(0);
 
-  fireEvent.click(within(section).getByRole('button', { name: 'Cookies löschen' }));
+  fireEvent.click(within(row).getByRole('button', { name: 'Cookies löschen' }));
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Endgültig löschen' }));
 
   await waitFor(() => expect(callsTo(fetch, 'instagram', 'DELETE')).toHaveLength(1));
-  expect(await within(section).findByText('Es sind keine Instagram-Cookies hinterlegt.')).toBeInTheDocument();
+  expect(await within(row).findByText('Es sind keine Instagram-Cookies hinterlegt.')).toBeInTheDocument();
 });
 
 it('deletes a Pixiv token through its own dialog', async () => {
   const fetch = mockApi(freshApi({ pixiv: storedStatus('pixiv') }));
-  const section = await openAccount('Pixiv');
-  await within(section).findByRole('group', { name: 'Status des Pixiv-Tokens' });
+  const row = await openAccount('Pixiv');
+  await within(row).findByRole('group', { name: 'Status des Pixiv-Tokens' });
 
-  fireEvent.click(within(section).getByRole('button', { name: 'Token löschen' }));
+  fireEvent.click(within(row).getByRole('button', { name: 'Token löschen' }));
   const dialog = await screen.findByRole('dialog', { name: 'Pixiv-Token löschen' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
 
   await waitFor(() => expect(callsTo(fetch, 'pixiv', 'DELETE')).toHaveLength(1));
-  expect(await within(section).findByText('Es ist kein Pixiv-Token hinterlegt.')).toBeInTheDocument();
+  expect(await within(row).findByText('Es ist kein Pixiv-Token hinterlegt.')).toBeInTheDocument();
 });
 
 it('says "Anmeldung abgelaufen" when a platform rejected the stored login', async () => {
@@ -244,19 +274,17 @@ it('says "Anmeldung abgelaufen" when a platform rejected the stored login', asyn
   expect(within(instagram).getByText('Anmeldung abgelaufen')).toBeInTheDocument();
   expect(within(status).getByText('Ergebnis: Instagram-Anmeldung abgelaufen: bitte Cookies neu hochladen')).toBeInTheDocument();
 
-  const pixiv = screen.getByRole('region', { name: 'Pixiv' });
+  const pixiv = await rowOf('Pixiv');
   expect(within(pixiv).getByText('Ergebnis: Pixiv-Anmeldung abgelaufen: bitte Token neu hinterlegen')).toBeInTheDocument();
 });
 
 it('blocks every upload and explains why when the server has no secret key', async () => {
   mockApi(freshApi({}, false));
-  const section = await openAccount();
+  await openAccount();
   expect(await screen.findByText(/KURA_SECRET_KEY/)).toBeInTheDocument();
-  for (const platform of ['Instagram', 'Patreon', 'YouTube']) {
-    expect(within(screen.getByRole('region', { name: platform })).getByRole('button', { name: 'Hochladen' })).toBeDisabled();
+  for (const platform of ['Instagram', 'Patreon', 'Pixiv', 'YouTube']) {
+    expect(within(await rowOf(platform)).getByRole('button', { name: `${names[platform]} hinterlegen` })).toBeDisabled();
   }
-  expect(within(screen.getByRole('region', { name: 'Pixiv' })).getByRole('button', { name: 'Speichern' })).toBeDisabled();
-  expect(section).toBeInTheDocument();
 });
 
 it.each([

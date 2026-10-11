@@ -8,7 +8,9 @@ import { Button } from './ui/Button.js';
 import { DataTable, type Column } from './ui/DataTable.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { Field } from './ui/Field.js';
+import { FileField } from './ui/FileField.js';
 import { PageHeader } from './ui/PageHeader.js';
+import { SettingsSection } from './ui/SettingsSection.js';
 import { StatusChip } from './ui/StatusChip.js';
 
 type Notice = { tone: BannerTone; text: string };
@@ -66,9 +68,10 @@ function ImmichEndpointApprovals() {
   ];
 
   return (
-    <section className="section" aria-labelledby="approvals-heading">
-      <h2 id="approvals-heading">Freigaben für private Immich-Endpunkte</h2>
-      <p className="muted">Ziele in privaten Netzen oder auf diesem Rechner werden nur nach Freigabe von Host und Port durch einen Administrator kontaktiert. Link-Local- und Metadaten-Adressen sind immer gesperrt.</p>
+    <SettingsSection
+      title="Freigaben für private Immich-Endpunkte"
+      explanation="Ziele in privaten Netzen oder auf diesem Rechner werden nur nach Freigabe von Host und Port durch einen Administrator kontaktiert. Link-Local- und Metadaten-Adressen sind immer gesperrt."
+    >
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
       {approvals.length === 0
         ? <EmptyState title="Keine Freigaben vorhanden." hint="Gib unten Host und Port deines Immich-Servers frei." />
@@ -84,7 +87,7 @@ function ImmichEndpointApprovals() {
           <Button type="submit">Endpunkt freigeben</Button>
         </div>
       </form>
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -162,8 +165,7 @@ export function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
       <PageHeader title="Immich" lead="Lokale Originale werden bei diesem Test niemals gelöscht." />
       {result && <Banner tone={result.tone}>{result.text}</Banner>}
 
-      <section className="section" aria-labelledby="connection-heading">
-        <h2 id="connection-heading">Verbindung</h2>
+      <SettingsSection title="Verbindung" explanation="Adresse und API-Schlüssel deines Immich-Servers. Der Schlüssel wird verschlüsselt gespeichert und nicht wieder angezeigt.">
         <form onSubmit={save} className="form-grid">
           <Field label="Server-URL">
             {(control) => (
@@ -178,24 +180,20 @@ export function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
             <Button icon={Plugs} onClick={() => void test()}>Verbindung testen</Button>
           </div>
         </form>
-      </section>
+      </SettingsSection>
 
-      <section className="section" aria-labelledby="test-file-heading">
-        <h2 id="test-file-heading">Testdatei übertragen</h2>
+      <SettingsSection title="Testdatei übertragen" explanation="Prüft den ganzen Weg zu Immich mit einer kleinen Datei. Das lokale Original bleibt immer erhalten.">
         <form onSubmit={upload} className="form-grid">
-          <Field label="Testdatei" hint="Höchstens 4 MiB. Das Original bleibt in Kura erhalten.">
-            {(control) => <input {...control} name="testFile" type="file" required />}
-          </Field>
+          <FileField label="Testdatei" hint="Höchstens 4 MiB. Das Original bleibt in Kura erhalten." name="testFile" required />
           <div className="form-actions form-wide">
             <Button type="submit" icon={UploadSimple}>Testdatei übertragen</Button>
           </div>
         </form>
-      </section>
+      </SettingsSection>
 
       {transfer && (
-        <section className="section" aria-label="Status der letzten Testübertragung">
-          <h2>Status der letzten Übertragung</h2>
-          <div className="panel kv-panel">
+        <SettingsSection title="Status der letzten Übertragung">
+          <div className="kv-panel" role="group" aria-label="Status der letzten Testübertragung">
             <p>Status: <StatusChip domain="transfer" status={transfer.status} /></p>
             <p>Lokales Original: {transfer.localOriginalRetained ? 'bleibt erhalten' : 'unbekannt'}</p>
             <p>
@@ -204,7 +202,7 @@ export function ImmichPage({ isAdmin }: { isAdmin: boolean }) {
                 : 'noch nicht vorhanden.'}
             </p>
           </div>
-        </section>
+        </SettingsSection>
       )}
 
       {isAdmin && <ImmichEndpointApprovals />}

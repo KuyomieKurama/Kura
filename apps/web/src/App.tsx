@@ -15,6 +15,7 @@ import { labels } from './labels.js';
 import { SubscriptionsPage } from './Subscriptions.js';
 import { Button } from './ui/Button.js';
 import { PageHeader } from './ui/PageHeader.js';
+import { SettingsSection } from './ui/SettingsSection.js';
 import { ToastProvider } from './ui/Toast.js';
 import { UsersPage } from './Users.js';
 import { hasNewVersion, VersionNotice, VersionPage, versionLabel, versionTexts } from './Version.js';
@@ -221,18 +222,15 @@ export function App() {
       {view === 'account' && (
         <>
           <PageHeader title={labels.account} />
-          <section className="section narrow" aria-labelledby="password-heading">
-            <h2 id="password-heading">{labels.changePasswordTitle}</h2>
+          <SettingsSection title={labels.changePasswordTitle} explanation="Wähle ein Passwort, das du sonst nirgends benutzt. Nach der Änderung bleibst du angemeldet.">
             <PasswordForm done={() => setView('dashboard')} />
-          </section>
+          </SettingsSection>
           <CredentialsSection />
-          <section className="section narrow" aria-labelledby="about-heading">
-            <h2 id="about-heading">{versionTexts.title}</h2>
-            <p className="muted">{versionInfo ? `${versionLabel(versionInfo)}, Status: ${versionTexts.statusLabels[versionInfo.status]}` : 'Kura'}</p>
+          <SettingsSection title={versionTexts.title} explanation={versionInfo ? `${versionLabel(versionInfo)}, Status: ${versionTexts.statusLabels[versionInfo.status]}` : 'Kura'}>
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setView('version')}>{versionTexts.linkTitle}</Button>
             </div>
-          </section>
+          </SettingsSection>
         </>
       )}
       {view === 'version' && <VersionPage info={versionInfo} isAdmin={isAdmin} onChanged={setVersionInfo} />}

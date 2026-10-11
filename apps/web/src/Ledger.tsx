@@ -1,6 +1,6 @@
-import { CaretDown, CaretUp, CheckCircle, Hourglass, LockKey, SealCheck } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, CheckCircle, FileImage, FilmStrip, Hourglass, LockKey, MusicNotes, File as FileGlyph } from '@phosphor-icons/react';
 import { useId, useState } from 'react';
-import { api, type HistoryAsset, type HistoryPost } from './api.js';
+import { api, contentUrl, thumbnailUrl, type HistoryAsset, type HistoryPost } from './api.js';
 import { errorMessage } from './error-message.js';
 import {
   assetStateLabels, formatBytes, handoverLabels, isLocked, isNotYetAvailable, isWaitingOrLocked, platformLabels, postStateLabels
@@ -27,25 +27,49 @@ function verificationOf(post: HistoryPost): Verification {
   return { kind, verified: verified.length, stored: stored.length };
 }
 
-/** The verification marker of a ledger entry: outlined like a stamp, check icon only when evidence exists. */
-function VerificationStamp({ verification }: { verification: Verification }) {
-  if (verification.kind === 'verified') {
-    return (
-      <span className="stamp stamp-verified" title="Für alle gespeicherten Dateien liegt ein Prüfbeleg von Immich vor.">
-        <Glyph icon={SealCheck} size={14} />
-        Original verifiziert
-      </span>
-    );
-  }
-  if (verification.kind === 'partial') {
-    return (
-      <span className="stamp stamp-partial" title={`Für ${verification.verified} von ${verification.stored} gespeicherten Dateien liegt ein Prüfbeleg von Immich vor.`}>
-        <Glyph icon={CheckCircle} size={14} />
-        Teilweise verifiziert
-      </span>
-    );
-  }
-  return <span className="stamp stamp-none" title="Es liegt kein Prüfbeleg von Immich vor.">Nicht verifiziert</span>;
+/**
+ * Verification is the normal case and says nothing in the row: only a deviation (some files without Immich evidence) is
+ * a chip. The full statement stands in the technical details.
+ */
+function verificationText(verification: Verification): string {
+  if (verification.kind === 'verified') return 'Für alle gespeicherten Dateien liegt ein Prüfbeleg von Immich vor.';
+  if (verification.kind === 'partial') return `Für ${verification.verified} von ${verification.stored} gespeicherten Dateien liegt ein Prüfbeleg von Immich vor.`;
+  return 'Es liegt kein Prüfbeleg von Immich vor.';
+}
+
+type PreviewKind = 'image' | 'video' | 'audio' | 'other';
+const previewKind = (asset: HistoryAsset): PreviewKind => asset.mediaType.startsWith('image/') ? 'image' : asset.mediaType.startsWith('video/') ? 'video' : asset.mediaType.startsWith('audio/') ? 'audio' : 'other';
+const previewIcons = { image: FileImage, video: FilmStrip, audio: MusicNotes, other: FileGlyph } as const;
+
+/**
+ * The 56px picture of a post row: the preview of its first stored file. If there is none (yet, or at all) the square
+ * shows the glyph of the file kind, never an empty box.
+ */
+function PostThumb({ post }: { post: HistoryPost }) {
+  const first = post.assets.find((asset) => asset.state === 'stored' && previewKind(asset) !== 'audio' && previewKind(asset) !== 'other')
+    ?? post.assets.find((asset) => asset.state === 'stored');
+  const [stage, setStage] = useState<'preview' | 'original' | 'broken'>('preview');
+  const [loaded, setLoaded] = useState(false);
+  const kind = first ? previewKind(first) : 'other';
+  const src = !first || kind === 'audio' || kind === 'other' || stage === 'broken' ? null : stage === 'preview' ? thumbnailUrl(first.id, 480) : kind === 'image' ? contentUrl(first.id) : null;
+  // The glyph is always underneath; the picture covers it as soon as it has loaded. So there is no moment with an empty box.
+  return (
+    <div className="ledger-thumb" aria-hidden="true">
+      <Glyph icon={previewIcons[kind]} size={24} />
+      {src && (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          data-loaded={loaded}
+          onLoad={() => setLoaded(true)}
+          onError={() => setStage(stage === 'preview' && kind === 'image' ? 'original' : 'broken')}
+        />
+      )}
+    </div>
+  );
 }
 
 /** One segment per file, coloured by state. The bar is decoration, the text next to it is the summary. */
@@ -109,6 +133,26 @@ function Evidence({ asset }: { asset: HistoryAsset }) {
   );
 }
 
+/** The part for people who check: checksum per file and the verification statement. Closed by default. */
+function TechnicalDetails({ post, verification }: { post: HistoryPost; verification: Verification }) {
+  return (
+    <details className="technical">
+      <DisclosureSummary>Technische Details</DisclosureSummary>
+      <div className="technical-body">
+        <p className="meta">{verificationText(verification)}</p>
+        <dl className="technical-list">
+          {post.assets.map((asset) => (
+            <div key={asset.id}>
+              <dt className="truncate" title={asset.originalName}>{asset.originalName}</dt>
+              <dd>{asset.sha256 ? <><span className="meta">Prüfsumme (SHA-256)</span> <code className="hash" title={asset.sha256}>{asset.sha256}</code></> : <span className="meta">Prüfsumme (SHA-256): noch keine</span>}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </details>
+  );
+}
+
 function AssetsTable({ post }: { post: HistoryPost }) {
   const columns: Column<HistoryAsset>[] = [
     { key: 'index', header: 'Nr.', render: (asset) => asset.index + 1, numeric: true },
@@ -138,11 +182,6 @@ function AssetsTable({ post }: { post: HistoryPost }) {
       )
     },
     {
-      key: 'sha',
-      header: 'Prüfsumme (SHA-256)',
-      render: (asset) => asset.sha256 ? <code className="hash" title={asset.sha256}>{asset.sha256.slice(0, 16)}…</code> : 'noch keine'
-    },
-    {
       key: 'immich',
       header: 'Immich',
       render: (asset) => (
@@ -157,7 +196,7 @@ function AssetsTable({ post }: { post: HistoryPost }) {
 }
 
 
-/** One history entry as a ledger row: source and time left, the files as a segmented bar, the verification stamp right. */
+/** One history entry as a ledger row: source and time left, the files as a segmented bar, only deviations as chips. */
 export function LedgerEntry({ post }: { post: HistoryPost }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
@@ -169,26 +208,31 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
   const lockedOnly = hasAssets && post.state === 'failed' && post.assets.every(isLocked);
   const statusLine = `Status: ${lockedOnly ? 'Nicht zugänglich' : waitingOnly ? 'Noch nicht verfügbar' : postStateLabels[post.state] ?? post.state}${!post.discoveryComplete && post.state !== 'discovered' ? ' (Dateiliste nicht als vollständig gemeldet)' : ''}`;
 
+  const verification = verificationOf(post);
+  const sourceLine = `${platformLabels[post.platform] ?? post.platform}, ${post.creatorName ?? post.creatorId}, aus „${post.subscriptionName}“`;
+  const timeOfDay = new Date(post.discoveredAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: zone() });
+  // Only a deviation is a chip: a fully stored post says nothing, the bar and the sentence under the title are enough.
+  const deviation = lockedOnly
+    ? <Chip tone="neutral" icon={LockKey}>Nicht zugänglich</Chip>
+    : waitingOnly
+      ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
+      : post.state === 'stored' ? null : <StatusChip domain="post" status={post.state} />;
+
   return (
     <article className="ledger-entry" aria-label={`Beitrag ${label}`}>
       <div className="ledger-head">
+        <PostThumb post={post} />
         <div className="ledger-source">
           <h3 className="truncate" title={label}>{label}</h3>
-          <p className="meta truncate">{`${platformLabels[post.platform] ?? post.platform}, ${post.creatorName ?? post.creatorId}, aus „${post.subscriptionName}“`}</p>
-          <p className="meta">
-            <time dateTime={post.discoveredAt}>{`Gefunden ${formatInstant(post.discoveredAt, zone())}`}</time>
+          {hasAssets ? <Segments assets={post.assets} /> : <p className="meta">Noch keine Dateien erfasst.</p>}
+          <p className="meta truncate" title={sourceLine}>
+            <time dateTime={post.discoveredAt} title={formatInstant(post.discoveredAt, zone())}>{timeOfDay}</time>
+            {`, ${sourceLine}`}
           </p>
         </div>
-        <div className="ledger-state">
-          {hasAssets ? <Segments assets={post.assets} /> : <p className="meta">Noch keine Dateien erfasst.</p>}
-        </div>
         <div className="ledger-mark">
-          {lockedOnly
-            ? <Chip tone="neutral" icon={LockKey}>Nicht zugänglich</Chip>
-            : waitingOnly
-              ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
-              : <StatusChip domain="post" status={post.state} />}
-          {hasAssets && <VerificationStamp verification={verificationOf(post)} />}
+          {deviation}
+          {verification.kind === 'partial' && <Chip tone="warn" icon={CheckCircle}>Teilweise verifiziert</Chip>}
         </div>
         {hasAssets && (
           <Button variant="ghost" icon={open ? CaretUp : CaretDown} onClick={() => setOpen(!open)} aria-expanded={open} aria-controls={bodyId}>
@@ -201,6 +245,7 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
           <Collapse open={open} id={bodyId}>
             <p className="meta ledger-status">{statusLine}</p>
             <AssetsTable post={post} />
+            <TechnicalDetails post={post} verification={verification} />
           </Collapse>
         )
         : <p className="meta ledger-status">{statusLine}</p>}

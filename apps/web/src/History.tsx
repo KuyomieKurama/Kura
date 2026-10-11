@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type HistoryPost, type HistoryRun } from './api.js';
 import { errorMessage } from './error-message.js';
 import { formatBytes, platformLabels } from './history-labels.js';
+import { dayLabel } from './time-format.js';
 import { LedgerEntry } from './Ledger.js';
 import { RunLive } from './RunLive.js';
 import { labels } from './labels.js';
@@ -25,6 +26,19 @@ function summarize(run: HistoryRun): string {
   parts.push(`${run.assetsStored} ${run.assetsStored === 1 ? 'Datei' : 'Dateien'} gespeichert (${formatBytes(run.bytesStored)})`);
   if (run.assetsFailed > 0) parts.push(`${run.assetsFailed} fehlgeschlagen`);
   return parts.join(', ');
+}
+
+/** Posts grouped by the day they were found (local time), newest day first; the order inside a day is the server's. */
+function groupByDay(posts: HistoryPost[]): { key: string; label: string; posts: HistoryPost[] }[] {
+  const groups = new Map<string, { key: string; label: string; posts: HistoryPost[] }>();
+  for (const post of posts) {
+    const date = new Date(post.discoveredAt);
+    const key = date.toLocaleDateString('sv-SE', { timeZone: zone() });
+    const group = groups.get(key) ?? { key, label: dayLabel(date), posts: [] };
+    group.posts.push(post);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }
 
 const runColumns: Column<HistoryRun>[] = [
@@ -89,7 +103,12 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
               <h2 id="posts-heading">Beiträge und Dateien</h2>
               {data.posts.length === 0
                 ? <EmptyState title="Noch nichts heruntergeladen." hint="Sobald ein Lauf Dateien speichert, erscheinen sie hier." />
-                : <div className="panel ledger">{data.posts.map((post) => <LedgerEntry key={post.id} post={post} />)}</div>}
+                : groupByDay(data.posts).map((group) => (
+                  <section key={group.key} className="ledger-day" aria-labelledby={`day-${group.key}`}>
+                    <h3 id={`day-${group.key}`} className="ledger-day-heading">{group.label}</h3>
+                    <div className="panel ledger">{group.posts.map((post) => <LedgerEntry key={post.id} post={post} />)}</div>
+                  </section>
+                ))}
             </section>
             <section className="section" aria-labelledby="runs-heading">
               <h2 id="runs-heading">Läufe</h2>

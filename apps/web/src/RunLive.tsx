@@ -1,13 +1,15 @@
 import { Images } from '@phosphor-icons/react';
-import { useEffect, useMemo, useState } from 'react';
-import type { MediaAsset, RunAssets } from './api.js';
-import { formatBytes, platformLabels } from './history-labels.js';
-import { groupByPost, kindLabels } from './media.js';
-import { MediaCell, MediaSkeleton } from './MediaGrid.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { RunAssets } from './api.js';
+import { platformLabels } from './history-labels.js';
+import { groupByPost } from './media.js';
+import { Gallery, MediaSkeleton } from './MediaGrid.js';
 import { MediaViewer } from './MediaViewer.js';
+import { runProgress } from './run-progress.js';
 import { useRunAssets } from './useRunAssets.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
+import { ProgressBar } from './ui/ProgressBar.js';
 import { StatusChip } from './ui/StatusChip.js';
 
 function describeCounts(counts: RunAssets['counts']): string {
@@ -19,16 +21,23 @@ function describeCounts(counts: RunAssets['counts']): string {
   return parts.join(', ');
 }
 
-/** A file that is not stored yet: its name, kind and state, without a picture. */
-function PendingTile({ asset }: { asset: MediaAsset }) {
-  return (
-    <div className="media-pending" title={asset.errorMessage ?? undefined}>
-      <span className="media-pending-name truncate">{asset.originalName}</span>
-      <span className="meta">{kindLabels[asset.mediaKind]}{asset.byteSize !== null ? `, ${formatBytes(asset.byteSize)}` : ''}</span>
-      <StatusChip domain="asset" status={asset.state} suffix={asset.attempts > 1 ? ` (Versuch ${asset.attempts})` : ''} />
-      {asset.errorMessage && <span className="sr-only">{asset.errorMessage}</span>}
-    </div>
-  );
+const ANNOUNCE_MS = 5000;
+
+/** The text for the screen reader: it changes at most every 5 seconds, however often the counts change. */
+function useThrottledText(text: string): string {
+  const [announced, setAnnounced] = useState(text);
+  const latest = useRef(text);
+  const lastAt = useRef(0);
+  latest.current = text;
+  useEffect(() => {
+    const wait = Math.max(0, ANNOUNCE_MS - (Date.now() - lastAt.current));
+    const timer = window.setTimeout(() => {
+      lastAt.current = Date.now();
+      setAnnounced(latest.current);
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [text]);
+  return announced;
 }
 
 /**
@@ -62,6 +71,8 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
     : waiting
       ? 'Der Lauf ist eingereiht und wartet auf einen freien Worker.'
       : describeCounts(data.counts);
+  const progress = data ? runProgress(data.counts) : null;
+  const announcement = useThrottledText(progress && progress.total > 0 ? `${progress.stored} von ${progress.total} Dateien gespeichert` : '');
 
   return (
     <section className="run-live panel" aria-label="Lauf live">
@@ -74,7 +85,9 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
           {data && !data.active && onDismiss && <Button variant="ghost" onClick={onDismiss}>Ausblenden</Button>}
         </div>
       </header>
-      <p className="meta" role="status" aria-live="polite">{statusText}</p>
+      <p className="run-live-sentence num">{statusText}</p>
+      {progress && progress.total > 0 && <ProgressBar value={progress.stored} max={progress.total} label="Fortschritt des Laufs" />}
+      <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
       {run?.errorMessage && <Banner tone={run.state === 'failed' ? 'danger' : 'warn'}>{run.errorMessage}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
       {!data && !error && <MediaSkeleton count={4} />}
@@ -87,15 +100,7 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
                 <h5 className="truncate" title={group.title}>{group.title}</h5>
                 <span className="meta">{platformLabels[group.platform] ?? group.platform}</span>
               </header>
-              <ul className="media-grid">
-                {group.assets.map((asset) => (
-                  <li key={asset.id}>
-                    {asset.state === 'stored'
-                      ? <MediaCell asset={asset} onOpen={(opened) => setViewing(opened.id)} />
-                      : <PendingTile asset={asset} />}
-                  </li>
-                ))}
-              </ul>
+              <Gallery assets={group.assets} onOpen={(opened) => setViewing(opened.id)} />
             </section>
           ))}
         </div>

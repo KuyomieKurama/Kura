@@ -366,7 +366,13 @@ async function main() {
         await page.getByRole('dialog').getByRole('button', { name: 'Konto', exact: true }).click();
       }
       await page.getByRole('heading', { name: 'Passwort ändern' }).waitFor();
+      // The list of logins loads after the page: wait for its four rows so the shot never shows the skeleton.
+      await page.getByRole('region', { name: 'Zugänge' }).getByRole('listitem').nth(3).waitFor();
       await shot('account');
+      await page.getByRole('button', { name: 'Instagram-Cookies hinterlegen' }).click();
+      await page.getByRole('dialog', { name: 'Instagram-Cookies hinterlegen' }).waitFor();
+      await shot('account-dialog');
+      await page.keyboard.press('Escape');
 
       await context.close();
     }

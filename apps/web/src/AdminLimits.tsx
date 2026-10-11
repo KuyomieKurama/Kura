@@ -8,6 +8,7 @@ import { DataTable, type Column } from './ui/DataTable.js';
 import { Field } from './ui/Field.js';
 import { Glyph } from './ui/Glyph.js';
 import { PageHeader } from './ui/PageHeader.js';
+import { SettingsSection } from './ui/SettingsSection.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 
 type Field = { key: string; label: string; hint?: string; min?: number };
@@ -186,13 +187,11 @@ export function AdminLimitsPage() {
         lead={`Version ${current.version}${current.updatedAt ? `, zuletzt geändert am ${new Date(current.updatedAt).toLocaleString('de-DE')}` : ' (Standardwerte, noch nie gespeichert)'}. Das niedrigste anwendbare Limit gewinnt. Eine abgesenkte Grenze verhindert nur neue Starts.`}
       />
       <form onSubmit={submit} aria-label="Limits bearbeiten" className="limits-form">
-        <section className="section" aria-labelledby="limits-run-heading">
-          <h2 id="limits-run-heading">Ausführung</h2>
+        <SettingsSection title="Ausführung" explanation="Wie viele Läufe und Downloads gleichzeitig arbeiten dürfen. Leere Felder bedeuten: keine Grenze.">
           <div className="form-grid">{DOWNLOAD_FIELDS.map((field) => input(field, 'downloads'))}</div>
-        </section>
+        </SettingsSection>
 
-        <section className="section" aria-labelledby="limits-user-heading">
-          <h2 id="limits-user-heading">Begrenzung je Benutzer</h2>
+        <SettingsSection title="Begrenzung je Benutzer" explanation="Ausnahmen gelten für einzelne Benutzer und ersetzen dort das Limit je Benutzer von oben.">
           {overrides.length === 0
             ? <p className="muted">Keine Ausnahmen: Es gilt das Limit je Benutzer von oben.</p>
             : <DataTable label="Ausnahmen je Benutzer" columns={overrideColumns} rows={overrides} rowKey={(entry) => entry.userId} />}
@@ -212,19 +211,17 @@ export function AdminLimitsPage() {
               </Field>
             </div>
           )}
-        </section>
+        </SettingsSection>
 
-        <section className="section" aria-labelledby="limits-worker-heading">
-          <h2 id="limits-worker-heading">Worker-Kapazität</h2>
+        <SettingsSection title="Worker-Kapazität" explanation="Was ein einzelner Worker gleichzeitig bearbeitet.">
           <div className="form-grid">{WORKER_FIELDS.map((field) => input(field, 'workers'))}</div>
-        </section>
+        </SettingsSection>
 
-        <section className="section" aria-labelledby="limits-retention-heading">
-          <h2 id="limits-retention-heading">Aufbewahrung</h2>
+        <SettingsSection title="Aufbewahrung" explanation="Wie lange beendete Läufe im Verlauf bleiben. Heruntergeladene Dateien sind davon nicht betroffen.">
           <div className="form-grid">
             {input({ key: 'finishedRunDays', label: 'Beendete Läufe aufbewahren (Tage, 1 bis 3650)', min: 1 }, 'retention')}
           </div>
-        </section>
+        </SettingsSection>
 
         {problems.length > 0
           ? (
@@ -234,7 +231,7 @@ export function AdminLimitsPage() {
             </Banner>
           )
           : notice && <Banner tone={noticeTone}>{notice}</Banner>}
-        <div className="form-actions">
+        <div className="form-actions settings-actions">
           <Button variant="primary" type="submit" icon={FloppyDisk}>Limits speichern</Button>
           {stale && <Button icon={ArrowsClockwise} onClick={() => void load()}>Aktuelle Version laden</Button>}
         </div>
