@@ -86,6 +86,53 @@ async function renderPictures(browser, specs) {
   }
 }
 
+/**
+ * Records a short animation of any size as a real WebM file (MediaRecorder on a canvas, VP8). Playwright's own video
+ * recording is capped to the size of a screen, this is not: 1080x1920 and 3840x2160 are real frame sizes.
+ */
+async function renderSizedVideo(browser, width, height) {
+  const page = await browser.newPage();
+  try {
+    const encoded = await page.evaluate(async ([w, h]) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const context2d = canvas.getContext('2d');
+      const recorder = new MediaRecorder(canvas.captureStream(10), { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 800000 });
+      const chunks = [];
+      recorder.ondataavailable = (event) => chunks.push(event.data);
+      const stopped = new Promise((done) => { recorder.onstop = done; });
+      recorder.start();
+      const started = performance.now();
+      await new Promise((done) => {
+        const frame = () => {
+          const t = (performance.now() - started) / 1000;
+          context2d.fillStyle = '#0b3954';
+          context2d.fillRect(0, 0, w, h);
+          context2d.fillStyle = '#087e8b';
+          context2d.fillRect(0, h * 0.62, w, h * 0.38);
+          context2d.fillStyle = '#ffd166';
+          context2d.beginPath();
+          context2d.arc(w * (0.2 + 0.2 * t), h * 0.35, Math.min(w, h) * 0.12, 0, Math.PI * 2);
+          context2d.fill();
+          if (t < 1.4) requestAnimationFrame(frame);
+          else done(undefined);
+        };
+        frame();
+      });
+      recorder.stop();
+      await stopped;
+      const bytes = new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer());
+      let text = '';
+      for (let offset = 0; offset < bytes.length; offset += 32768) text += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+      return btoa(text);
+    }, [width, height]);
+    return Buffer.from(encoded, 'base64');
+  } finally {
+    await page.close();
+  }
+}
+
 /** Records a two second animation as a real WebM file. */
 async function renderVideo(browser) {
   const directory = await mkdtemp(resolve(tmpdir(), 'kura-shots-video-'));
@@ -125,11 +172,14 @@ async function renderVideo(browser) {
 const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000);
 
 /**
- * @param {{ browser: object, databaseUrl: string, extraFiles?: { name: string, mime: string, bytes: Buffer }[] }} input
+ * @param {{ browser: object, databaseUrl: string, extraFiles?: { name: string, mime: string, bytes: Buffer }[], large?: boolean }} input
  *   `extraFiles` become one more post of the finished run (the content check adds an SVG and an HTML file).
+ *   `large` adds the post "Grosse Formate": real photos and videos at the sizes a camera or a phone produces (4000x6000,
+ *   6000x1000, 1000x6000, 5000x3000 without dimensions in the API, videos 1080x1920 and 3840x2160). Off by default,
+ *   because the screenshots and the keyboard check count the other files.
  * @returns facts the scripts need (nothing secret)
  */
-export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
+export async function seedMedia({ browser, databaseUrl, extraFiles = [], large = false }) {
   const { default: pg } = await import(pathToFileURL(resolve(repoRoot, 'node_modules/pg/lib/index.js')).href);
   const { HistoryRepository } = await import(pathToFileURL(resolve(repoRoot, 'apps/worker/dist/history.js')).href);
   const { DatabaseBlobStore, sha256Digest } = await import(pathToFileURL(resolve(repoRoot, 'packages/blobstore/dist/index.js')).href);
@@ -155,6 +205,17 @@ export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
     }));
     const pictures = await renderPictures(browser, [...pictureSpecs, { seed: 40, palette: PALETTES[2], width: 480, height: 270, mime: 'image/png', label: 'Zeitraffer' }]);
     const poster = pictures[pictureSpecs.length];
+    // The large post: JPEG, so that a 24 megapixel picture stays a few hundred kilobytes.
+    const largeSpecs = [
+      { seed: 51, palette: PALETTES[0], width: 4000, height: 6000, mime: 'image/jpeg', name: 'portrait_4000x6000.jpg' },
+      { seed: 52, palette: PALETTES[1], width: 6000, height: 1000, mime: 'image/jpeg', name: 'panorama_6000x1000.jpg' },
+      { seed: 53, palette: PALETTES[3], width: 1000, height: 6000, mime: 'image/jpeg', name: 'streifen_1000x6000.jpg' },
+      { seed: 54, palette: PALETTES[5], width: 5000, height: 3000, mime: 'image/jpeg', name: 'ohne_masse_5000x3000.jpg' },
+      { seed: 55, palette: PALETTES[2], width: 540, height: 960, mime: 'image/png', name: 'poster_hoch' },
+      { seed: 56, palette: PALETTES[4], width: 960, height: 540, mime: 'image/png', name: 'poster_quer' }
+    ];
+    const largePictures = large ? await renderPictures(browser, largeSpecs) : [];
+    const largeVideos = large ? [await renderSizedVideo(browser, 1080, 1920), await renderSizedVideo(browser, 3840, 2160)] : [];
     const video = await renderVideo(browser);
     const pictureFor = (index) => ({
       ...pictures[index],
@@ -242,6 +303,18 @@ export async function seedMedia({ browser, databaseUrl, extraFiles = [] }) {
     await addPost(finishedRun, '118840003', 'Skizzenbuch Oktober', 46, [pictureFor(7)]);
     await addPost(finishedRun, '118840004', 'Studie: Katze am Fenster', 44, [pictureFor(8)]);
     await addPost(finishedRun, '118840005', null, 42, [pictureFor(9), pictureFor(10)]);
+    if (large) {
+      const [portrait, panorama, tall, noDimensions, posterTall, posterWide] = largePictures.map((picture, index) => ({ ...picture, mime: largeSpecs[index].mime, name: largeSpecs[index].name }));
+      await addPost(finishedRun, '118840050', 'Grosse Formate', 41, [
+        portrait,
+        panorama,
+        tall,
+        // What the API sends for a file the worker has not measured yet: no size, no preview, no colour.
+        { bytes: noDimensions.bytes, mime: noDimensions.mime, name: noDimensions.name },
+        { bytes: largeVideos[0], mime: 'video/webm', name: 'handy_1080x1920.webm', preview: posterTall.preview, averageColor: posterTall.averageColor, width: 1080, height: 1920, duration: 1.4 },
+        { bytes: largeVideos[1], mime: 'video/webm', name: 'kino_3840x2160.webm', preview: posterWide.preview, averageColor: posterWide.averageColor, width: 3840, height: 2160, duration: 1.4 }
+      ]);
+    }
     if (extraFiles.length > 0) await addPost(finishedRun, '118840099', 'Dateien mit riskantem Typ', 40, extraFiles);
     await history.updateRun(finishedRun, { state: 'stored', stats: { postsFound: 5, postsSkipped: 0, assetsStored: 12, assetsFailed: 0, bytesStored: 1 }, finished: true });
 
