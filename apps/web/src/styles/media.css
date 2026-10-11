@@ -814,37 +814,6 @@
   }
 }
 
-.select-inline {
-  position: relative;
-  display: block;
-}
-
-/* A native select with the same caret as the other disclosures (the arrow of the system is switched off). */
-.select-inline select {
-  min-width: 200px;
-  max-width: 320px;
-  padding-right: calc(var(--space-3) + 24px);
-  font-size: var(--text-body);
-  appearance: none;
-  cursor: pointer;
-}
-
-@media (max-width: 639px) {
-  .select-inline select {
-    max-width: none;
-  }
-}
-
-.select-caret {
-  position: absolute;
-  top: 50%;
-  right: var(--space-3);
-  display: inline-flex;
-  color: var(--ink-muted);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
 /* A file that is not stored yet: the tile of its state. No dashed box, no spinner; the bar is a fixed 3px accent line. */
 .tile-static {
   cursor: default;

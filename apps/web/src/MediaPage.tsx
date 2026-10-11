@@ -1,4 +1,4 @@
-import { ArrowsClockwise, CaretDown } from '@phosphor-icons/react';
+import { ArrowsClockwise } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type MediaAsset, type MediaFilter, type Subscription } from './api.js';
 import { errorMessage } from './error-message.js';
@@ -9,10 +9,10 @@ import { openViewer } from './viewTransition.js';
 import { dayLabel } from './time-format.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
-import { Glyph } from './ui/Glyph.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { Segmented } from './ui/Segmented.js';
+import { Select } from './ui/Select.js';
 
 const PAGE_SIZE = 40;
 const FILTERS: { value: MediaFilter; label: string }[] = [
@@ -106,14 +106,12 @@ export function MediaPage() {
         actions={(
           <div className="media-toolbar">
             {subscriptions.length > 1 && (
-              <label className="select-inline">
-                <span className="sr-only">Abonnement</span>
-                <select value={subscriptionId} onChange={(event) => setSubscriptionId(event.target.value)} aria-label="Abonnement">
-                  <option value="">{labels.allSubscriptions}</option>
-                  {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
-                </select>
-                <span className="select-caret"><Glyph icon={CaretDown} size={16} /></span>
-              </label>
+              <Select
+                label="Abonnement"
+                value={subscriptionId}
+                onChange={setSubscriptionId}
+                options={[{ value: '', label: labels.allSubscriptions }, ...subscriptions.map((subscription) => ({ value: subscription.id, label: subscription.name }))]}
+              />
             )}
             <Segmented label="Medientyp" value={filter} onChange={setFilter} options={FILTERS} />
           </div>

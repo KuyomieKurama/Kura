@@ -292,6 +292,153 @@
   margin: var(--space-1) 0;
 }
 
+/*
+ * Select: a button and a list of our own. From 640px the list is a popover directly below the button (above it when
+ * there is no room), as wide as the button; below 640px a bottom sheet over the navigation with 44px rows. The list
+ * is the overlay surface with the popover shadow; the highlighted row is accent-soft, the chosen row has a check mark.
+ */
+.select {
+  position: relative;
+  display: block;
+}
+
+.select-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 200px;
+  max-width: 320px;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-caret {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-muted);
+}
+
+.select-button[aria-expanded='true'] .select-caret {
+  transform: rotate(180deg);
+}
+
+.select-surface {
+  padding: var(--space-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-popover);
+}
+
+.select-popup {
+  position: absolute;
+  left: 0;
+  z-index: 40;
+  width: 100%;
+  animation: popover-in var(--dur-fast) var(--ease-out) both;
+}
+
+.select-popup-below {
+  top: calc(100% + var(--space-1));
+}
+
+.select-popup-above {
+  bottom: calc(100% + var(--space-1));
+  --popover-from: 4px;
+}
+
+.select-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.select-option[data-active='true'] {
+  background: var(--accent-soft);
+}
+
+.select-option[aria-selected='true'] {
+  font-weight: 500;
+}
+
+.select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--backdrop);
+}
+
+@media (max-width: 639px) {
+  .select-button {
+    max-width: none;
+  }
+
+  .select-sheet {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 51;
+    padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-dialog);
+    animation: popover-in var(--dur-base) var(--ease-out) both;
+    --popover-from: 24px;
+  }
+
+  .select-sheet-title {
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink-muted);
+    font-size: var(--text-meta);
+    font-weight: 500;
+  }
+
+  .select-sheet .select-list {
+    max-height: min(60dvh, 420px);
+  }
+
+  .select-sheet .select-option {
+    min-height: 44px;
+  }
+}
+
 /* Toast: bottom left, overlay surface. Success and neutral messages only. */
 .toast-region {
   position: fixed;
@@ -452,5 +599,10 @@
   .segmented-option[aria-pressed='true'],
   .tab[aria-selected='true'] {
     border: 1px solid currentColor;
+  }
+
+  .select-option[data-active='true'] {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
   }
 }

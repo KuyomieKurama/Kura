@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Dialog } from './Dialog.js';
 import { Menu } from './Menu.js';
 import { RelativeTime } from './RelativeTime.js';
+import { Select } from './Select.js';
 import { Switch } from './Switch.js';
 import { Tabs } from './Tabs.js';
 
@@ -148,4 +149,39 @@ it('relative time: relative up to 24 hours, then short and absolute, with the fu
   expect(texts[3]).toMatch(/^Di\., 20\.10\./);
   expect(container.querySelectorAll('time')[3]).toHaveAttribute('title');
   expect(container.querySelectorAll('time')[0]).toHaveAttribute('datetime', '2026-10-11T11:18:00.000Z');
+});
+
+it('select: opens a listbox, keeps the focus on the button, moves with arrows, chooses with Enter, closes with Escape', () => {
+  const onChange = vi.fn();
+  function Host() {
+    const [value, setValue] = useState('');
+    return <Select label="Abonnement" value={value} onChange={(next) => { setValue(next); onChange(next); }} options={[{ value: '', label: 'Alle Abonnements' }, { value: 'a', label: 'Atelier' }, { value: 'b', label: 'Laura' }]} />;
+  }
+  render(<Host />);
+  const button = screen.getByRole('combobox', { name: 'Abonnement' });
+  expect(button).toHaveAttribute('aria-expanded', 'false');
+  expect(button).toHaveTextContent('Alle Abonnements');
+  fireEvent.keyDown(button, { key: 'ArrowDown' });
+  const list = screen.getByRole('listbox', { name: 'Abonnement' });
+  expect(button).toHaveAttribute('aria-expanded', 'true');
+  expect(within(list).getAllByRole('option').map((option) => option.textContent)).toEqual(['Alle Abonnements', 'Atelier', 'Laura']);
+  expect(within(list).getByRole('option', { name: 'Alle Abonnements' })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.keyDown(button, { key: 'Escape' });
+  expect(screen.queryByRole('listbox')).toBeNull();
+  expect(button).toHaveFocus();
+  fireEvent.keyDown(button, { key: 'ArrowDown' });
+  fireEvent.keyDown(button, { key: 'ArrowDown' });
+  expect(button.getAttribute('aria-activedescendant')).toBe(screen.getByRole('option', { name: 'Atelier' }).id);
+  fireEvent.keyDown(button, { key: 'l' });
+  expect(button.getAttribute('aria-activedescendant')).toBe(screen.getByRole('option', { name: 'Laura' }).id);
+  fireEvent.keyDown(button, { key: 'Enter' });
+  expect(onChange).toHaveBeenCalledWith('b');
+  expect(button).toHaveTextContent('Laura');
+  expect(screen.queryByRole('listbox')).toBeNull();
+  fireEvent.click(button);
+  fireEvent.click(screen.getByRole('option', { name: 'Atelier' }));
+  expect(onChange).toHaveBeenLastCalledWith('a');
+  fireEvent.click(button);
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole('listbox')).toBeNull();
 });

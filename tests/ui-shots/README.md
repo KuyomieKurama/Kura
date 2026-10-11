@@ -98,3 +98,16 @@ and guards the radius rule, the colour literals and the single gradient.
 Since REQ-DL-008 the navigation is the sidebar (from 1024px) or the bottom bar with "Mehr"; `navigate()` in `capture.mjs`
 handles both. The keyboard check and the media check follow the new structure (page "Medien", full-screen viewer whose
 heading is the post, the file shown is the picture or video in the frame).
+
+## Subscription select opens where it belongs
+
+    node tests/ui-shots/select-popup.mjs [--skip-build] [--out=dir] [--only=390x844,1440x900]
+
+The select of the media page is a button plus a listbox of our own (`ui/Select.tsx`); the list of a native `<select>`
+is drawn by the browser and cannot be placed or coloured. For 390x844, 844x390, 1024x700 and 1440x900, light and dark,
+with and without the test strip, at scroll 0 and 400px it opens the list and checks that it is in the DOM, lies inside
+the viewport, from 640px has the left edge and width of the button (1px) and touches it, below 640px is a bottom sheet
+(bottom edge, full width, rows of 44px, covers the bottom navigation), has an edge and a shadow, shows the highlighted
+row in `--accent-soft` and a check mark on the chosen one; once per case it checks ArrowDown, Escape (focus back on
+the button), Enter and a click outside. The root and a native select must report the colour-scheme of the theme.
+Against the old native select the script is red ("a native popup is not in the DOM"). Exits with 1 when a check fails.
