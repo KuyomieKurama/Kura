@@ -1,4 +1,4 @@
-import { ArrowsClockwise, ClockCounterClockwise, Gauge, Images, SquaresFour, UserCircle, Users } from '@phosphor-icons/react';
+import { ArrowsClockwise, ClockCounterClockwise, Gauge, Images, SquaresFour, Users } from '@phosphor-icons/react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { PasswordForm } from './Account.js';
 import { AdminLimitsPage } from './AdminLimits.js';
@@ -14,6 +14,7 @@ import { labels } from './labels.js';
 import { SubscriptionsPage } from './Subscriptions.js';
 import { Button } from './ui/Button.js';
 import { PageHeader } from './ui/PageHeader.js';
+import { ToastProvider } from './ui/Toast.js';
 import { UsersPage } from './Users.js';
 import { hasNewVersion, VersionNotice, VersionPage, versionLabel, versionTexts } from './Version.js';
 
@@ -177,15 +178,20 @@ export function App() {
   const isAdmin = auth?.role === 'admin';
   const current = users[0];
   const navItems: NavItem[] = [
-    { view: 'dashboard', label: labels.overview, icon: SquaresFour },
-    { view: 'subscriptions', label: labels.subscriptions, icon: ArrowsClockwise },
-    { view: 'history', label: labels.history, icon: ClockCounterClockwise },
-    { view: 'immich', label: labels.immich, icon: Images },
-    ...(isAdmin ? [{ view: 'users', label: labels.users, icon: Users }, { view: 'limits', label: labels.limits, icon: Gauge }] : []),
-    { view: 'account', label: labels.account, icon: UserCircle }
+    { view: 'dashboard', label: labels.overview, icon: SquaresFour, group: 'main' },
+    { view: 'subscriptions', label: labels.subscriptions, shortLabel: labels.subscriptionsShort, icon: ArrowsClockwise, group: 'main' },
+    { view: 'history', label: labels.history, icon: ClockCounterClockwise, group: 'main' },
+    { view: 'immich', label: labels.immich, icon: Images, group: 'main', more: true },
+    ...(isAdmin
+      ? [
+        { view: 'users', label: labels.users, icon: Users, group: 'admin' as const, more: true },
+        { view: 'limits', label: labels.limits, icon: Gauge, group: 'admin' as const, more: true }
+      ]
+      : [])
   ];
 
   return (
+    <ToastProvider>
     <AppShell
       items={navItems}
       active={view}
@@ -229,5 +235,6 @@ export function App() {
       {view === 'version' && <VersionPage info={versionInfo} isAdmin={isAdmin} onChanged={setVersionInfo} />}
       {view === 'users' && isAdmin && <UsersPage users={users} currentUserId={current?.id} reload={loadUsers} />}
     </AppShell>
+    </ToastProvider>
   );
 }

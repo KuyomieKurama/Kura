@@ -22,7 +22,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('shows the setup form while unconfigured', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ configured: false, authenticated: false, role: null, csrfToken: null, passwordChangeRequired: false })));
   render(<App />);
-  expect(await screen.findByRole('heading', { name: 'Kura einrichten' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Willkommen bei Kura' })).toBeInTheDocument();
   expect(screen.getByLabelText('Passwort')).toHaveAttribute('autocomplete', 'new-password');
 });
 it('shows dashboard status for an authenticated administrator', async () => {
@@ -46,7 +46,7 @@ it('renders a generic login failure', async () => {
   const fetch = vi.fn().mockResolvedValueOnce(response({ configured: true, authenticated: false, role: null, csrfToken: null, passwordChangeRequired: false })).mockResolvedValueOnce(response({ error: { message: 'ignored' } }, 401));
   vi.stubGlobal('fetch', fetch); render(<App />); await screen.findByRole('heading', { name: 'Anmelden' });
   fireEvent.change(screen.getByLabelText('Benutzername'), { target: { value: 'a' } }); fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'a' } }); fireEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Anmeldung fehlgeschlagen. Prüfen Sie Benutzername und Passwort.');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Das hat nicht geklappt. Prüfe Benutzername und Passwort und versuche es noch einmal.');
 });
 it('shows the SSO login only when the API enables it', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ configured: true, authenticated: false, role: null, csrfToken: null, passwordChangeRequired: false, oidcEnabled: true })));

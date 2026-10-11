@@ -54,24 +54,27 @@ it('marks the active page in the navigation and moves focus to the content when 
   expect(document.title).toBe('Verlauf | Kura');
 });
 
-it('opens the navigation as a disclosure on small screens and closes it with Escape', async () => {
+it('uses a bottom navigation with a "Mehr" sheet on small screens; Escape closes the sheet and returns the focus', async () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: !query.includes('min-width: 1024px'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
   stubApi(true);
   render(<App />);
   await screen.findByText('Erreichbar');
-  const menu = screen.getByRole('button', { name: 'Menü' });
-  expect(menu).toHaveAttribute('aria-expanded', 'false');
-  expect(menu).toHaveAttribute('aria-controls', 'sidebar-body');
-  fireEvent.click(menu);
-  expect(menu).toHaveAttribute('aria-expanded', 'true');
+  const navigation = screen.getByRole('navigation', { name: 'Hauptnavigation' });
+  expect(screen.getAllByRole('navigation')).toHaveLength(1);
+  const more = within(navigation).getByRole('button', { name: 'Mehr' });
+  more.focus();
+  fireEvent.click(more);
+  const sheet = await screen.findByRole('dialog', { name: 'Mehr' });
+  expect(within(sheet).getByRole('button', { name: 'Abmelden' })).toBeInTheDocument();
   fireEvent.keyDown(window, { key: 'Escape' });
-  expect(menu).toHaveAttribute('aria-expanded', 'false');
-  expect(menu).toHaveFocus();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(more).toHaveFocus();
 });
 
 it('gives every field of the login form a label, and the setup password field its helper text', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ configured: false, authenticated: false, role: null, csrfToken: null, passwordChangeRequired: false })));
   render(<App />);
-  await screen.findByRole('heading', { name: 'Kura einrichten' });
+  await screen.findByRole('heading', { name: 'Willkommen bei Kura' });
   for (const name of ['Anzeigename', 'Benutzername', 'Passwort', 'Passwort wiederholen', 'Einrichtungs-Token']) {
     expect(screen.getByLabelText(name)).toBeInTheDocument();
   }
@@ -91,7 +94,7 @@ it('describes a failed form with an alert that is announced, not a toast', async
   fireEvent.change(screen.getByLabelText('Benutzername'), { target: { value: 'a' } });
   fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'a' } });
   fireEvent.submit(screen.getByLabelText('Passwort').closest('form')!);
-  expect(await screen.findByRole('alert')).toHaveTextContent('Anmeldung fehlgeschlagen');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Das hat nicht geklappt');
 });
 
 it('gives table headers a scope and every row action a text name', async () => {

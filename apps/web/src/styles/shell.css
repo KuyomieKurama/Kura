@@ -1,4 +1,8 @@
-/* App shell: fixed sidebar on desktop, top bar with a disclosure menu below 1024px. Auth screens. */
+/*
+ * App shell. From 1024px: the test strip across the full width, below it a 248px sidebar on the page colour (no
+ * separate surface) and the content. Below 1024px: a top bar and a bottom navigation. The active entry has exactly
+ * one signal: a 2px accent bar (left in the sidebar, top in the bottom navigation), plus aria-current.
+ */
 
 .skip-link {
   position: fixed;
@@ -23,79 +27,83 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--ink);
-  font-size: var(--text-heading);
+  font-family: var(--font-display);
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 
-/*
- * The mark is plain geometry (a tile with three ledger lines), drawn with CSS boxes.
- * It does not depend on a CJK font being installed.
- */
 .wordmark-mark {
-  display: inline-flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  align-self: center;
-  width: 1.1em;
-  height: 1.1em;
-  padding: 0.22em;
-  border-radius: var(--radius-md);
-  background: var(--accent);
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
 }
 
-.wordmark-mark i {
-  display: block;
-  height: 2px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-ink);
+.mark-body {
+  fill: var(--accent);
 }
 
-.wordmark-mark i:last-child {
-  width: 60%;
+.mark-shelf {
+  fill: var(--bg);
 }
 
-/*
- * Desktop: two grid columns. The ::before element paints the sidebar background over the full height of the
- * page, so it never ends at the viewport edge on long pages. The sidebar itself stays in view (sticky).
- */
+.wordmark-lg {
+  gap: var(--space-3);
+  font-size: var(--text-hero);
+  line-height: 72px;
+}
+
+/* Grid: row 1 is the test strip, row 2 sidebar and content. */
 .shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100dvh;
 }
 
-.shell::before {
-  grid-column: 1;
+.test-strip {
+  display: flex;
+  grid-column: 1 / -1;
   grid-row: 1;
-  border-right: 1px solid var(--line);
-  background: var(--surface);
-  content: '';
+  align-items: center;
+  gap: var(--space-2);
+  max-width: none;
+  min-height: var(--testbar-height);
+  padding: 0 var(--page-pad);
+  border-bottom: 1px solid var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.test-strip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.test-strip svg {
+  flex: none;
 }
 
 .sidebar {
   position: sticky;
   top: 0;
-  z-index: 20;
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 2;
   align-self: start;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
-  width: var(--sidebar-width);
+  height: calc(100dvh - var(--testbar-height));
+  border-right: 1px solid var(--line);
 }
 
 .sidebar-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-5) var(--space-4) var(--space-4);
-}
-
-.menu-button {
-  display: none;
+  padding: var(--space-5) var(--space-5) var(--space-5);
 }
 
 .sidebar-body {
@@ -105,7 +113,6 @@
   justify-content: space-between;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: var(--space-4);
 }
 
 .nav-list {
@@ -113,12 +120,19 @@
   flex-direction: column;
   gap: 2px;
   margin: 0;
-  padding: 0 var(--space-2);
+  padding: 0;
   list-style: none;
 }
 
 .nav-list li {
   max-width: none;
+}
+
+.nav-group {
+  margin: var(--space-5) 0 var(--space-1);
+  padding: 0 var(--space-5);
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
 }
 
 .nav-item {
@@ -128,69 +142,103 @@
   gap: var(--space-3);
   width: 100%;
   min-height: var(--control-height);
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-5);
   border: 0;
-  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
   font: inherit;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .nav-item:hover {
   background: var(--surface-sunken);
 }
 
-.nav-item[aria-current='page'] {
-  background: var(--accent-soft);
-  color: var(--accent);
+.nav-item:focus-visible {
+  outline-offset: -2px;
 }
 
-/* The 2px bar on the left marks the active item. */
+/* The 2px bar on the left is the one signal of the active entry. The text stays ink, there is no fill. */
 .nav-item[aria-current='page']::before {
   content: '';
   position: absolute;
-  top: 6px;
-  bottom: 6px;
+  top: 0;
+  bottom: 0;
   left: 0;
   width: 2px;
-  border-radius: var(--radius-sm);
   background: var(--accent);
 }
 
-.account-box {
+.sidebar-foot {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  margin: var(--space-4) var(--space-2) 0;
-  padding: var(--space-3) var(--space-2) 0;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3) var(--space-4);
   border-top: 1px solid var(--line);
 }
 
+.sidebar-foot .menu {
+  display: flex;
+}
+
+.user-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-button:hover {
+  background: var(--surface-sunken);
+}
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font-size: var(--text-meta);
+  font-weight: 600;
+}
+
+.user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .account-name {
-  max-width: 100%;
-  margin-left: var(--space-1);
   overflow: hidden;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.account-box .meta {
-  margin-left: var(--space-1);
-}
-
-.account-box .btn {
-  margin-top: var(--space-2);
+.sidebar-foot .popover {
+  min-width: 100%;
 }
 
 /* Main area */
 .main {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 2;
   min-width: 0;
 }
 
@@ -198,31 +246,23 @@
   outline: none;
 }
 
-.test-strip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: none;
-  padding: var(--space-1) var(--space-6);
-  border-bottom: 1px solid var(--warn);
-  background: var(--warn-soft);
-  color: var(--warn);
-  font-size: var(--text-meta);
-  font-weight: 500;
-}
-
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-7);
   max-width: var(--page-max-width);
-  padding: var(--space-6);
+  padding: var(--space-6) var(--page-pad) var(--space-8);
+}
+
+.page-wide {
+  max-width: var(--page-max-width-media);
 }
 
 .page-header {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  margin-bottom: calc(var(--space-6) - var(--space-7));
 }
 
 .page-title-row {
@@ -230,7 +270,20 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  min-height: 44px;
+  min-height: 48px;
+}
+
+.page-title-row h1 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.title-count {
+  color: var(--ink-muted);
+  font-size: var(--text-heading);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 .page-actions {
@@ -243,6 +296,13 @@
   max-width: var(--prose-width);
   color: var(--ink-muted);
   font-size: var(--text-title);
+  line-height: 24px;
+}
+
+.page-lead time,
+.page-lead strong {
+  color: var(--ink);
+  font-weight: 500;
 }
 
 .section {
@@ -255,63 +315,137 @@
   max-width: 480px;
 }
 
-/* Below 1024px the sidebar becomes a top bar; the navigation is a disclosure. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* Compact layout: top bar 56px, bottom navigation 64px plus the safe area. */
+.shell-compact {
+  display: block;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  min-height: var(--topbar-height);
+  padding: 0 var(--page-pad);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.bottomnav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.bottomnav ul {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bottomnav li {
+  max-width: none;
+}
+
+.bottomnav-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--bottomnav-height);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-micro);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.bottomnav-item:focus-visible {
+  outline-offset: -4px;
+}
+
+.bottomnav-item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: var(--space-3);
+  left: var(--space-3);
+  height: 2px;
+  background: var(--accent);
+}
+
+.shell-compact .main {
+  padding-bottom: calc(var(--bottomnav-height) + env(safe-area-inset-bottom, 0px));
+}
+
+.shell-compact .page {
+  gap: var(--space-6);
+  padding-top: var(--space-5);
+}
+
+.shell-compact .test-strip {
+  padding: 0 var(--page-pad);
+}
+
+.sheet-list {
+  display: flex;
+  flex-direction: column;
+  margin: calc(-1 * var(--space-2)) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sheet-list li {
+  max-width: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet-list li:last-child {
+  border-bottom: 0;
+}
+
+.sheet-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-version {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  color: var(--ink-muted);
+}
+
 @media (max-width: 1023px) {
-  .shell {
-    display: block;
-  }
-
-  .shell::before {
-    display: none;
-  }
-
-  .sidebar {
-    height: auto;
-    width: auto;
-    border-bottom: 1px solid var(--line);
-    background: var(--surface);
-  }
-
-  .sidebar-top {
-    min-height: var(--topbar-height);
-    padding: var(--space-2) var(--space-4);
-  }
-
-  .wordmark {
-    font-size: var(--text-title);
-  }
-
-  .menu-button {
-    display: inline-flex;
-  }
-
-  .sidebar-body {
-    display: none;
-    max-height: calc(100dvh - var(--topbar-height));
-    border-top: 1px solid var(--line);
-    padding: var(--space-2) 0 var(--space-4);
-  }
-
-  .sidebar[data-open='true'] .sidebar-body {
-    display: flex;
-  }
-
-  .nav-item {
-    min-height: 44px;
-  }
-
-  .main {
-    margin-left: 0;
-  }
-
-  .test-strip {
-    padding: var(--space-1) var(--space-4);
-  }
-
-  .page {
-    padding: var(--space-5) var(--space-4);
-  }
-
   thead th {
     top: var(--topbar-height);
   }
@@ -323,49 +457,12 @@
   }
 
   .page-title-row h1 {
-    font-size: 24px;
+    font-size: 32px;
+    line-height: 36px;
   }
-}
 
-/* Login, setup and forced password change: one narrow panel, centred. */
-.auth-page {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-}
-
-.auth-main {
-  display: grid;
-  flex: 1;
-  place-items: center;
-  padding: var(--space-5) var(--space-4);
-}
-
-.auth-main:focus {
-  outline: none;
-}
-
-.auth-column {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-4);
-  width: 100%;
-  max-width: 400px;
-}
-
-.auth-column .wordmark {
-  align-self: flex-start;
-  font-size: var(--text-display);
-}
-
-.auth-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-}
-
-.auth-title {
-  font-size: var(--text-heading);
+  h2 {
+    font-size: 21px;
+    line-height: 27px;
+  }
 }

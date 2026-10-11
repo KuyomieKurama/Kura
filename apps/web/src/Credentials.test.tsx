@@ -63,7 +63,8 @@ function mockApi(state: Api, rejectUpload?: { code: string; message: string }) {
 async function openAccount(platform: string = 'Instagram') {
   render(<App />);
   await screen.findByText('Erreichbar');
-  fireEvent.click(screen.getByRole('button', { name: 'Konto' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Konto:/ }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Konto' }));
   return screen.findByRole('region', { name: platform });
 }
 

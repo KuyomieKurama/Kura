@@ -7,6 +7,8 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/shell.css';
 import './styles/components.css';
+import './styles/ui.css';
+import './styles/auth.css';
 import './styles/pages.css';
 import './styles/ledger.css';
 import './styles/media.css';

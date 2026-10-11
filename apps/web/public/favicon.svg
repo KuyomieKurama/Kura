@@ -1,14 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <style>
-    .tile { fill: #264a88; }
-    .row { fill: #ffffff; }
-    @media (prefers-color-scheme: dark) {
-      .tile { fill: #86a9e6; }
-      .row { fill: #0f1318; }
-    }
-  </style>
-  <rect class="tile" width="32" height="32" rx="7" />
-  <rect class="row" x="7" y="8" width="18" height="3" rx="1.5" />
-  <rect class="row" x="7" y="14.5" width="18" height="3" rx="1.5" />
-  <rect class="row" x="7" y="21" width="11" height="3" rx="1.5" />
-</svg>
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><style>.a{fill:#9A2A66}.b{fill:#F3F2EF}@media(prefers-color-scheme:dark){.a{fill:#E3A3C6}.b{fill:#151317}}</style><path class='a' d='M16 2.5 29.5 10.5V29.5H2.5V10.5Z'/><path class='b' d='M9 16h14v3H9zM9 22h9v3H9z'/></svg>

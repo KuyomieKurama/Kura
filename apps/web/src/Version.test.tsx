@@ -198,7 +198,8 @@ it('shows the reason when the status is unknown', async () => {
 it('is reachable from the account page', async () => {
   mockApi('user', current);
   render(<App />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Konto' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Konto:/ }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Konto' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Version und Update' }));
   expect(await screen.findByRole('heading', { name: 'Über Kura', level: 1 })).toBeInTheDocument();
 });
