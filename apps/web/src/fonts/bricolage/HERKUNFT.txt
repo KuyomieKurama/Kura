@@ -1,0 +1,1 @@
+Quelle: npm @fontsource-variable/bricolage-grotesque 5.3.0 (tgz sha256 Präfix 6e99e0d844f7bc15), Lizenz OFL-1.1 (LICENSE). Vom Orchestrator bereitgestellt, weil die Sandbox keinen Registry-Zugang hat (D-032).

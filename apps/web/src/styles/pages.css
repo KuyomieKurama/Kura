@@ -122,7 +122,7 @@
   align-self: stretch;
   padding: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
 
@@ -142,7 +142,7 @@
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
 
@@ -175,7 +175,7 @@
 /* Disclosure for adapters */
 .disclosure {
   border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -323,7 +323,7 @@ td:has(.cell-note) {
   margin-top: var(--space-2);
   padding: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
   font-size: var(--text-meta);
   white-space: normal;

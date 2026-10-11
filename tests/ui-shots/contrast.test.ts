@@ -26,10 +26,12 @@ function extractBlocks(css: string): { light: Record<string, string>; dark: Reco
 
 const { light, dark } = extractBlocks(tokensCss);
 const COLOR_TOKENS = [
-  'bg', 'surface', 'surface-sunken', 'ink', 'ink-muted', 'line', 'line-strong',
+  'bg', 'surface', 'surface-sunken', 'surface-overlay', 'ink', 'ink-muted', 'line', 'line-strong',
   'accent', 'accent-hover', 'accent-ink', 'accent-soft',
-  'ok', 'ok-soft', 'warn', 'warn-soft', 'danger', 'danger-soft'
+  'ok', 'ok-soft', 'warn', 'warn-soft', 'danger', 'danger-soft', 'viewer-bg'
 ];
+/** Tokens that must exist in both schemes but are not plain hex colours. */
+const OTHER_TOKENS = ['scrim', 'shadow-popover', 'shadow-dialog', 'backdrop', 'focus'];
 
 function channel(value: number): number {
   const normalized = value / 255;
@@ -55,6 +57,8 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['ink', 'bg', 4.5, 'page text'],
   ['ink', 'surface', 4.5, 'panel text'],
   ['ink', 'surface-sunken', 4.5, 'row hover'],
+  ['ink', 'surface-overlay', 4.5, 'menus, dialogs, toasts, segmented control'],
+  ['ink-muted', 'surface-overlay', 4.5, 'meta text in menus and dialogs'],
   ['ink-muted', 'bg', 4.5, 'meta text on the page'],
   ['ink-muted', 'surface', 4.5, 'meta text in panels, helper text'],
   ['ink-muted', 'surface-sunken', 4.5, 'table header, neutral chip, hover rows'],
@@ -62,7 +66,9 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['accent', 'bg', 4.5, 'links, wordmark'],
   ['accent', 'surface', 4.5, 'links in panels'],
   ['accent', 'surface-sunken', 4.5, 'links on hover rows'],
-  ['accent', 'accent-soft', 4.5, 'active navigation item, accent chip, info banner'],
+  ['accent', 'surface-overlay', 4.5, 'links and accent text in menus and dialogs'],
+  ['accent', 'accent-soft', 4.5, 'accent chip, info banner'],
+  ['ink-muted', 'accent-soft', 4.5, 'meta text in an info banner'],
   ['accent-ink', 'accent', 4.5, 'primary button, skip link'],
   ['accent-ink', 'accent-hover', 4.5, 'primary button on hover'],
   ['ink', 'accent-soft', 4.5, 'banner text'],
@@ -74,6 +80,10 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['ink', 'warn-soft', 4.5, 'banner text'],
   ['danger', 'danger-soft', 4.5, 'danger chip, danger banner, danger hover'],
   ['danger', 'surface', 4.5, 'error text, destructive button'],
+  ['danger', 'surface-overlay', 4.5, 'delete entry in a menu, error text in a dialog'],
+  ['warn', 'surface', 4.5, 'warn text in a row'],
+  ['warn', 'bg', 4.5, 'warn text on the page'],
+  ['ok', 'bg', 4.5, 'ok text on the page'],
   ['danger', 'bg', 4.5, 'error text on the page'],
   ['ink', 'danger-soft', 4.5, 'banner text'],
   ['surface', 'danger', 4.5, 'destructive button inside a confirm dialog'],
@@ -84,6 +94,8 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['accent', 'bg', 3, 'focus ring on the page'],
   ['accent', 'surface', 3, 'focus ring in panels'],
   ['accent', 'surface-sunken', 3, 'focus ring on hover rows'],
+  ['accent', 'surface-overlay', 3, 'focus ring in menus and dialogs'],
+  ['line-strong', 'surface-overlay', 3, 'field borders in dialogs'],
   ['accent', 'accent-soft', 3, 'focus ring on the active navigation item'],
   ['ok', 'surface', 3, 'ledger segment: stored'],
   ['danger', 'surface', 3, 'ledger segment: failed'],
@@ -100,12 +112,32 @@ describe.each([['light', light], ['dark', dark]] as const)('design tokens, %s sc
     expect(ratio, `${foreground} ${tokens[foreground]} on ${background} ${tokens[background]}`).toBeGreaterThanOrEqual(minimum);
   });
 
+  it('defines the non-colour tokens (scrim, shadows, backdrop, focus)', () => {
+    for (const token of OTHER_TOKENS) {
+      const own = tokensCss.includes(`--${token}:`);
+      expect(own, `--${token}`).toBe(true);
+    }
+    expect(tokens['viewer-bg']).toBe('#0e0d10');
+  });
+
+  it('keeps white text on the scrim readable over the brightest photo (at least 62 percent black at the text)', () => {
+    // Worst case: a white photo under 62 percent black. The text is white (#ffffff).
+    const shade = Math.round(255 * (1 - 0.62));
+    const hex = `#${shade.toString(16).padStart(2, '0').repeat(3)}`;
+    expect(contrastRatio('#ffffff', hex)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('uses neither pure black nor pure white as text colour', () => {
     for (const token of ['ink', 'ink-muted']) expect(['#000000', '#ffffff']).not.toContain(tokens[token]!.toLowerCase());
   });
 });
 
 describe('design tokens, both schemes', () => {
+  it('uses plum as the single accent and no blue or indigo', () => {
+    expect(light.accent).toBe('#9a2a66');
+    expect(dark.accent).toBe('#e3a3c6');
+  });
+
   it('defines the same colour tokens in the light and the dark scheme', () => {
     for (const token of COLOR_TOKENS) {
       expect(light[token], `light --${token}`).toBeDefined();
@@ -113,12 +145,24 @@ describe('design tokens, both schemes', () => {
     }
   });
 
-  it('keeps the dialog as the only element with a shadow', () => {
-    for (const file of readdirSync(stylesDirectory).filter((name) => name.endsWith('.css'))) {
+  it('allows a shadow only for popovers, dialogs, toasts and the dirty bar (the two shadow tokens)', () => {
+    for (const file of readdirSync(stylesDirectory).filter((name) => name.endsWith('.css') && name !== 'tokens.css')) {
       const css = readFileSync(resolve(stylesDirectory, file), 'utf8');
       const uses = [...css.matchAll(/box-shadow:\s*([^;]+);/g)].map((match) => match[1]);
-      for (const value of uses) expect(value, `${file}`).toMatch(/var\(--shadow-dialog\)|none/);
+      for (const value of uses) expect(value, `${file}`).toMatch(/^(var\(--shadow-(popover|dialog)\)|none)$/);
     }
+  });
+
+  it('declares exactly the two tinted shadows, in both schemes', () => {
+    for (const scheme of [light, dark]) {
+      expect(scheme['shadow-popover']).toMatch(/rgb\(/);
+      expect(scheme['shadow-dialog']).toMatch(/rgb\(/);
+    }
+  });
+
+  it('declares the motion tokens and switches them off for reduced motion', () => {
+    for (const token of ['dur-fast', 'dur-base', 'dur-slow', 'ease-out', 'ease-inout']) expect(tokensCss, token).toContain(`--${token}:`);
+    expect(tokensCss).toMatch(/prefers-reduced-motion: reduce\) \{\s*:root \{[^}]*--dur-fast: 0\.01ms/);
   });
 });
 
@@ -133,20 +177,36 @@ describe('stylesheets', () => {
     }
   });
 
-  it('draw every radius from the three-step scale (controls, panels, chips)', () => {
+  it('draw every radius from the concentric scale (sm 4, md 8, lg 16), 50 percent for avatars and seals, round for bar ends', () => {
     for (const file of others) {
       const css = readFileSync(resolve(stylesDirectory, file), 'utf8');
       for (const match of css.matchAll(/border-radius:\s*([^;]+);/g)) {
-        expect(match[1], `${file}: border-radius`).toMatch(/^var\(--radius-(control|panel|chip)\)$/);
+        expect(match[1], `${file}: border-radius`).toMatch(/^(var\(--radius-(sm|md|lg|round)\)|50%|0|var\(--radius-(sm|md|lg)\) var\(--radius-(sm|md|lg)\) 0 0)$/);
       }
     }
   });
 
-  it('define no gradient except the loading shimmer', () => {
+  it('define no gradient: the scrim token is the only one, and only media.css uses it', () => {
+    expect([...tokensCss.matchAll(/(linear|radial|conic)-gradient/g)].length).toBe(1);
     for (const file of others) {
       const css = readFileSync(resolve(stylesDirectory, file), 'utf8');
-      const gradients = [...css.matchAll(/(linear|radial|conic)-gradient/g)];
-      expect(gradients.length, file).toBeLessThanOrEqual(file === 'components.css' ? 1 : 0);
+      expect([...css.matchAll(/(linear|radial|conic)-gradient/g)].length, file).toBe(0);
+      if (file !== 'media.css') expect(css, file).not.toContain('var(--scrim)');
+    }
+  });
+
+  it('contain no endless animation (infinite) and no shimmer', () => {
+    for (const file of others) {
+      const css = readFileSync(resolve(stylesDirectory, file), 'utf8');
+      expect(css, file).not.toMatch(/animation[^;]*infinite/);
+      expect(css, file).not.toMatch(/shimmer/);
+    }
+  });
+
+  it('use only the font weights 400, 500 and 600', () => {
+    for (const file of others) {
+      const css = readFileSync(resolve(stylesDirectory, file), 'utf8');
+      for (const match of css.matchAll(/font-weight:\s*(\d+|bold|bolder)\s*;/g)) expect(['400', '500', '600'], `${file}: ${match[0]}`).toContain(match[1]);
     }
   });
 });

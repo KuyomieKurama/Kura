@@ -1,6 +1,6 @@
 import { labels } from '../labels.js';
 
-/** Placeholder rows with the height of the final rows. The shimmer is disabled for prefers-reduced-motion. */
+/** Placeholder rows with the height of the final rows. Static, nothing animates. */
 export function SkeletonRows({ count = 3, tall = false }: { count?: number; tall?: boolean }) {
   return (
     <div className="skeleton-list" role="status" aria-busy="true">

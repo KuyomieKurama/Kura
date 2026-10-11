@@ -2,11 +2,11 @@
 
 .panel {
   border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
-/* Chips: pill, 12px, icon and text. The tone sets text and background; the border follows the text colour. */
+/* Chips: a label with radius 4, 12px, icon and text. The tone sets text and background; the border follows the text colour. */
 .chip {
   display: inline-flex;
   vertical-align: middle;
@@ -15,8 +15,8 @@
   min-height: 22px;
   padding: 0 var(--space-2);
   border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-radius: var(--radius-chip);
-  font-size: var(--text-meta-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-micro);
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
@@ -57,8 +57,8 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-radius: var(--radius-control);
+  border-left: 2px solid currentColor;
+  border-radius: var(--radius-md);
   font-size: var(--text-body);
 }
 
@@ -108,9 +108,7 @@
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-5);
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
+  border-top: 1px solid var(--line);
 }
 
 .empty-title {
@@ -122,13 +120,10 @@
   color: var(--ink-muted);
 }
 
-/* Loading skeletons, as tall as the final rows */
+/* Loading skeletons in their final form. They are static: nothing moves. */
 .skeleton-list {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
 }
 
 .skeleton-row,
@@ -140,7 +135,7 @@
 .skeleton-row {
   height: var(--row-height);
   margin: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
 }
 
 .skeleton-row-tall {
@@ -151,27 +146,7 @@
   display: inline-block;
   width: 96px;
   height: 22px;
-  border-radius: var(--radius-chip);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .skeleton-row,
-  .skeleton-inline,
-  .skeleton-tile {
-    background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--line) 50%, var(--surface-sunken) 100%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s linear infinite;
-  }
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-
-  to {
-    background-position: -200% 0;
-  }
+  border-radius: var(--radius-sm);
 }
 
 /* Form layouts: label above, 2 columns from 768px. */
@@ -223,10 +198,10 @@
   max-width: none;
   padding: 0 var(--space-2);
   border: 1px solid var(--line);
-  border-radius: var(--radius-chip);
+  border-radius: var(--radius-sm);
   background: var(--surface-sunken);
   color: var(--ink-muted);
-  font-size: var(--text-meta-sm);
+  font-size: var(--text-micro);
 }
 
 .source-list {
@@ -245,7 +220,7 @@
   padding: var(--space-4);
 }
 
-/* Dialogs: panel radius, tinted shadow, backdrop at 40% ink. The only elevated element. */
+/* Dialogs: radius 16, tinted shadow on the overlay surface. On narrow screens a bottom sheet. */
 .backdrop {
   position: fixed;
   inset: 0;
@@ -264,9 +239,8 @@
   max-height: 90dvh;
   overflow: auto;
   padding: var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay);
   box-shadow: var(--shadow-dialog);
 }
 
@@ -287,7 +261,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -318,7 +292,7 @@
   display: flex;
   align-items: center;
   min-height: 24px;
-  font-size: var(--text-lead);
+  font-size: var(--text-title);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -333,7 +307,7 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-md);
   background: var(--surface);
   list-style: none;
 }
@@ -409,7 +383,7 @@
   tr {
     margin-bottom: var(--space-3);
     border: 1px solid var(--line);
-    border-radius: var(--radius-panel);
+    border-radius: var(--radius-md);
     background: var(--surface);
   }
 

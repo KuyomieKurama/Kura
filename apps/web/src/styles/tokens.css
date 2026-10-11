@@ -1,55 +1,66 @@
 /*
- * Design tokens for the Kura web UI.
+ * Design tokens for the Kura web UI (REQ-DL-008).
  *
- * One accent (aizome indigo), three status colours (ok, warn, danger) that are
- * only ever used for state and always come with text or an icon.
- * Every text/background and border/background pair used by the stylesheets is
- * checked against WCAG AA by tests/ui-shots/contrast.test.ts, which reads this file.
+ * Neutral paper and ink, one plum accent, three state colours (ok, warn, danger) that are only ever used for a
+ * state and always come with text or an icon. Elevation: 0 bg, 1 surface, 2 surface-overlay (menus, dialogs, toasts).
+ * In the dark scheme higher is lighter and "sunken" is darker than the page.
+ * Every text/background and border/background pair used by the stylesheets is checked against WCAG AA by
+ * tests/ui-shots/contrast.test.ts, which reads this file. Colour literals live here and nowhere else.
  */
 
 :root {
   color-scheme: light;
 
   /* Surfaces and text */
-  --bg: #f3f5f7;
-  --surface: #ffffff;
-  --surface-sunken: #eceff3;
-  --ink: #18202b;
-  --ink-muted: #566170;
+  --bg: #f3f2ef;
+  --surface: #fbfaf8;
+  --surface-sunken: #e9e7e2;
+  --surface-overlay: #ffffff;
+  --ink: #1d1b1f;
+  --ink-muted: #5f5a64;
 
   /* Lines: --line separates areas (decorative), --line-strong draws the edge of controls (3:1). */
-  --line: #d7dce3;
-  --line-strong: #76818f;
+  --line: #dcd9d3;
+  --line-strong: #827c87;
 
-  /* The single accent */
-  --accent: #264a88;
-  --accent-hover: #1d3a6c;
+  /* The single accent (plum) */
+  --accent: #9a2a66;
+  --accent-hover: #7c1f51;
   --accent-ink: #ffffff;
-  --accent-soft: #e4ebf7;
+  --accent-soft: #f4e4ec;
+  --focus: var(--accent);
 
   /* State colours */
-  --ok: #1b6a4a;
-  --ok-soft: #e1f1ea;
-  --warn: #86570a;
-  --warn-soft: #f8edd5;
-  --danger: #a2281d;
-  --danger-soft: #f9e3e0;
+  --ok: #1e6a47;
+  --ok-soft: #dfefe6;
+  --warn: #85560a;
+  --warn-soft: #f6e9ce;
+  --danger: #b0261c;
+  --danger-soft: #f9e0dc;
 
-  /* Dialogs are the only elements with a shadow; it is tinted with the accent. */
-  --shadow-dialog: 0 16px 40px -8px rgb(38 74 136 / 0.28);
-  --backdrop: rgb(24 32 43 / 0.4);
+  /* Photos: the viewer is dark in both schemes. The scrim is the only gradient of the interface (media.css). */
+  --viewer-bg: #0e0d10;
+  --scrim: linear-gradient(to top, rgb(0 0 0 / 0.66), rgb(0 0 0 / 0) 60%);
+  --backdrop: rgb(29 27 31 / 0.45);
 
-  /* Type */
+  /* Two shadows, tinted plum-black: menus and popovers, dialogs and sheets. Rows, tiles and buttons never have one. */
+  --shadow-popover: 0 1px 2px rgb(40 20 40 / 0.08), 0 8px 24px -6px rgb(40 20 40 / 0.18);
+  --shadow-dialog: 0 24px 64px -16px rgb(40 20 40 / 0.35);
+
+  /* Type: Bricolage Grotesque for headings and large figures, Geist for text, Geist Mono for technical values. */
+  --font-display: 'Bricolage Grotesque Variable', 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-  --text-meta-sm: 12px;
+  --text-micro: 12px;
   --text-meta: 13px;
-  --text-body: 14px;
-  --text-lead: 16px;
-  --text-section: 20px;
-  --text-page: 28px;
+  --text-body: 15px;
+  --text-title: 17px;
+  --text-heading: 24px;
+  --text-figure: 32px;
+  --text-display: 44px;
+  --text-hero: 72px;
 
-  /* Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 */
+  /* Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 72 */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -57,48 +68,97 @@
   --space-5: 24px;
   --space-6: 32px;
   --space-7: 48px;
+  --space-8: 72px;
+  --gallery-gap: 6px;
 
-  /* Radius rule: controls 6, panels 10, chips fully round. */
-  --radius-control: 6px;
-  --radius-panel: 10px;
-  --radius-chip: 999px;
+  /* One concentric radius rule: tiles, chips and badges 4; buttons, fields, menus, banners 8; dialogs and sheets 16. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  /* Only the ends of a progress bar are fully round. Avatars and seals use 50%. */
+  --radius-round: 999px;
 
-  /* Sizes */
+  /* Motion: feedback 120, state change 200, one orchestrated moment 360. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 360ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layout */
   --control-height: 36px;
   --row-height: 40px;
-  --sidebar-width: 232px;
+  --sidebar-width: 248px;
+  --testbar-height: 32px;
   --topbar-height: 56px;
-  --page-max-width: 1100px;
+  --bottomnav-height: 64px;
+  --page-pad: 32px;
+  --page-max-width: 1360px;
+  --page-max-width-media: 1600px;
+  --settings-aside: 280px;
+  --settings-form: 640px;
+  --gallery-row: 220px;
   --prose-width: 68ch;
-  --collapse-duration: 150ms;
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --page-pad: 40px;
+  }
+}
+
+@media (max-width: 1023px) {
+  :root {
+    --gallery-row: 180px;
+  }
+}
+
+@media (max-width: 639px) {
+  :root {
+    --page-pad: 20px;
+    --control-height: 44px;
+    --gallery-row: 140px;
+    --gallery-gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
 
-    --bg: #0f1318;
-    --surface: #161b22;
-    --surface-sunken: #1c222b;
-    --ink: #e4e8ee;
-    --ink-muted: #9aa5b4;
+    --bg: #151317;
+    --surface: #1d1a20;
+    --surface-sunken: #0f0e11;
+    --surface-overlay: #272329;
+    --ink: #ece8ee;
+    --ink-muted: #a8a2ae;
 
-    --line: #2b333f;
-    --line-strong: #7b8798;
+    --line: #2e2a33;
+    --line-strong: #8a8491;
 
-    --accent: #86a9e6;
-    --accent-hover: #a3bdf0;
-    --accent-ink: #0f1318;
-    --accent-soft: #1d2a40;
+    --accent: #e3a3c6;
+    --accent-hover: #edbbd4;
+    --accent-ink: #1d0f17;
+    --accent-soft: #3a1f2e;
 
-    --ok: #5fc496;
-    --ok-soft: #15291f;
-    --warn: #e0b25a;
-    --warn-soft: #2c2412;
-    --danger: #ee8076;
-    --danger-soft: #331a17;
+    --ok: #6fcb9a;
+    --ok-soft: #14281e;
+    --warn: #e3b25a;
+    --warn-soft: #2b2412;
+    --danger: #f28c82;
+    --danger-soft: #34191a;
 
-    --shadow-dialog: 0 16px 40px -8px rgb(0 0 0 / 0.6);
-    --backdrop: rgb(15 19 24 / 0.6);
+    --viewer-bg: #0e0d10;
+    --backdrop: rgb(0 0 0 / 0.6);
+    --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -6px rgb(0 0 0 / 0.5);
+    --shadow-dialog: 0 24px 64px -16px rgb(0 0 0 / 0.7);
   }
 }

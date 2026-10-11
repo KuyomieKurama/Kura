@@ -20,6 +20,7 @@ body {
   line-height: 1.5;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
 }
 
 h1,
@@ -44,17 +45,36 @@ h4 {
   text-wrap: balance;
 }
 
+/* Bricolage Grotesque only for h1, h2, dialog titles, large figures and the wordmark. */
+h1,
+h2,
+.display,
+.figure {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+}
+
 h1 {
-  font-size: var(--text-page);
-  letter-spacing: -0.01em;
+  font-size: var(--text-display);
+  line-height: 48px;
+  letter-spacing: -0.02em;
 }
 
 h2 {
-  font-size: var(--text-section);
+  font-size: var(--text-heading);
+  line-height: 30px;
 }
 
 h3 {
-  font-size: var(--text-lead);
+  font-size: var(--text-title);
+  line-height: 24px;
+}
+
+.figure {
+  font-size: var(--text-figure);
+  font-weight: 600;
+  line-height: 36px;
+  font-variant-numeric: tabular-nums;
 }
 
 h4 {
@@ -96,8 +116,9 @@ hr {
 
 /* Visible keyboard focus in both colour schemes. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
+  transition: none;
 }
 
 .sr-only {
@@ -142,7 +163,7 @@ hr {
   min-height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -151,6 +172,7 @@ hr {
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 
 .btn:disabled,
@@ -214,7 +236,11 @@ hr {
 .btn-danger-solid {
   background: var(--danger);
   border-color: var(--danger);
-  color: var(--surface);
+  color: var(--surface-overlay);
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  filter: brightness(0.92);
 }
 
 .btn-block {
@@ -255,11 +281,11 @@ textarea {
   min-height: var(--control-height);
   padding: 0 var(--space-3);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: var(--text-lead);
+  font-size: var(--text-title);
 }
 
 input[type='number'] {
@@ -275,7 +301,7 @@ input[type='file']::file-selector-button {
   margin-right: var(--space-3);
   padding: 2px var(--space-3);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
   color: var(--ink);
   font: inherit;
@@ -308,7 +334,7 @@ select[aria-invalid='true'] {
   max-height: 70vh;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -394,7 +420,7 @@ summary {
 .summary-caret {
   display: inline-flex;
   flex: none;
-  transition: transform 150ms ease;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 details[open] > .disclosure-summary .summary-caret {
@@ -405,9 +431,10 @@ details[open] > .disclosure-summary .summary-caret {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 }
@@ -417,7 +444,7 @@ details[open] > .disclosure-summary .summary-caret {
   .btn,
   input,
   select {
-    min-height: 40px;
+    min-height: var(--control-height);
   }
 
   .btn-ghost,

@@ -6,7 +6,7 @@
   left: var(--space-2);
   z-index: 100;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 500;
@@ -23,7 +23,7 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--ink);
-  font-size: var(--text-section);
+  font-size: var(--text-heading);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -41,14 +41,14 @@
   width: 1.1em;
   height: 1.1em;
   padding: 0.22em;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--accent);
 }
 
 .wordmark-mark i {
   display: block;
   height: 2px;
-  border-radius: var(--radius-chip);
+  border-radius: var(--radius-sm);
   background: var(--accent-ink);
 }
 
@@ -130,7 +130,7 @@
   min-height: var(--control-height);
   padding: 0 var(--space-3);
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -156,7 +156,7 @@
   bottom: 6px;
   left: 0;
   width: 2px;
-  border-radius: var(--radius-chip);
+  border-radius: var(--radius-sm);
   background: var(--accent);
 }
 
@@ -242,7 +242,7 @@
 .page-lead {
   max-width: var(--prose-width);
   color: var(--ink-muted);
-  font-size: var(--text-lead);
+  font-size: var(--text-title);
 }
 
 .section {
@@ -278,7 +278,7 @@
   }
 
   .wordmark {
-    font-size: var(--text-lead);
+    font-size: var(--text-title);
   }
 
   .menu-button {
@@ -356,7 +356,7 @@
 
 .auth-column .wordmark {
   align-self: flex-start;
-  font-size: var(--text-page);
+  font-size: var(--text-display);
 }
 
 .auth-panel {
@@ -367,5 +367,5 @@
 }
 
 .auth-title {
-  font-size: var(--text-section);
+  font-size: var(--text-heading);
 }

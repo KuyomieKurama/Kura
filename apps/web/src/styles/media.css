@@ -60,7 +60,7 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
   color: var(--ink-muted);
   cursor: pointer;
@@ -92,7 +92,7 @@
   width: 28px;
   height: 28px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-chip);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
 }
@@ -107,7 +107,7 @@
   padding: var(--space-2);
   overflow: hidden;
   border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -120,10 +120,10 @@
   max-width: 100%;
 }
 
-/* The fill and the shimmer come with the other skeletons (components.css). */
+/* The fill comes with the other skeletons (components.css). */
 .skeleton-tile {
   aspect-ratio: 1;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
 }
 
 .media-more {
@@ -150,7 +150,7 @@
   min-height: 160px;
   padding: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
 

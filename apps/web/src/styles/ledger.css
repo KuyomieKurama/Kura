@@ -52,7 +52,7 @@
   max-width: 220px;
   height: 8px;
   overflow: hidden;
-  border-radius: var(--radius-chip);
+  border-radius: var(--radius-sm);
 }
 
 .segment {
@@ -99,10 +99,10 @@
   min-height: 22px;
   padding: 0 var(--space-2);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-chip);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-muted);
-  font-size: var(--text-meta-sm);
+  font-size: var(--text-micro);
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
@@ -132,13 +132,13 @@
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden;
-  transition: grid-template-rows var(--collapse-duration) ease-out, visibility 0s linear var(--collapse-duration);
+  transition: grid-template-rows var(--dur-base) ease-out, visibility 0s linear var(--dur-base);
 }
 
 .collapse[data-open='true'] {
   grid-template-rows: 1fr;
   visibility: visible;
-  transition: grid-template-rows var(--collapse-duration) ease-out, visibility 0s;
+  transition: grid-template-rows var(--dur-base) ease-out, visibility 0s;
 }
 
 .collapse-inner {
