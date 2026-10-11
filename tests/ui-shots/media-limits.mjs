@@ -41,6 +41,8 @@ const FILES = [
   { name: 'kino_3840x2160.webm', label: 'video-quer' }
 ];
 
+const only = args.has('viewports') ? new Set(args.get('viewports').split(',')) : null;
+const onlyFiles = args.has('files') ? new Set(args.get('files').split(',')) : null;
 const failures = [];
 const rows = [];
 const check = (condition, description) => {
@@ -51,7 +53,8 @@ const px = (value) => Math.round(value * 10) / 10;
 
 const { chromium } = await loadPlaywright();
 const stack = await startStack({ skipBuild: args.has('skip-build') });
-const browser = await chromium.launch();
+// --disable-dev-shm-usage: a container's /dev/shm is small and a 4K video decode fills it.
+const browser = await chromium.launch({ args: args.has('shm') ? ['--disable-dev-shm-usage'] : [] });
 
 /** Page level: does the document scroll sideways, and does anything stick out on the right. */
 const measurePage = () => {
@@ -106,7 +109,7 @@ try {
 
   if (outDirectory) await mkdir(outDirectory, { recursive: true });
 
-  for (const viewport of VIEWPORTS) {
+  for (const viewport of VIEWPORTS.filter((entry) => !only || only.has(entry.name))) {
     const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, colorScheme: 'dark', locale: 'de-DE', timezoneId: 'Europe/Berlin' });
     await context.addCookies(cookie.split('; ').map((pair) => {
       const [name, ...rest] = pair.split('=');
@@ -146,7 +149,7 @@ try {
       await page.getByRole('button', { name: /^Bild portrait_4000x6000/ }).click();
       const dialog = page.getByRole('dialog');
       await dialog.waitFor();
-      for (const file of [...FILES, { name: 'illustration_01.png', label: 'normal' }]) {
+      for (const file of [...FILES, { name: 'illustration_01.png', label: 'normal' }].filter((entry) => !onlyFiles || onlyFiles.has(entry.label))) {
         // Pictures that are not in this post's strip (illustration_01) are reached through the tile; the others through the strip.
         const strip = dialog.getByRole('list', { name: 'Dateien dieses Beitrags' }).getByRole('button', { name: new RegExp(` ${file.name}$`) });
         if (file.label === 'normal') {
