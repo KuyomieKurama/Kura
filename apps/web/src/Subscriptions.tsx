@@ -15,7 +15,7 @@ import { Dialog } from './ui/Dialog.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { Menu } from './ui/Menu.js';
 import { PageHeader } from './ui/PageHeader.js';
-import { platformName } from './ui/PlatformSeal.js';
+import { platformName, PlatformSeal } from './ui/PlatformSeal.js';
 import { RelativeTime } from './ui/RelativeTime.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 import { StatusChip } from './ui/StatusChip.js';
@@ -73,8 +73,9 @@ function SubscriptionRow({ subscription, reload, onOpen, queued }: { subscriptio
         <Cover subscription={subscription} size={64} />
         <span className="sub-name">
           <span className="sub-title truncate" title={subscription.name}>{subscription.name}</span>
-          <span className="meta truncate" title={subscription.targetUrl ?? undefined}>
-            {platformName(platform)}{subscription.targetUrl ? `, ${shortAddress(subscription.targetUrl)}` : ''}
+          <span className="sub-platform" title={subscription.targetUrl ?? undefined}>
+            <PlatformSeal platform={platform} />
+            <span className="meta truncate">{platformName(platform)}{subscription.targetUrl ? `, ${shortAddress(subscription.targetUrl)}` : ''}</span>
           </span>
           {paused && <Chip tone="neutral" icon={PauseCircle}>Pausiert</Chip>}
           {subscription.targetState === 'invalid' && <StatusChip domain="target" status="invalid" />}

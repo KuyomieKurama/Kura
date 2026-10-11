@@ -29,7 +29,7 @@ const COLOR_TOKENS = [
   'bg', 'surface', 'surface-sunken', 'surface-overlay', 'ink', 'ink-muted', 'line', 'line-strong',
   'accent', 'accent-hover', 'accent-ink', 'accent-soft',
   'ok', 'ok-soft', 'warn', 'warn-soft', 'danger', 'danger-soft', 'viewer-bg',
-  'viewer-ink', 'viewer-ink-muted', 'viewer-hover', 'viewer-hover-strong', 'viewer-line'
+  'viewer-ink', 'viewer-ink-muted', 'viewer-hover', 'viewer-hover-strong', 'viewer-line', 'track'
 ];
 /** Tokens that must exist in both schemes but are not plain hex colours. */
 const OTHER_TOKENS = ['scrim', 'shadow-popover', 'shadow-dialog', 'backdrop', 'focus', 'viewer-arrow-bg'];
@@ -95,6 +95,7 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['accent', 'bg', 3, 'focus ring on the page'],
   ['accent', 'surface', 3, 'focus ring in panels'],
   ['accent', 'surface-sunken', 3, 'focus ring on hover rows'],
+  ['accent', 'track', 3, 'progress fill on its empty track'],
   ['accent', 'surface-overlay', 3, 'focus ring in menus and dialogs'],
   ['line-strong', 'surface-overlay', 3, 'field borders in dialogs'],
   ['accent', 'accent-soft', 3, 'focus ring on the active navigation item'],

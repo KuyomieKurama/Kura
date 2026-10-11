@@ -22,6 +22,8 @@
   /* Lines: --line separates areas (decorative), --line-strong draws the edge of controls (3:1). */
   --line: #dcd9d3;
   --line-strong: #827c87;
+  /* The empty part of a progress bar: visible against the page in both schemes. */
+  --track: #cdc9c2;
 
   /* The single accent (plum) */
   --accent: #9a2a66;
@@ -156,6 +158,7 @@
 
     --line: #2e2a33;
     --line-strong: #8a8491;
+    --track: #4a4551;
 
     --accent: #e3a3c6;
     --accent-hover: #edbbd4;

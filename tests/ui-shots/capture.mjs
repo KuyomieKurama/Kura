@@ -397,7 +397,7 @@ async function main() {
       await shot('immich-transfer');
 
       await navigate(page, 'Benutzerverwaltung');
-      await page.getByRole('table', { name: 'Benutzerverwaltung' }).waitFor();
+      await page.getByRole('list', { name: 'Benutzerverwaltung' }).waitFor();
       await shot('users');
       await page.getByRole('button', { name: 'Benutzer anlegen' }).click();
       await page.getByRole('dialog').waitFor();
@@ -411,6 +411,11 @@ async function main() {
       await navigate(page, 'Limits');
       await page.getByRole('form', { name: 'Limits bearbeiten' }).waitFor();
       await shot('limits');
+      // One change: the bar for unsaved changes appears at the bottom. Discarded again, so the next views start clean.
+      await page.getByLabel('Beendete Läufe aufbewahren').fill('30');
+      await page.getByText('Nicht gespeicherte Änderungen').waitFor();
+      await shot('limits-dirty');
+      await page.getByRole('button', { name: 'Verwerfen' }).click();
 
       // Über Kura: the version line of the sidebar (wide) or the entry of the "Mehr" sheet (narrow).
       if (variant.width >= 1024) {

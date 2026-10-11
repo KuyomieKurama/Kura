@@ -60,6 +60,13 @@ function AuthLayout({ children, intro }: { children: ReactNode; intro?: boolean 
   );
 }
 
+/** "Das hat nicht geklappt. Prüfe …": the first sentence in bold, the help sentence after it. */
+function ErrorText({ text }: { text: string }) {
+  const end = text.search(/[.!?](\s|$)/);
+  if (end < 0 || end === text.length - 1) return <strong>{text}</strong>;
+  return <><strong>{text.slice(0, end + 1)}</strong> {text.slice(end + 2)}</>;
+}
+
 /** The error banner sits directly above the form and takes the focus when it appears. */
 function useErrorFocus(error: string) {
   const banner = useRef<HTMLDivElement>(null);
@@ -93,7 +100,7 @@ export function SetupScreen({ error, onSubmit }: { error: string; onSubmit: (eve
         <h1 className="auth-title">{labels.setupTitle}</h1>
         <p className="auth-lede">{labels.setupIntro}</p>
       </div>
-      {error && <Banner tone="danger" ref={banner}>{error}</Banner>}
+      {error && <Banner tone="danger" ref={banner}><ErrorText text={error} /></Banner>}
       <form onSubmit={onSubmit} className="form-stack" ref={form}>
         <Field label={labels.displayName}>
           {(control) => <input {...control} name="displayName" autoComplete="name" required />}
@@ -131,7 +138,7 @@ export function LoginScreen({ error, oidcEnabled, onSubmit }: {
       <h1 className="sr-only">{labels.loginTitle}</h1>
       <div className="auth-hero"><Wordmark size="lg" /></div>
       <p className="auth-lede">{labels.loginLede}</p>
-      {error && <Banner tone="danger" ref={banner}>{error}</Banner>}
+      {error && <Banner tone="danger" ref={banner}><ErrorText text={error} /></Banner>}
       <form onSubmit={onSubmit} className="form-stack">
         <Field label={labels.username}>
           {(control) => <input {...control} name="username" autoComplete="username" required />}

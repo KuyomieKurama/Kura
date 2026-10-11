@@ -14,7 +14,8 @@
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 3fr) minmax(0, 2fr) 72px 200px;
   align-items: center;
-  column-gap: var(--space-4);
+  /* 24px at least between the columns: the progress bar, the count and the button never touch the next column. */
+  column-gap: var(--space-5);
 }
 
 .sub-head {
@@ -76,14 +77,23 @@
 }
 
 .sub-count {
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: flex-start;
-  text-align: right;
+  text-align: left;
 }
 
 .sub-head .sub-count {
   display: block;
-  text-align: right;
+  text-align: left;
+}
+
+/* The seal before the platform name, as the first thing one reads of a source. */
+.sub-platform {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sub-actions {
@@ -110,6 +120,16 @@
   justify-content: center;
   border: 1px solid var(--line);
   background: var(--surface-sunken);
+  color: var(--ink-muted);
+}
+
+/* Placeholder without a picture: the monogram, 20px, quiet, without a second disc. */
+.cover-empty .seal {
+  width: auto;
+  height: auto;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 20px;
 }
 
 .run-progress {
