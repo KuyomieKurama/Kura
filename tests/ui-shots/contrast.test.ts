@@ -29,7 +29,7 @@ const COLOR_TOKENS = [
   'bg', 'surface', 'surface-sunken', 'surface-overlay', 'ink', 'ink-muted', 'line', 'line-strong',
   'accent', 'accent-hover', 'accent-ink', 'accent-soft',
   'ok', 'ok-soft', 'warn', 'warn-soft', 'danger', 'danger-soft', 'viewer-bg',
-  'viewer-ink', 'viewer-ink-muted', 'viewer-hover', 'viewer-hover-strong', 'viewer-line', 'track'
+  'viewer-ink', 'viewer-ink-muted', 'viewer-hover', 'viewer-hover-strong', 'viewer-line', 'track', 'viewer-accent', 'viewer-accent-hover', 'viewer-accent-ink'
 ];
 /** Tokens that must exist in both schemes but are not plain hex colours. */
 const OTHER_TOKENS = ['scrim', 'shadow-popover', 'shadow-dialog', 'backdrop', 'focus', 'viewer-arrow-bg'];
@@ -96,6 +96,9 @@ const PAIRS: Array<[string, string, number, string]> = [
   ['accent', 'surface', 3, 'focus ring in panels'],
   ['accent', 'surface-sunken', 3, 'focus ring on hover rows'],
   ['accent', 'track', 3, 'progress fill on its empty track'],
+  ['viewer-accent-ink', 'viewer-accent', 4.5, 'download button text in the viewer'],
+  ['viewer-accent-ink', 'viewer-accent-hover', 4.5, 'download button text on hover'],
+  ['viewer-accent', 'viewer-bg', 3, 'download button edge on the viewer ground'],
   ['accent', 'surface-overlay', 3, 'focus ring in menus and dialogs'],
   ['line-strong', 'surface-overlay', 3, 'field borders in dialogs'],
   ['accent', 'accent-soft', 3, 'focus ring on the active navigation item'],

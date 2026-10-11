@@ -429,8 +429,14 @@ video.viewer-media {
 }
 
 .viewer-info .btn-primary {
-  background: var(--viewer-ink);
-  color: var(--viewer-bg);
+  border-color: var(--viewer-accent);
+  background: var(--viewer-accent);
+  color: var(--viewer-accent-ink);
+}
+
+.viewer-info .btn-primary:hover:not(:disabled) {
+  border-color: var(--viewer-accent-hover);
+  background: var(--viewer-accent-hover);
 }
 
 .break {
