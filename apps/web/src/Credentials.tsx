@@ -243,7 +243,7 @@ function CredentialRow({ texts, status, secretKeyConfigured, reload }: {
 
       <form onSubmit={(event) => void submit(event)} className="form-stack">
         {isToken ? (
-          <Field label={status.present ? 'Neues Pixiv-Token' : 'Pixiv-Token'} hint="Nur die Zeichenfolge nach refresh-token. Sie wird verschlüsselt gespeichert und nicht wieder angezeigt.">
+          <Field label={status.present ? 'Neues Pixiv-Token' : 'Pixiv-Token'} hint="Nur die Zeichenfolge nach refresh-token. Das Token wird verschlüsselt gespeichert und nicht wieder angezeigt.">
             {(control) => <input {...control} name="token" type="password" autoComplete="off" spellCheck={false} />}
           </Field>
         ) : (

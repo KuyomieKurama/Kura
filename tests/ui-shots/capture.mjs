@@ -205,7 +205,7 @@ async function main() {
       await page.getByRole('tab', { name: /^Zeitpläne/ }).click();
       await page.getByRole('region', { name: 'Zeitpläne' }).waitFor();
       await page.waitForTimeout(300);
-      await shot('subscriptions-expanded');
+      await shot('subscription-detail');
       await page.getByRole('link', { name: 'Abonnements' }).click();
       await page.getByRole('article').first().waitFor();
       await page.getByRole('button', { name: 'Abonnement anlegen' }).click();

@@ -26,7 +26,7 @@ Views the API cannot fill without a worker are served by `page.route` from `fixt
 posts), the Immich test transfer, and the empty, loading and error states of the subscription list.
 Everything else is real API data.
 
-Views: setup, login, login-error, dashboard, menu-open (narrow only), subscriptions, subscriptions-expanded (page of one subscription, tab Zeitpläne),
+Views: setup, login, login-error, dashboard, menu-open (narrow only), subscriptions, subscription-detail (page of one subscription, tab Zeitpläne),
 subscriptions-adapters, subscriptions-form, subscriptions-empty, subscriptions-loading, subscriptions-error,
 media-page, media-grid, media-grid-videos, media-viewer-image, media-viewer-video, media-empty, live-run,
 history, history-expanded, history-live, immich, immich-transfer, users, users-dialog, dialog, limits, account.
