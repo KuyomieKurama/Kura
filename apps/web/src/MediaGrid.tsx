@@ -1,7 +1,7 @@
 import { Stack } from '@phosphor-icons/react';
 import { type CSSProperties, type KeyboardEvent, useRef } from 'react';
 import type { MediaAsset } from './api.js';
-import { kindLabels, type PostGroup } from './media.js';
+import type { PostGroup } from './media.js';
 import { MediaTile } from './MediaTile.js';
 import { Chip } from './ui/Chip.js';
 
