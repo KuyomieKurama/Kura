@@ -50,9 +50,9 @@ it('shows the files grouped by post with their count, lazy images and video post
   const image = within(first).getByAltText('Bild: a1.png');
   expect(image).toHaveAttribute('loading', 'lazy');
   expect(image).toHaveAttribute('src', '/api/v1/assets/a1/content');
-  const video = within(first).getByLabelText('Video: clip.mp4');
-  expect(video.tagName).toBe('VIDEO');
-  expect(video).toHaveAttribute('preload', 'metadata');
+  // A video without a derived poster shows a placeholder; the file itself is not loaded before the viewer opens.
+  expect(within(first).getByLabelText('Video: clip.mp4')).toBeInTheDocument();
+  expect(first.querySelector('video')).toBeNull();
   expect(screen.getByRole('button', { name: 'Alle (4)' })).toHaveAttribute('aria-pressed', 'true');
 });
 

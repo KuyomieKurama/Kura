@@ -1,4 +1,4 @@
-import { ArrowsClockwise, ClockCounterClockwise, Gauge, Images, SquaresFour, Users } from '@phosphor-icons/react';
+import { ArrowsClockwise, ClockCounterClockwise, Gauge, Image, Images, SquaresFour, Users } from '@phosphor-icons/react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { PasswordForm } from './Account.js';
 import { AdminLimitsPage } from './AdminLimits.js';
@@ -8,6 +8,7 @@ import { ForcedPasswordScreen, LoadingScreen, LoginScreen, SetupScreen } from '.
 import { Dashboard, type HealthState, type ServiceStatus } from './Dashboard.js';
 import { errorMessage } from './error-message.js';
 import { HistoryPage } from './History.js';
+import { MediaPage } from './MediaPage.js';
 import { ImmichPage } from './Immich.js';
 import { CredentialsSection } from './Credentials.js';
 import { labels } from './labels.js';
@@ -20,7 +21,7 @@ import { hasNewVersion, VersionNotice, VersionPage, versionLabel, versionTexts }
 
 type View =
   | 'loading' | 'setup' | 'login' | 'forced-password'
-  | 'dashboard' | 'account' | 'users' | 'immich' | 'subscriptions' | 'history' | 'limits' | 'version';
+  | 'dashboard' | 'media' | 'account' | 'users' | 'immich' | 'subscriptions' | 'history' | 'limits' | 'version';
 
 const STATUS_REFRESH_MS = 10_000;
 // The server checks GitHub every 12 hours; this only re-reads its cached answer.
@@ -179,6 +180,7 @@ export function App() {
   const current = users[0];
   const navItems: NavItem[] = [
     { view: 'dashboard', label: labels.overview, icon: SquaresFour, group: 'main' },
+    { view: 'media', label: labels.media, icon: Image, group: 'main' },
     { view: 'subscriptions', label: labels.subscriptions, shortLabel: labels.subscriptionsShort, icon: ArrowsClockwise, group: 'main' },
     { view: 'history', label: labels.history, icon: ClockCounterClockwise, group: 'main' },
     { view: 'immich', label: labels.immich, icon: Images, group: 'main', more: true },
@@ -211,6 +213,7 @@ export function App() {
         : undefined}
     >
       {view === 'dashboard' && <Dashboard health={health} status={status} checkedAt={checkedAt} onNavigate={(next) => setView(next as View)} />}
+      {view === 'media' && <MediaPage />}
       {view === 'subscriptions' && <SubscriptionsPage isAdmin={isAdmin} onOpenHistory={() => setView('history')} />}
       {view === 'history' && <HistoryPage onOpenSubscriptions={() => setView('subscriptions')} />}
       {view === 'limits' && isAdmin && <AdminLimitsPage />}

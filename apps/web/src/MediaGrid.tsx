@@ -1,8 +1,8 @@
 import { Stack } from '@phosphor-icons/react';
-import { type KeyboardEvent, useRef } from 'react';
+import { type CSSProperties, type KeyboardEvent, useRef } from 'react';
 import type { MediaAsset } from './api.js';
 import { kindLabels, type PostGroup } from './media.js';
-import { MediaThumb } from './MediaThumb.js';
+import { MediaTile } from './MediaTile.js';
 import { Chip } from './ui/Chip.js';
 
 /**
@@ -46,17 +46,26 @@ function moveFocus(event: KeyboardEvent<HTMLElement>, container: HTMLElement) {
   }
 }
 
+/** The aspect ratio of a file for the justified rows: width / height, clamped to 0.6 to 2.4; 1 when the size is unknown. */
+export function aspectRatio(asset: Pick<MediaAsset, 'width' | 'height'>): number {
+  if (!asset.width || !asset.height) return 1;
+  return Math.min(2.4, Math.max(0.6, asset.width / asset.height));
+}
+
 export function MediaCell({ asset, onOpen, label }: { asset: MediaAsset; onOpen: (asset: MediaAsset, opener: HTMLElement) => void; label?: string }) {
+  return <MediaTile asset={asset} onOpen={onOpen} {...(label ? { label } : {})} />;
+}
+
+/** Justified rows without script: every tile grows in proportion to its aspect ratio, the last row is not stretched. */
+export function Gallery({ assets, onOpen }: { assets: MediaAsset[]; onOpen: (asset: MediaAsset, opener: HTMLElement) => void }) {
   return (
-    <button
-      type="button"
-      className="media-cell"
-      data-media-cell={asset.id}
-      aria-label={label ?? `${kindLabels[asset.mediaKind]} ${asset.originalName} ansehen`}
-      onClick={(event) => onOpen(asset, event.currentTarget)}
-    >
-      <MediaThumb asset={asset} />
-    </button>
+    <ul className="gallery">
+      {assets.map((asset) => (
+        <li key={asset.id} className="gallery-item" style={{ '--ar': aspectRatio(asset) } as CSSProperties}>
+          <MediaCell asset={asset} onOpen={onOpen} />
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -64,8 +73,8 @@ export function MediaSkeleton({ count = 8 }: { count?: number }) {
   return (
     <div role="status" aria-busy="true">
       <span className="sr-only">Medien werden geladen …</span>
-      <ul className="media-grid" aria-hidden="true">
-        {Array.from({ length: count }, (_, index) => <li key={index}><div className="skeleton-tile" /></li>)}
+      <ul className="gallery" aria-hidden="true">
+        {Array.from({ length: count }, (_, index) => <li key={index} className="gallery-item" style={{ '--ar': 1 } as CSSProperties}><div className="skeleton-tile" /></li>)}
       </ul>
     </div>
   );
@@ -82,11 +91,7 @@ export function MediaGrid({ groups, onOpen }: { groups: PostGroup[]; onOpen: (as
             <h5 className="truncate" title={group.title}>{group.title}</h5>
             {group.assets.length > 1 && <Chip tone="neutral" icon={Stack}>{`${group.assets.length} Dateien`}</Chip>}
           </header>
-          <ul className="media-grid">
-            {group.assets.map((asset) => (
-              <li key={asset.id}><MediaCell asset={asset} onOpen={onOpen} /></li>
-            ))}
-          </ul>
+          <Gallery assets={group.assets} onOpen={onOpen} />
         </section>
       ))}
     </div>
