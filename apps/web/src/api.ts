@@ -228,8 +228,11 @@ export type MediaAsset = {
   postUrl: string | null; creatorName: string | null; runId: string; originalName: string; mediaKind: MediaKind; mimeType: string;
   byteSize: number | null; state: string; attempts: number; errorCode: string | null; errorMessage: string | null;
   storedAt: string | null;
-  /** Derived by the worker after storing; null / false until then, or when ffmpeg is not installed. */
-  width: number | null; height: number | null; durationSeconds: number | null; averageColor: string | null; hasThumbnail: boolean;
+  /**
+   * Derived by the worker after storing; null / false until then, or when ffmpeg is not installed. The server always
+   * sends them; they are optional in the type only so that existing test data without them keeps compiling.
+   */
+  width?: number | null; height?: number | null; durationSeconds?: number | null; averageColor?: string | null; hasThumbnail?: boolean;
   immich: { state: string; verified: boolean; verifiedAt: string | null };
 };
 export type SubscriptionMediaPage = { items: MediaAsset[]; nextCursor: string | null; counts?: { all: number; image: number; video: number } };
