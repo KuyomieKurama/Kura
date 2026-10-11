@@ -2,7 +2,7 @@ import { ArrowsClockwise, ListChecks } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type HistoryPost, type HistoryRun } from './api.js';
 import { errorMessage } from './error-message.js';
-import { formatBytes, platformLabels } from './history-labels.js';
+import { formatBytes } from './history-labels.js';
 import { dayLabel } from './time-format.js';
 import { LedgerEntry } from './Ledger.js';
 import { RunLive } from './RunLive.js';
@@ -10,9 +10,10 @@ import { labels } from './labels.js';
 import { formatInstant } from './schedule-format.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
-import { DataTable, type Column } from './ui/DataTable.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { PageHeader } from './ui/PageHeader.js';
+import { platformName, PlatformSeal } from './ui/PlatformSeal.js';
+import { RelativeTime } from './ui/RelativeTime.js';
 import { SkeletonRows } from './ui/Skeleton.js';
 import { StatusChip } from './ui/StatusChip.js';
 
@@ -41,18 +42,36 @@ function groupByDay(posts: HistoryPost[]): { key: string; label: string; posts: 
   return [...groups.values()];
 }
 
-const runColumns: Column<HistoryRun>[] = [
-  { key: 'start', header: 'Beginn', render: (run) => formatInstant(run.startedAt, zone()), date: true },
-  {
-    key: 'source',
-    header: 'Quelle',
-    render: (run) => `${run.subscriptionName}${run.platform ? ` (${platformLabels[run.platform] ?? run.platform})` : ''}`
-  },
-  { key: 'trigger', header: 'Auslöser', render: (run) => (run.triggerKind === 'manual' ? 'Manuell' : 'Zeitplan') },
-  { key: 'state', header: 'Status', render: (run) => <StatusChip domain="download" status={run.state} /> },
-  { key: 'result', header: 'Ergebnis', render: summarize },
-  { key: 'note', header: 'Hinweis', render: (run) => run.errorMessage ?? '' }
-];
+/** Only a run that did not end as planned gets a chip; a finished run says nothing but its result. */
+const NORMAL_RUN_STATES = new Set(['stored', 'succeeded']);
+
+/**
+ * One run: when (relative, the full time as title), the source with its seal, what started it, the result in one
+ * sentence, a chip only for a deviation and the note under the result in the same cell. Narrow: two lines.
+ */
+function RunRow({ run }: { run: HistoryRun }) {
+  const platform = platformName(run.platform);
+  return (
+    <li className="run-row">
+      <span className="run-time"><RelativeTime value={run.startedAt} capitalize timeZone={zone()} /></span>
+      <span className="run-source">
+        <PlatformSeal platform={run.platform} />
+        <span className="run-source-text">
+          <span className="row-name" title={run.subscriptionName}>{run.subscriptionName}</span>
+          <span className="meta">{platform}</span>
+        </span>
+      </span>
+      <span className="run-trigger meta">{run.triggerKind === 'manual' ? 'Manuell' : 'Zeitplan'}</span>
+      <span className="run-result">
+        <span className="run-result-line">
+          <span>{summarize(run)}</span>
+          {!NORMAL_RUN_STATES.has(run.state) && <StatusChip domain="download" status={run.state} />}
+        </span>
+        {run.errorMessage && <span className="meta run-note">{run.errorMessage}</span>}
+      </span>
+    </li>
+  );
+}
 
 /**
  * The download history of the signed-in user, as a ledger: every post is a row group with the state of its files
@@ -80,7 +99,7 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
     <>
       <PageHeader
         title={labels.history}
-        lead="Hier steht, was Kura wann von welcher Quelle geholt hat, mit dem Zustand jeder einzelnen Datei. Der Verlauf bleibt erhalten, auch wenn ein Abonnement gelöscht wird. Lokale Originale werden von Kura nicht entfernt."
+        lead="Was Kura wann von welcher Quelle geholt hat, Datei für Datei."
         actions={<Button icon={ArrowsClockwise} onClick={() => void load()}>Aktualisieren</Button>}
       />
       {error && <Banner tone="danger">{error} Prüfe die Verbindung und wähle „Aktualisieren“.</Banner>}
@@ -106,7 +125,7 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
                 : groupByDay(data.posts).map((group) => (
                   <section key={group.key} className="ledger-day" aria-labelledby={`day-${group.key}`}>
                     <h3 id={`day-${group.key}`} className="ledger-day-heading">{group.label}</h3>
-                    <div className="panel ledger">{group.posts.map((post) => <LedgerEntry key={post.id} post={post} />)}</div>
+                    <div className="ledger">{group.posts.map((post) => <LedgerEntry key={post.id} post={post} />)}</div>
                   </section>
                 ))}
             </section>
@@ -120,7 +139,7 @@ export function HistoryPage({ onOpenSubscriptions }: { onOpenSubscriptions?: () 
                     action={onOpenSubscriptions && <Button variant="primary" icon={ListChecks} onClick={onOpenSubscriptions}>Zu den Abonnements</Button>}
                   />
                 )
-                : <DataTable label="Läufe" columns={runColumns} rows={data.runs} rowKey={(run) => run.id} />}
+                : <ul className="run-list" aria-label="Läufe">{data.runs.map((run) => <RunRow key={run.id} run={run} />)}</ul>}
             </section>
           </>
         )}

@@ -535,7 +535,10 @@ video.viewer-media {
   flex-direction: column;
   gap: var(--space-3);
   align-self: stretch;
-  padding: var(--space-4);
+  /* No frame and no fill, only a hairline above and below. */
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .run-live-head {
@@ -726,9 +729,6 @@ video.viewer-media {
     align-self: flex-start;
   }
 
-  .select-inline select {
-    max-width: none;
-  }
 }
 
 .day-group {
@@ -809,6 +809,12 @@ video.viewer-media {
   font-size: var(--text-body);
   appearance: none;
   cursor: pointer;
+}
+
+@media (max-width: 639px) {
+  .select-inline select {
+    max-width: none;
+  }
 }
 
 .select-caret {

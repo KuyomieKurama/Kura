@@ -3,17 +3,14 @@
  * only deviations as a chip on the right. Expanding a row shows the per-file table.
  */
 
+/* Hairlines only: no card around the list, one line between the posts and one under the last. */
 .ledger {
-  overflow: hidden;
+  border-top: 1px solid var(--line);
 }
 
 .ledger-entry {
-  padding: var(--space-4);
+  padding: var(--space-4) 0;
   border-bottom: 1px solid var(--line);
-}
-
-.ledger-entry:last-child {
-  border-bottom: 0;
 }
 
 .ledger-head {
@@ -159,10 +156,86 @@
 }
 
 .ledger-day-heading {
-  margin-bottom: var(--space-2);
-  color: var(--ink-muted);
-  font-size: var(--text-body);
-  font-weight: 600;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-heading);
+  line-height: 30px;
+}
+
+/* Runs: a list of rows, hairlines between them. Time | source | trigger | result with the note beneath. */
+.run-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.run-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 2fr) 96px minmax(0, 3fr);
+  align-items: start;
+  column-gap: var(--space-5);
+  max-width: none;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.run-time {
+  white-space: nowrap;
+}
+
+.run-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.run-source-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.run-trigger {
+  /* On the line of the source name, not between its two lines. */
+  padding-top: 2px;
+}
+
+.run-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-result-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+}
+
+@media (max-width: 1023px) {
+  .run-row {
+    grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: 'time source trigger' 'result result result';
+    row-gap: var(--space-2);
+  }
+
+  .run-time { grid-area: time; }
+  .run-source { grid-area: source; }
+  .run-trigger { grid-area: trigger; text-align: right; }
+  .run-result { grid-area: result; }
+}
+
+@media (max-width: 639px) {
+  .run-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'source time' 'result result';
+  }
+
+  .run-trigger { display: none; }
 }
 
 /* The post picture: 56px square, the glyph of the file kind when there is no preview. */

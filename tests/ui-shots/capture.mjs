@@ -4,7 +4,7 @@
 // the API where possible and writes PNG files named view-theme-width.png. See tests/ui-shots/README.md.
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { history, historyLive, transferVerified } from './fixtures.mjs';
+import { fixtureThumbnail, history, historyLive, transferVerified } from './fixtures.mjs';
 import { seedMedia } from './media-seed.mjs';
 import { loadPlaywright, repoRoot, startStack } from './stack.mjs';
 
@@ -126,10 +126,10 @@ async function settle(page, variant, name, problems) {
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   });
   await page.evaluate(() => document.fonts.ready);
-  // Finding 17: technical values must be set in Geist Mono, not in the fallback. If anything is set in the mono family,
-  // at least one face of it has to be loaded by now.
+  // Finding 17: technical values must be set in Geist Mono, not in the fallback. If anything that is rendered (not a closed
+  // <details>) is set in the mono family, at least one face of it has to be loaded by now.
   const mono = await page.evaluate(() => {
-    const used = [...document.querySelectorAll('body *')].some((element) => getComputedStyle(element).fontFamily.includes('Geist Mono'));
+    const used = [...document.querySelectorAll('body *')].some((element) => element.checkVisibility() && getComputedStyle(element).fontFamily.includes('Geist Mono'));
     const loaded = [...document.fonts].filter((face) => face.family.includes('Geist Mono') && face.status === 'loaded').length;
     return { used, loaded };
   });
@@ -359,9 +359,14 @@ async function main() {
       // History: mocked, because runs and posts only exist once a worker has downloaded something.
       await page.route('**/api/v1/history', (route) => json(route, history));
       await page.route('**/api/v1/runs/run-4/assets', (route) => json(route, historyLive));
+      await page.route(/\/api\/v1\/assets\/asset-\d+-[^/]+\/thumbnail/, (route) => {
+        const id = /assets\/([^/]+)\/thumbnail/.exec(route.request().url())?.[1] ?? 'asset-0-x';
+        return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: fixtureThumbnail(id) });
+      });
       await navigate(page, 'Verlauf');
       await page.getByRole('heading', { name: 'Läufe' }).waitFor();
       await page.evaluate(() => document.fonts.ready);
+      await picturesLoaded(page);
       await shot('history');
       const expandable = await page.getByRole('button', { name: 'Dateien anzeigen' }).count();
       for (let index = 0; index < expandable; index += 1) await page.getByRole('button', { name: 'Dateien anzeigen' }).first().click();
@@ -370,6 +375,7 @@ async function main() {
 
       await page.unroute('**/api/v1/history');
       await page.unroute('**/api/v1/runs/run-4/assets');
+      await page.unroute(/\/api\/v1\/assets\/asset-\d+-[^/]+\/thumbnail/);
       // The real history now: the finished run and the running one with its pictures.
       await navigate(page, 'Übersicht');
       await navigate(page, 'Verlauf');

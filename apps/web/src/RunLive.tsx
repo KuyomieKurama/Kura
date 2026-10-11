@@ -76,7 +76,7 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
   const announcement = useThrottledText(progress && progress.total > 0 ? `${progress.stored} von ${progress.total} Dateien gespeichert` : '');
 
   return (
-    <section className="run-live panel" aria-label="Lauf live">
+    <section className="run-live" aria-label="Lauf live">
       <header className="run-live-head">
         <h4>Lauf live</h4>
         {run && <StatusChip domain="download" status={run.state} />}

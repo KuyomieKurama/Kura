@@ -110,3 +110,12 @@ export const historyLive = {
   truncated: false,
   assets: []
 };
+
+// A picture for the history's fixture files (hasThumbnail): flat shapes, so the 56px post picture shows a real preview
+// and not only the glyph. Served for thumbnail requests of the fixture assets (asset-<index>-<post>).
+export function fixtureThumbnail(assetId) {
+  const index = Number(/^asset-(\d+)-/.exec(assetId)?.[1] ?? 0);
+  const sky = ['#9db7d5', '#d9b38c', '#a9c4a0', '#c8a2c8', '#e3c58a'][index % 5];
+  const ground = ['#4c6a8a', '#8a5a3c', '#4f7a49', '#6c4a6c', '#8a6a2c'][index % 5];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160"><rect width="160" height="160" fill="${sky}"/><circle cx="${50 + index * 12}" cy="52" r="20" fill="#f6efe2"/><path d="M0 120 L50 80 L90 112 L120 90 L160 124 L160 160 L0 160 Z" fill="${ground}"/></svg>`;
+}

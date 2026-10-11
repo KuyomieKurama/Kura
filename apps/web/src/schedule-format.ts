@@ -18,9 +18,12 @@ export const previewStatusLabels: Record<PreviewEntry['status'], string> = {
   coalesced: 'entfällt: fällt mit einem anderen Termin zusammen'
 };
 
-export function formatInstant(iso: string, timeZone: string): string {
-  return new Date(iso).toLocaleString('de-DE', {
-    weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone
+export function formatInstant(iso: string, timeZone: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const year = (value: Date) => value.toLocaleString('de-DE', { year: 'numeric', timeZone });
+  // "Mo., 12.10., 02:30": the year only when it is not the current one.
+  return date.toLocaleString('de-DE', {
+    weekday: 'short', day: '2-digit', month: '2-digit', ...(year(date) === year(now) ? {} : { year: 'numeric' }), hour: '2-digit', minute: '2-digit', timeZone
   });
 }
 

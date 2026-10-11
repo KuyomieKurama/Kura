@@ -191,6 +191,18 @@ it('AC26: groups posts by day, shows only deviations as chips and the checksum o
   expect(partial.querySelector('.ledger-thumb')).not.toBeNull();
 });
 
+it('shows no chip for a run that ended as planned, and no year for a run of this year', async () => {
+  const fine = { ...history.runs[0], id: 'r9', state: 'succeeded', errorMessage: null, errorCode: null, assetsFailed: 0, startedAt: new Date(Date.now() - 3 * 86_400_000).toISOString() };
+  mockApi('user', (path) => (path.endsWith('/history') ? json({ runs: [fine], posts: [] }) : undefined));
+  await open('Verlauf');
+
+  const runs = await screen.findByRole('list', { name: 'Läufe' });
+  expect(within(runs).getByText(/Datei gespeichert/)).toBeInTheDocument();
+  expect(runs.querySelector('.chip')).toBeNull();
+  // Older than a day: short and absolute, without the year ("Mo., 12.10., 02:30").
+  expect(runs.querySelector('li time')?.textContent).not.toMatch(/\d{4}/);
+});
+
 it('shows runs, posts and the state of every file with its Immich evidence', async () => {
   const fetch = mockApi('user', (path) => {
     if (path.endsWith('/history')) return json(history);
@@ -199,11 +211,18 @@ it('shows runs, posts and the state of every file with its Immich evidence', asy
   });
   await open('Verlauf');
 
-  const runs = await screen.findByRole('table', { name: 'Läufe' });
+  const runs = await screen.findByRole('list', { name: 'Läufe' });
   expect(within(runs).getByText('Teilweise gespeichert')).toBeInTheDocument();
   expect(within(runs).getByText('Anmeldung erforderlich')).toBeInTheDocument();
-  expect(within(runs).getByText(/Die Quelle verlangt eine Anmeldung/)).toBeInTheDocument();
+  // The note sits under the result in the same row, not in a column of its own.
+  const authRow = within(runs).getByText(/Die Quelle verlangt eine Anmeldung/).closest('li')!;
+  expect(within(authRow).getByText('Anmeldung erforderlich')).toBeInTheDocument();
   expect(within(runs).getByText('1 Beitrag, 1 Datei gespeichert (2 KiB), 1 fehlgeschlagen')).toBeInTheDocument();
+  // The source carries the platform seal, the time is a <time> with the full time as title.
+  expect(within(runs).getByRole('img', { name: 'Pixiv' })).toBeInTheDocument();
+  const time = runs.querySelector('li time');
+  expect(time).toHaveAttribute('datetime');
+  expect(time?.getAttribute('title')).toMatch(/\d{4}/);
 
   const post = screen.getByRole('article', { name: 'Beitrag Own test artwork' });
   expect(within(post).getByText('Status: Teilweise gespeichert')).toBeInTheDocument();

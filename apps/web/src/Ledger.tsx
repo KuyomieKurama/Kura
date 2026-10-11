@@ -176,7 +176,10 @@ function AssetsTable({ post }: { post: HistoryPost }) {
             ? <Chip tone="neutral" icon={LockKey}>Nicht zugänglich</Chip>
             : isNotYetAvailable(asset)
               ? <Chip tone="warn" icon={Hourglass}>Noch nicht verfügbar</Chip>
-              : <StatusChip domain="asset" status={asset.state} suffix={asset.attempts > 1 ? ` (Versuch ${asset.attempts})` : ''} />}
+              : asset.state === 'stored' && asset.attempts <= 1
+                // The normal case is plain text; only a deviation is a chip.
+                ? <span>{assetStateLabels.stored ?? 'Gespeichert'}</span>
+                : <StatusChip domain="asset" status={asset.state} suffix={asset.attempts > 1 ? ` (Versuch ${asset.attempts})` : ''} />}
           {asset.errorMessage && <span className={isWaitingOrLocked(asset) ? 'cell-note' : 'cell-note cell-note-danger'}>{asset.errorMessage}</span>}
         </>
       )
@@ -232,7 +235,8 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
         </div>
         <div className="ledger-mark">
           {deviation}
-          {verification.kind === 'partial' && <Chip tone="warn" icon={CheckCircle}>Teilweise verifiziert</Chip>}
+          {/* One state per row: a post that already shows a chip keeps the verification detail in the technical details. */}
+          {verification.kind === 'partial' && deviation === null && <Chip tone="warn" icon={CheckCircle}>Teilweise verifiziert</Chip>}
         </div>
         {hasAssets && (
           <Button variant="ghost" icon={open ? CaretUp : CaretDown} onClick={() => setOpen(!open)} aria-expanded={open} aria-controls={bodyId}>
@@ -248,7 +252,7 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
             <TechnicalDetails post={post} verification={verification} />
           </Collapse>
         )
-        : <p className="meta ledger-status">{statusLine}</p>}
+        : deviation === null && <p className="meta ledger-status">{statusLine}</p>}
     </article>
   );
 }
