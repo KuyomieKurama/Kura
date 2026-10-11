@@ -31,6 +31,17 @@
   max-width: 100%;
 }
 
+.ledger-sourceline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ledger-sourceline .seal {
+  width: 20px;
+  height: 20px;
+}
+
 .ledger-segments {
   display: flex;
   flex-direction: column;
@@ -155,10 +166,12 @@
   margin-top: var(--space-6);
 }
 
+/* Smaller than the section headings (Läuft gerade, Beiträge und Dateien, Läufe) and quieter than the post titles. */
 .ledger-day-heading {
-  margin-bottom: var(--space-3);
-  font-size: var(--text-heading);
-  line-height: 30px;
+  margin-bottom: var(--space-2);
+  color: var(--ink-muted);
+  font-size: var(--text-body);
+  line-height: 24px;
 }
 
 /* Runs: a list of rows, hairlines between them. Time | source | trigger | result with the note beneath. */

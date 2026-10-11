@@ -22,6 +22,19 @@ function describeCounts(counts: RunAssets['counts']): string {
   return parts.join(', ');
 }
 
+/**
+ * A run without any file yet says one thing, and only what is true: posts found but no file list yet, or nothing found at
+ * all. "0 gespeichert" next to "keine Dateien gefunden" would contradict a run that has found a post.
+ */
+function describeEmpty(data: RunAssets): string | null {
+  const { counts, run } = data;
+  if (data.assets.length > 0 || counts.stored + counts.failed + counts.pending + counts.downloading + counts.verifying > 0) return null;
+  if (run && run.postsFound > 0) {
+    return `${run.postsFound} ${run.postsFound === 1 ? 'Beitrag' : 'Beiträge'} gefunden, die Dateien werden erfasst.`;
+  }
+  return data.active ? 'Bisher wurden keine Dateien gefunden.' : 'Der Lauf hat keine Dateien gefunden.';
+}
+
 const ANNOUNCE_MS = 5000;
 
 /** The text for the screen reader: it changes at most every 5 seconds, however often the counts change. */
@@ -71,7 +84,7 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
     ? 'Verbindung zum Lauf wird aufgebaut …'
     : waiting
       ? 'Der Lauf ist eingereiht und wartet auf einen freien Worker.'
-      : describeCounts(data.counts);
+      : describeEmpty(data) ?? describeCounts(data.counts);
   const progress = data ? runProgress(data.counts) : null;
   const announcement = useThrottledText(progress && progress.total > 0 ? `${progress.stored} von ${progress.total} Dateien gespeichert` : '');
 
@@ -92,7 +105,6 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
       {run?.errorMessage && <Banner tone={run.state === 'failed' ? 'danger' : 'warn'}>{run.errorMessage}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
       {!data && !error && <MediaSkeleton count={4} />}
-      {data && data.assets.length === 0 && !waiting && <p className="meta">Bisher wurden keine Dateien gefunden.</p>}
       {groups.length > 0 && (
         <div className="media-groups">
           {groups.map((group) => (

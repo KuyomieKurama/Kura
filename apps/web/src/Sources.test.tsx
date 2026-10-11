@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App.js';
 
 const json = (body: unknown, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -319,4 +319,45 @@ it('shows a running run of the history live and leaves finished runs alone', asy
   expect(screen.getByRole('heading', { name: 'Läuft gerade' })).toBeInTheDocument();
   expect(calls(fetch, 'GET', '/runs/run-live/assets').length).toBeGreaterThan(0);
   expect(calls(fetch, 'GET', '/runs/run-done/assets')).toHaveLength(0);
+});
+
+it('names the source of a post row with one seal and the subscription, not a chain of commas', async () => {
+  mockApi('user', (path) => (path.endsWith('/history') ? json({ runs: history.runs, posts: history.posts }) : undefined));
+  await open('Verlauf');
+  const row = await screen.findByRole('article', { name: 'Beitrag Own test artwork' });
+  const line = row.querySelector('.ledger-sourceline') as HTMLElement;
+  expect(within(line).getByRole('img', { name: 'Pixiv' })).toBeInTheDocument();
+  expect(line).toHaveTextContent('Creator A');
+  expect(line.textContent).not.toMatch(/,/);
+  expect(line).toHaveAttribute('title', 'Pixiv, own_artist, aus „Creator A“');
+});
+
+describe('a live run without any file yet', () => {
+  const running = { ...history.runs[0], id: 'run-live', state: 'downloading', finishedAt: null };
+  const live = (postsFound: number) => json({
+    run: { ...running, postsFound, jobRunId: 'j1' }, queue: null, active: true,
+    counts: { pending: 0, downloading: 0, verifying: 0, stored: 0, failed: 0 }, truncated: false, assets: []
+  });
+  const openLive = async (postsFound: number) => {
+    mockApi('user', (path) => {
+      if (path.endsWith('/history')) return json({ ...history, runs: [running] });
+      if (path.endsWith('/runs/run-live/assets')) return live(postsFound);
+      return undefined;
+    });
+    await open('Verlauf');
+    return screen.findByRole('region', { name: 'Lauf live' });
+  };
+
+  it('does not contradict itself while a run has found a post but no file yet', async () => {
+    const region = await openLive(1);
+    expect(await within(region).findByText('1 Beitrag gefunden, die Dateien werden erfasst.')).toBeInTheDocument();
+    expect(within(region).queryByText(/0 gespeichert/)).not.toBeInTheDocument();
+    expect(within(region).queryByText(/keine Dateien gefunden/)).not.toBeInTheDocument();
+  });
+
+  it('says that nothing was found only when nothing was found', async () => {
+    const region = await openLive(0);
+    expect(await within(region).findByText('Bisher wurden keine Dateien gefunden.')).toBeInTheDocument();
+    expect(within(region).queryByText(/0 gespeichert/)).not.toBeInTheDocument();
+  });
 });

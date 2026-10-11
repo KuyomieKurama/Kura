@@ -13,6 +13,7 @@ import { Collapse } from './ui/Collapse.js';
 import { DataTable, type Column } from './ui/DataTable.js';
 import { DisclosureSummary } from './ui/DisclosureSummary.js';
 import { Glyph } from './ui/Glyph.js';
+import { PlatformSeal } from './ui/PlatformSeal.js';
 import { StatusChip } from './ui/StatusChip.js';
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -212,7 +213,8 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
   const statusLine = `Status: ${lockedOnly ? 'Nicht zugänglich' : waitingOnly ? 'Noch nicht verfügbar' : postStateLabels[post.state] ?? post.state}${!post.discoveryComplete && post.state !== 'discovered' ? ' (Dateiliste nicht als vollständig gemeldet)' : ''}`;
 
   const verification = verificationOf(post);
-  const sourceLine = `${platformLabels[post.platform] ?? post.platform}, ${post.creatorName ?? post.creatorId}, aus „${post.subscriptionName}“`;
+  // One seal and the name of the subscription; platform and creator stay available as the full text on hover.
+  const sourceTitle = `${platformLabels[post.platform] ?? post.platform}, ${post.creatorName ?? post.creatorId}, aus „${post.subscriptionName}“`;
   const timeOfDay = new Date(post.discoveredAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: zone() });
   // Only a deviation is a chip: a fully stored post says nothing, the bar and the sentence under the title are enough.
   const deviation = lockedOnly
@@ -228,9 +230,10 @@ export function LedgerEntry({ post }: { post: HistoryPost }) {
         <div className="ledger-source">
           <h3 className="truncate" title={label}>{label}</h3>
           {hasAssets ? <Segments assets={post.assets} /> : <p className="meta">Noch keine Dateien erfasst.</p>}
-          <p className="meta truncate" title={sourceLine}>
+          <p className="meta ledger-sourceline" title={sourceTitle}>
             <time dateTime={post.discoveredAt} title={formatInstant(post.discoveredAt, zone())}>{timeOfDay}</time>
-            {`, ${sourceLine}`}
+            <PlatformSeal platform={post.platform} />
+            <span className="truncate">{post.subscriptionName}</span>
           </p>
         </div>
         <div className="ledger-mark">
