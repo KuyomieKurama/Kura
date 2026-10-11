@@ -1,16 +1,16 @@
-import { Lock, LockOpen, Plus } from '@phosphor-icons/react';
+import { Lock, LockOpen, Plus, Prohibit } from '@phosphor-icons/react';
 import { type FormEvent, useState } from 'react';
 import { api, type User } from './api.js';
+import { initials } from './AppShell.js';
 import { errorMessage } from './error-message.js';
 import { labels } from './labels.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
-import { DataTable, type Column } from './ui/DataTable.js';
 import { Dialog } from './ui/Dialog.js';
 import { EmptyState } from './ui/EmptyState.js';
 import { Field } from './ui/Field.js';
 import { PageHeader } from './ui/PageHeader.js';
-import { StatusChip } from './ui/StatusChip.js';
+import { Chip } from './ui/Chip.js';
 
 /** User administration (administrators only): list, create, lock and unlock. */
 export function UsersPage({ users, currentUserId, reload }: {
@@ -56,24 +56,6 @@ export function UsersPage({ users, currentUserId, reload }: {
     }
   }
 
-  const columns: Column<User>[] = [
-    { key: 'name', header: labels.userNameColumn, render: (user) => user.display_name },
-    { key: 'username', header: labels.userUsernameColumn, render: (user) => user.username, mono: true },
-    { key: 'role', header: labels.userRoleColumn, render: (user) => (user.role === 'admin' ? labels.adminRole : labels.userRole) },
-    { key: 'status', header: labels.userStatusColumn, render: (user) => <StatusChip domain="user" status={user.status} /> },
-    { key: 'created', header: labels.userCreatedColumn, render: (user) => new Date(user.created_at).toLocaleDateString('de-DE'), date: true },
-    {
-      key: 'actions',
-      header: labels.userActionsColumn,
-      actions: true,
-      render: (user) => isLastActiveAdmin(user) ? null : (
-        <Button variant="ghost" icon={user.status === 'active' ? Lock : LockOpen} aria-label={`${user.display_name} ${user.status === 'active' ? 'sperren' : 'entsperren'}`} onClick={() => setConfirmUser(user)}>
-          {user.status === 'active' ? labels.lock : labels.unlock}
-        </Button>
-      )
-    }
-  ];
-
   const openCreate = () => {
     setError('');
     setCreateOpen(true);
@@ -88,7 +70,33 @@ export function UsersPage({ users, currentUserId, reload }: {
       {error && !createOpen && <Banner tone="danger">{error}</Banner>}
       {users.length === 0
         ? <EmptyState title={labels.noUsers} />
-        : <DataTable label={labels.users} columns={columns} rows={users} rowKey={(user) => user.id} />}
+        : (
+          // A list, not a table: avatar, name ("Du" on the own row), user name in mono, role as text. Only a lock is a chip.
+          <ul className="user-list" aria-label={labels.users}>
+            {users.map((user) => (
+              <li key={user.id} className="user-row">
+                <span className="avatar" aria-hidden="true">{initials(user.display_name)}</span>
+                <span className="user-main">
+                  <span className="user-name">
+                    <span className="row-name" title={user.display_name}>{user.display_name}</span>
+                    {user.id === currentUserId && <span className="meta">{labels.you}</span>}
+                    {user.status === 'blocked' && <Chip tone="danger" icon={Prohibit}>{labels.blocked}</Chip>}
+                  </span>
+                  <span className="meta user-sub">
+                    <span className="mono">{user.username}</span>
+                    <span>{user.role === 'admin' ? labels.adminRole : labels.userRole}</span>
+                    <span>{`${labels.userSince} ${new Date(user.created_at).toLocaleDateString('de-DE')}`}</span>
+                  </span>
+                </span>
+                {!isLastActiveAdmin(user) && (
+                  <Button variant="ghost" icon={user.status === 'active' ? Lock : LockOpen} aria-label={`${user.display_name} ${user.status === 'active' ? 'sperren' : 'entsperren'}`} onClick={() => setConfirmUser(user)}>
+                    {user.status === 'active' ? labels.lock : labels.unlock}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
 
       {createOpen && (
         <Dialog title={labels.createUserTitle} close={() => setCreateOpen(false)}>

@@ -131,9 +131,10 @@ async function settle(page, variant, name, problems) {
   const mono = await page.evaluate(() => {
     const used = [...document.querySelectorAll('body *')].some((element) => element.checkVisibility() && getComputedStyle(element).fontFamily.includes('Geist Mono'));
     const loaded = [...document.fonts].filter((face) => face.family.includes('Geist Mono') && face.status === 'loaded').length;
-    return { used, loaded };
+    // check() is true when the face is loaded or when no face matches, so the loaded count is the stricter half.
+    return { used, loaded, usable: document.fonts.check('13px "Geist Mono Variable"') };
   });
-  if (mono.used && mono.loaded === 0) problems.push(`font (${name}-${variant.theme}-${variant.width}): Geist Mono is used but not loaded`);
+  if (mono.used && (mono.loaded === 0 || !mono.usable)) problems.push(`font (${name}-${variant.theme}-${variant.width}): Geist Mono is used but not loaded`);
   const finished = await page.evaluate(async () => {
     const settled = Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))).then(() => true);
     const timeout = new Promise((done) => setTimeout(() => done(false), 5000));

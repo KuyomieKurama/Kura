@@ -196,3 +196,31 @@ it('asks before locking a user, names the person and puts the focus on "Abbreche
   expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
   expect(dialog.textContent).not.toMatch(/[—–]/);
 });
+
+it('lists users with avatar, "Du" on the own row and a chip only for a lock', async () => {
+  const blocked = { id: 'u3', display_name: 'Bob Beispiel', username: 'bob', role: 'user', status: 'blocked', created_at: '2026-01-03T00:00:00Z' };
+  const other = { id: 'u2', display_name: 'Mara Muster', username: 'mara', role: 'user', status: 'active', created_at: '2026-01-02T00:00:00Z' };
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith('/auth/state')) return response({ configured: true, authenticated: true, role: 'admin', csrfToken: 'csrf', passwordChangeRequired: false });
+    if (path.endsWith('/api/v1/users')) return response({ users: [admin, other, blocked] });
+    if (path === '/healthz') return response({ status: 'ok' });
+    if (path.endsWith('/api/v1/status')) return response({ version: '0.1.0', migrations: { appliedCount: 2, latestVersion: '0002' } });
+    return response({}, 404);
+  }));
+  render(<App />);
+  await screen.findByText('Erreichbar');
+  fireEvent.click(screen.getByRole('button', { name: 'Benutzerverwaltung' }));
+
+  const list = await screen.findByRole('list', { name: 'Benutzerverwaltung' });
+  const rows = within(list).getAllByRole('listitem');
+  expect(rows).toHaveLength(3);
+  // Own row: "Du". Other rows: no "Du", no "Aktiv" chip.
+  const own = rows.find((row) => within(row).queryByText('Du') !== null);
+  expect(own).toBeDefined();
+  expect(own?.textContent).toContain(admin.display_name);
+  expect(within(list).queryByText('Aktiv')).toBeNull();
+  expect(list.querySelectorAll('.chip')).toHaveLength(1);
+  expect(within(rows[2]!).getByText('Gesperrt')).toBeInTheDocument();
+  expect(within(rows[1]!).getByText('mara')).toHaveClass('mono');
+});

@@ -97,12 +97,12 @@ it('describes a failed form with an alert that is announced, not a toast', async
   expect(await screen.findByRole('alert')).toHaveTextContent('Das hat nicht geklappt');
 });
 
-it('gives table headers a scope and every row action a text name', async () => {
+it('lists the users as a list and gives every row action a text name', async () => {
   stubApi(true);
   render(<App />);
   await screen.findByText('Erreichbar');
   fireEvent.click(screen.getByRole('button', { name: 'Benutzerverwaltung' }));
-  const table = await screen.findByRole('table', { name: 'Benutzerverwaltung' });
-  for (const header of within(table).getAllByRole('columnheader')) expect(header).toHaveAttribute('scope', 'col');
-  for (const button of within(table).queryAllByRole('button')) expect(button).toHaveAccessibleName(/\S/);
+  const list = await screen.findByRole('list', { name: 'Benutzerverwaltung' });
+  expect(within(list).getAllByRole('listitem').length).toBeGreaterThan(0);
+  for (const button of within(list).queryAllByRole('button')) expect(button).toHaveAccessibleName(/\S/);
 });

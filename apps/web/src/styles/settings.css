@@ -162,3 +162,56 @@
     padding-left: calc(280px + var(--space-7));
   }
 }
+
+/* User list: avatar, name with "Du" and a lock chip, a meta line, the action on the right. Narrow: the action goes under the text. */
+.user-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+  max-width: none;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.user-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-title);
+}
+
+.user-name .row-name {
+  font-weight: 600;
+}
+
+.user-sub {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+}
+
+@media (max-width: 639px) {
+  .user-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+
+  .user-row > .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

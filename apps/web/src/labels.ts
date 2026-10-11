@@ -94,6 +94,8 @@ export const labels = {
   userRole: 'Benutzer',
   active: 'Aktiv',
   blocked: 'Gesperrt',
+  you: 'Du',
+  userSince: 'seit',
   createUser: 'Benutzer anlegen',
   createUserTitle: 'Neuen Benutzer anlegen',
   initialPassword: 'Anfangspasswort',
