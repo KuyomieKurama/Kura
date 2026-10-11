@@ -5,6 +5,7 @@ import { errorMessage } from './error-message.js';
 import { labels } from './labels.js';
 import { Gallery, MediaSkeleton } from './MediaGrid.js';
 import { MediaViewer } from './MediaViewer.js';
+import { openViewer } from './viewTransition.js';
 import { dayLabel } from './time-format.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
@@ -127,7 +128,7 @@ export function MediaPage() {
             <span>{day.label}</span>
             <span className="meta num">{day.assets.length === 1 ? '1 Datei' : `${day.assets.length} Dateien`}</span>
           </h2>
-          <Gallery assets={day.assets} onOpen={(asset) => setViewing(asset.id)} />
+          <Gallery assets={day.assets} onOpen={(asset, opener) => openViewer(opener, () => setViewing(asset.id))} />
         </section>
       ))}
       {status === 'ready' && error && items.length > 0 && <Banner tone="danger">{error}</Banner>}

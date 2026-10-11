@@ -5,6 +5,7 @@ import { platformLabels } from './history-labels.js';
 import { groupByPost } from './media.js';
 import { Gallery, MediaSkeleton } from './MediaGrid.js';
 import { MediaViewer } from './MediaViewer.js';
+import { openViewer } from './viewTransition.js';
 import { runProgress } from './run-progress.js';
 import { useRunAssets } from './useRunAssets.js';
 import { Banner } from './ui/Banner.js';
@@ -24,7 +25,7 @@ function describeCounts(counts: RunAssets['counts']): string {
 const ANNOUNCE_MS = 5000;
 
 /** The text for the screen reader: it changes at most every 5 seconds, however often the counts change. */
-function useThrottledText(text: string): string {
+export function useThrottledText(text: string): string {
   const [announced, setAnnounced] = useState(text);
   const latest = useRef(text);
   const lastAt = useRef(0);
@@ -100,7 +101,7 @@ export function RunLive({ runId, onShowMedia, onDismiss, onFinished }: {
                 <h5 className="truncate" title={group.title}>{group.title}</h5>
                 <span className="meta">{platformLabels[group.platform] ?? group.platform}</span>
               </header>
-              <Gallery assets={group.assets} onOpen={(opened) => setViewing(opened.id)} />
+              <Gallery assets={group.assets} onOpen={(opened, opener) => openViewer(opener, () => setViewing(opened.id))} />
             </section>
           ))}
         </div>

@@ -26,3 +26,18 @@ it('keeps a reduced-motion rule for view transitions wherever they are declared'
   const declared = sheets.filter((sheet) => sheet.text.includes('::view-transition'));
   for (const sheet of declared) expect(sheet.text, sheet.name).toMatch(/prefers-reduced-motion/);
 });
+
+// REQ-DL-008 AC23: the viewer opens by view transition (240ms) or, as fallback, a 160ms fade; both are tokens that reduced motion zeroes.
+it('has the viewer fade fallback (160ms) and the 240ms morph as tokens, zeroed for reduced motion', () => {
+  const tokens = sheets.find((sheet) => sheet.name === 'tokens.css')!.text;
+  expect(tokens).toMatch(/--dur-viewer-fade:\s*160ms/);
+  expect(tokens).toMatch(/--dur-viewer-morph:\s*240ms/);
+  const reduced = tokens.slice(tokens.indexOf('@media (prefers-reduced-motion: reduce)'));
+  for (const token of ['--dur-viewer-fade', '--dur-viewer-morph']) expect(reduced).toMatch(new RegExp(`${token}:\\s*0\\.01ms`));
+
+  const media = sheets.find((sheet) => sheet.name === 'media.css')!.text;
+  expect(media).toMatch(/\.viewer-screen\[data-enter='fade'\][^}]*animation:\s*viewer-fade-in var\(--dur-viewer-fade\)/);
+  expect(media).toMatch(/@keyframes viewer-fade-in/);
+  expect(media).toMatch(/\.viewer-frame\s*\{[^}]*view-transition-name:\s*viewer-media/);
+  expect(media).toMatch(/::view-transition-group\(viewer-media\)[^{]*\{[^}]*animation-duration:\s*var\(--dur-viewer-morph\)/);
+});

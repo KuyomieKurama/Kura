@@ -29,7 +29,7 @@ Everything else is real API data.
 Views: setup, login, login-error, dashboard, menu-open (narrow only), subscriptions, subscription-detail (page of one subscription, tab Zeitpläne),
 subscriptions-adapters, subscriptions-form, subscriptions-empty, subscriptions-loading, subscriptions-error,
 media-page, media-grid, media-grid-videos, media-viewer-image, media-viewer-video, media-empty, live-run,
-history, history-expanded, history-live, immich, immich-transfer, users, users-dialog, dialog, limits, account.
+history, history-expanded, history-live, immich, immich-transfer, users, users-dialog, dialog, limits, version, account.
 
 The media views use real files. `media-seed.mjs` draws sixteen pictures in the browser (canvas, PNG and JPEG) and
 records a short WebM with Playwright, stores them through the worker's `HistoryRepository` and the blob store's

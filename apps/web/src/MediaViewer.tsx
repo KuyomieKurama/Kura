@@ -7,6 +7,7 @@ import { altText, kindLabels, platformLabel, postLabel, safeExternalUrl } from '
 import { formatInstant } from './schedule-format.js';
 import { Button } from './ui/Button.js';
 import { Glyph } from './ui/Glyph.js';
+import { openedByTransition } from './viewTransition.js';
 
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -85,6 +86,8 @@ export function MediaViewer({ items, index, onNavigate, onClose, hasMore = false
   const current = useRef(asset?.id);
   current.current = asset?.id;
   const opener = useRef<Element | null>(document.activeElement);
+  // Read once: opened by the view transition (the tile morphs) or, without it, by a short fade.
+  const [enter] = useState(() => (openedByTransition() ? 'morph' : 'fade'));
 
   useEffect(() => {
     const previouslyFocused = opener.current;
@@ -166,7 +169,7 @@ export function MediaViewer({ items, index, onNavigate, onClose, hasMore = false
   // The strip shows the other files of the same post, so a carousel can be walked through without leaving the file.
   const siblings = items.map((item, position) => ({ item, position })).filter(({ item }) => item.postId === asset.postId);
   return (
-    <div className="viewer-screen" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog} data-info={info}>
+    <div className="viewer-screen" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={dialog} data-info={info} data-enter={enter}>
       <header className="viewer-bar">
         <Button variant="ghost" icon={X} className="viewer-close" onClick={onClose}>{labels.close}</Button>
         <h2 id={titleId} className="truncate" title={asset.originalName}>{postLabel(asset)}</h2>

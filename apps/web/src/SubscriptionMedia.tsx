@@ -5,6 +5,7 @@ import { errorMessage } from './error-message.js';
 import { groupByPost } from './media.js';
 import { MediaGrid, MediaSkeleton } from './MediaGrid.js';
 import { MediaViewer } from './MediaViewer.js';
+import { openViewer } from './viewTransition.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
 import { Segmented } from './ui/Segmented.js';
@@ -97,7 +98,7 @@ export function SubscriptionMedia({ subscriptionId, reloadKey = 0 }: { subscript
       {status === 'loading' && items.length === 0 && <MediaSkeleton />}
       {nothingAtAll && <EmptyState title="Noch nichts geladen. Starte einen Lauf mit Jetzt ausführen." />}
       {empty && !nothingAtAll && <EmptyState title="Für diesen Filter gibt es keine Dateien." hint="Wähle „Alle“, um alles zu sehen." />}
-      {items.length > 0 && <MediaGrid groups={groups} onOpen={(asset) => setViewing(asset.id)} />}
+      {items.length > 0 && <MediaGrid groups={groups} onOpen={(asset, opener) => openViewer(opener, () => setViewing(asset.id))} />}
       {status === 'ready' && error && items.length > 0 && <Banner tone="danger">{error}</Banner>}
       {nextCursor && (
         <div className="media-more">

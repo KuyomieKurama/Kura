@@ -358,6 +358,17 @@ async function main() {
       await page.getByRole('form', { name: 'Limits bearbeiten' }).waitFor();
       await shot('limits');
 
+      // Über Kura: the version line of the sidebar (wide) or the entry of the "Mehr" sheet (narrow).
+      if (variant.width >= 1024) {
+        await page.locator('.version-link').click();
+      } else {
+        await page.getByRole('button', { name: 'Mehr', exact: true }).click();
+        await page.getByRole('dialog').locator('.sheet-version').click();
+      }
+      await page.getByRole('heading', { name: 'Über Kura' }).first().waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      await shot('version');
+
       if (variant.width >= 1024) {
         await page.getByRole('button', { name: /^Konto:/ }).click();
         await page.getByRole('menuitem', { name: 'Konto' }).click();

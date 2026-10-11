@@ -6,6 +6,7 @@ import { runProgress } from './run-progress.js';
 import { errorMessage } from './error-message.js';
 import { MediaTile } from './MediaTile.js';
 import { MediaViewer } from './MediaViewer.js';
+import { openViewer } from './viewTransition.js';
 import { absoluteShort } from './time-format.js';
 import { Banner } from './ui/Banner.js';
 import { Button } from './ui/Button.js';
@@ -185,7 +186,7 @@ export function Dashboard({ health, status, checkedAt, onNavigate, onOpenSubscri
             <h2 id="recent-heading">{labels.recentlyLoaded}</h2>
             <button type="button" className="text-link" onClick={() => onNavigate('media')}>{labels.allMedia}</button>
           </div>
-          <Mosaic assets={assets} onOpen={(asset) => setViewing(asset.id)} />
+          <Mosaic assets={assets} onOpen={(asset, opener) => openViewer(opener, () => setViewing(asset.id))} />
         </section>
       )}
       {overview && !empty && (
