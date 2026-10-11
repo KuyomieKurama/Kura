@@ -8,7 +8,16 @@ const json = (body: unknown, status = 200) => ({ ok: status >= 200 && status < 3
 const admin = { id: 'a1', display_name: 'Admin', username: 'admin', role: 'admin', status: 'active', created_at: '2026-01-01T00:00:00Z' };
 const bob = { id: '11111111-1111-4111-8111-111111111111', display_name: 'Bob', username: 'bob', role: 'user', status: 'active', created_at: '2026-01-02T00:00:00Z' };
 
-const defaults = {
+type Policy = {
+  downloads: {
+    maxConcurrentGlobal: number | null; maxConcurrentPerUser: number | null; maxConcurrentPerSourceAccount: number | null;
+    maxDownloadsPerDayPerUser: number | null; maxBytesPerDayPerUser: number | null; bandwidthBytesPerSecond: number | null;
+    perAdapter: Record<string, { maxConcurrent: number | null }>; perUser: Record<string, { maxConcurrent: number | null }>;
+  };
+  workers: { downloadSlots: number; transferSlots: number; lifecycleReservedSlots: number };
+  retention: { finishedRunDays: number };
+};
+const defaults: Policy = {
   downloads: {
     maxConcurrentGlobal: null, maxConcurrentPerUser: null, maxConcurrentPerSourceAccount: null,
     maxDownloadsPerDayPerUser: null, maxBytesPerDayPerUser: null, bandwidthBytesPerSecond: null,
@@ -17,7 +26,7 @@ const defaults = {
   workers: { downloadSlots: 4, transferSlots: 2, lifecycleReservedSlots: 1 },
   retention: { finishedRunDays: 90 }
 };
-const policyResponse = (version: number, policy = defaults) => ({
+const policyResponse = (version: number, policy: Policy = defaults) => ({
   version, policy, updatedAt: version ? '2026-10-08T10:00:00Z' : null,
   enforced: ['downloads.maxConcurrentGlobal', 'downloads.maxConcurrentPerUser', 'downloads.perUser', 'retention.finishedRunDays']
 });
